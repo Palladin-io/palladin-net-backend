@@ -39,6 +39,9 @@ migration deterministically removes duplicate pre-production hostname assets bef
 The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
 index prevents duplicate website assets.
+Anonymous catalog search exposes only ready website icons published through an explicit service upload.
+Website hostnames learned from an authenticated Member `ensure` request are acquisition-only records and
+never become anonymously enumerable through search, even after their image is ready.
 Pending assets that own a service upload session are never treated as acquisition reservations: ensure
 returns no icon while that upload session is live. Once every session for a still-pending asset expires,
 the aggregate is marked deleted and releases its hostname aliases before ensure creates clean per-hostname
@@ -51,4 +54,6 @@ object-store/database partial commit downloads and decodes the bounded existing 
 the aggregate from those authoritative first-writer bytes even if upstream is unavailable, so duplicate
 deliveries can finish the database transition without overwriting different bytes. Clients persist the
 returned `id`, `revision`, and `url` inside encrypted Vault presentation data. Vault list/detail reads
-never call ensure, resolve, by-id, or get-by-id for Entry icons; the browser/app performs only the image GET.
+never call ensure, resolve, by-id, or get-by-id for Entry icons. A newly reserved URL may briefly precede
+the object; clients retry only the allowlisted bucket/CDN image GET with bounded exponential backoff and
+a cache-busting query, then fall back to a local glyph. No readiness polling reaches the API.

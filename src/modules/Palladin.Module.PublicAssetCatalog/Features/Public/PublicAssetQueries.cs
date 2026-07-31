@@ -81,7 +81,15 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
     public override async Task HandleAsync(SearchPublicAssetsRequest req, CancellationToken ct)
     {
         var q = req.Q.Trim().ToLowerInvariant(); var limit = req.Limit ?? 40;
-        var assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions).Where(x => x.Type == PublicAssetType.WebsiteIcon && x.Status == PublicAssetStatus.Ready && (x.Name.ToLower().Contains(q) || x.Aliases.Any(a => a.Value.Contains(q)))).OrderBy(x => x.Name).Take(limit).ToListAsync(ct);
+        var assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions).Where(x =>
+            x.Type == PublicAssetType.WebsiteIcon
+            && x.Status == PublicAssetStatus.Ready
+            // Anonymous catalog search exposes only explicitly uploaded catalog
+            // records. Hostnames learned from a Member's authenticated ensure
+            // request remain non-enumerable even after acquisition completes.
+            && db.UploadSessions.Any(session => session.AssetId == x.Id && session.CompletedAt != null)
+            && (x.Name.ToLower().Contains(q) || x.Aliases.Any(a => a.Value.Contains(q))))
+            .OrderBy(x => x.Name).Take(limit).ToListAsync(ct);
         await Send.OkAsync(new(assets.Select(x => PublicAssetContracts.Map(x, storage)).ToArray()), ct);
     }
 }

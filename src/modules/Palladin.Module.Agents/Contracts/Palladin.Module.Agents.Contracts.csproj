@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\core\Palladin.Core.Events\Palladin.Core.Events.csproj" />
+        <ProjectReference Include="..\..\..\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="NodaTime" Version="3.3.0" />
+    </ItemGroup>
+
+</Project>

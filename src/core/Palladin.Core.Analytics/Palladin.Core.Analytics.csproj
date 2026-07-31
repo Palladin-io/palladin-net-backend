@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup>
+      <PackageReference Include="NodaTime" Version="3.2.2" />
+      <PackageReference Include="PostHog.AspNetCore" Version="1.0.4" />
+    </ItemGroup>
+    <ItemGroup>
+      <ProjectReference Include="..\Palladin.Core.Transport\Palladin.Core.Transport.csproj" />
+    </ItemGroup>
+</Project>

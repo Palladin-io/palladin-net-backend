@@ -1,0 +1,23 @@
+Palladin .NET Backend
+Copyright 2026 Patryk Roguszewski, trading as Patryk Roguszewski IT Solutions
+
+SPDX-License-Identifier: AGPL-3.0-only
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, version 3 only.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+details.
+
+The complete license is in LICENSE. Third-party attributions and the
+machine-readable dependency inventory are in THIRD_PARTY_NOTICES.md and
+sbom.cdx.json. Trademark terms are in TRADEMARKS.md.
+
+Corresponding source:
+https://github.com/Palladin-io/palladin-net-backend-oss
+
+Running instances expose their exact corresponding source revision through
+the anonymous GET /api/health response.

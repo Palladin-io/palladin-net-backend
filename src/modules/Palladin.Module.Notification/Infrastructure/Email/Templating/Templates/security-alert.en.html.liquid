@@ -1,0 +1,14 @@
+{% include '_header.html.liquid' %}
+<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">{{ eventTitle }}</h1>
+<p style="margin:0 0 16px">Hi{% if name %} {{ name }}{% endif %}, we're letting you know about activity on your {{ appName }} account.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px;background:#fbeaea;border:1px solid #f3caca;border-radius:8px">
+  <tr><td style="padding:16px;font-size:14px;color:#7a1f1f">
+    <p style="margin:0 0 8px">{{ eventDescription }}</p>
+    {% if occurredAt %}<p style="margin:0;font-size:13px;color:#a05050">When: {{ occurredAt }}</p>{% endif %}
+  </td></tr>
+</table>
+<p style="margin:0 0 16px">If this was you, no action is needed. If you don't recognize it, secure your account right away.</p>
+<p style="margin:0">
+  <a href="{{ baseUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Review account security</a>
+</p>
+{% include '_footer.en.html.liquid' %}

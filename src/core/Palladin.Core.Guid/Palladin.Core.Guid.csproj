@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup>
+      <ProjectReference Include="..\Palladin.Core.Modules\Palladin.Core.Modules.csproj" />
+    </ItemGroup>
+</Project>

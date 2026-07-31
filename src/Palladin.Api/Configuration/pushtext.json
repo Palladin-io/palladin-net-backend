@@ -1,0 +1,90 @@
+{
+  "Modules": {
+    "Notification": {
+      "PushText": {
+        "Default": {
+          "en": {
+            "Title": "Palladin needs your attention",
+            "Body": "Open the app to see details."
+          },
+          "pl": {
+            "Title": "Palladin wymaga uwagi",
+            "Body": "Otwórz aplikację, aby zobaczyć szczegóły."
+          }
+        },
+        "ByType": {
+          "agent_pending": {
+            "en": {
+              "Title": "New agent awaiting approval",
+              "Body": "Agent {agentName} wants to join your organization."
+            },
+            "pl": {
+              "Title": "Nowy agent czeka na zatwierdzenie",
+              "Body": "Agent {agentName} chce dołączyć do Twojej organizacji."
+            }
+          },
+          "agent_approved": {
+            "en": {
+              "Title": "Agent approved",
+              "Body": "Agent {agentName} was approved by {actorName}."
+            },
+            "pl": {
+              "Title": "Agent zatwierdzony",
+              "Body": "Agent {agentName} został zatwierdzony przez {actorName}."
+            }
+          },
+          "grant_pending": {
+            "en": {
+              "Title": "Access request",
+              "Body": "Agent {agentName} requests access to {entryLabel} in {vaultName}."
+            },
+            "pl": {
+              "Title": "Prośba o dostęp",
+              "Body": "Agent {agentName} prosi o dostęp do {entryLabel} w {vaultName}."
+            }
+          },
+          "grant_approved": {
+            "en": {
+              "Title": "Access approved",
+              "Body": "{actorName} approved {agentName}'s access to {entryLabel}."
+            },
+            "pl": {
+              "Title": "Dostęp przyznany",
+              "Body": "{actorName} przyznał agentowi {agentName} dostęp do {entryLabel}."
+            }
+          },
+          "grant_denied": {
+            "en": {
+              "Title": "Access denied",
+              "Body": "{actorName} denied {agentName}'s access to {entryLabel}."
+            },
+            "pl": {
+              "Title": "Dostęp odrzucony",
+              "Body": "{actorName} odrzucił dostęp agenta {agentName} do {entryLabel}."
+            }
+          },
+          "grant_revoked": {
+            "en": {
+              "Title": "Access revoked",
+              "Body": "Access to {entryLabel} in {vaultName} was revoked."
+            },
+            "pl": {
+              "Title": "Dostęp cofnięty",
+              "Body": "Dostęp do {entryLabel} w {vaultName} został cofnięty."
+            }
+          },
+          "credential_stale": {
+            "en": {
+              "Title": "Credential needs attention",
+              "Body": "Agent {agentName} reported {entryLabel} as not working."
+            },
+            "pl": {
+              "Title": "Poświadczenie wymaga uwagi",
+              "Body": "Agent {agentName} zgłosił, że {entryLabel} nie działa."
+            }
+          }
+        }
+      }
+    }
+  }
+}

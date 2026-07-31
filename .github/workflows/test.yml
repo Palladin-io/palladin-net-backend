@@ -1,0 +1,75 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
+        env:
+          POSTGRES_PASSWORD: mysecretpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ASPNETCORE_ENVIRONMENT: Testing
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Initialize test databases
+        env:
+          PGHOST: localhost
+          PGPASSWORD: mysecretpassword
+          POSTGRES_USER: postgres
+        run: ./scripts/init-databases.sh
+
+      - name: Restore dependencies
+        run: dotnet restore Palladin.sln
+
+      - name: Build
+        run: dotnet build Palladin.sln --no-restore
+
+      - name: Test
+        run: dotnet test Palladin.sln --no-build --verbosity normal
+
+  release-backend-artifact:
+    name: Release backend artifact
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    uses: ./.github/workflows/release-artifact.yml
+    permissions:
+      contents: read # Required to check out the tested source revision.
+      id-token: write # Required for Sigstore-backed artifact attestations.
+      attestations: write # Required to publish attestations for the repository.

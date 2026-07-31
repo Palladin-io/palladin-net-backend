@@ -1,0 +1,26 @@
+<Project>
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <Authors>Patryk Roguszewski, trading as Patryk Roguszewski IT Solutions</Authors>
+        <Copyright>Copyright 2026 Patryk Roguszewski, trading as Patryk Roguszewski IT Solutions</Copyright>
+        <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/Palladin-io/palladin-net-backend-oss</PackageProjectUrl>
+        <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryUrl>https://github.com/Palladin-io/palladin-net-backend-oss.git</RepositoryUrl>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Palladin.Tests.Integrations"/>
+        <InternalsVisibleTo Include="Palladin.Tests.Unit"/>
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="JetBrains.Annotations" Version="2025.2.4" />
+    </ItemGroup>
+
+</Project>

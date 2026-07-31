@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Palladin — Crypto UML przed i po refaktorze</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b12;
+      --surface: #101622;
+      --surface-2: #151d2b;
+      --line: #344159;
+      --text: #edf3ff;
+      --muted: #9eabc1;
+      --entity: #142944;
+      --entity-line: #528bd0;
+      --vo: #103225;
+      --vo-line: #3bc27d;
+      --interface: #2b2145;
+      --interface-line: #a588eb;
+      --infra: #352a14;
+      --infra-line: #dba83e;
+      --problem: #351b23;
+      --problem-line: #e46070;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 8% -5%, #172a49 0, transparent 33rem),
+        radial-gradient(circle at 92% 3%, #2c1b45 0, transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(1740px, calc(100% - 36px)); margin: auto; padding: 50px 0 80px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 12px; font-size: clamp(34px, 5vw, 56px); line-height: 1.05; letter-spacing: -.04em; }
+    h2 { margin-bottom: 7px; font-size: 25px; letter-spacing: -.025em; }
+    p { color: var(--muted); }
+    code { font-family: "SFMono-Regular", Consolas, monospace; }
+    .hero { max-width: 980px; margin-bottom: 26px; }
+    .eyebrow { display: inline-block; margin-bottom: 13px; color: #b9c8e3; font-size: 11px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 28px; color: var(--muted); font-size: 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 7px; }
+    .legend i { width: 11px; height: 11px; border: 2px solid; border-radius: 3px; }
+    .diagrams { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+    .diagram { padding: 22px; border: 1px solid #29354a; border-radius: 19px; background: #0e141ee8; box-shadow: 0 22px 70px #0005; }
+    .diagram.before { border-top: 3px solid var(--problem-line); }
+    .diagram.after { border-top: 3px solid var(--vo-line); }
+    .diagram-head { min-height: 82px; margin-bottom: 18px; }
+    .diagram-head p { margin-bottom: 0; }
+    .uml-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; align-items: start; }
+    .uml {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--surface-2);
+      box-shadow: 0 8px 24px #0003;
+    }
+    .uml.entity { border-color: var(--entity-line); background: var(--entity); }
+    .uml.vo { border-color: var(--vo-line); background: var(--vo); }
+    .uml.interface { border-color: var(--interface-line); background: var(--interface); }
+    .uml.infra { border-color: var(--infra-line); background: var(--infra); }
+    .uml.problem { border-color: var(--problem-line); background: var(--problem); }
+    .uml .stereo { padding: 7px 10px 0; color: var(--muted); font-size: 10px; text-align: center; }
+    .uml .name { padding: 2px 9px 9px; font-weight: 800; text-align: center; overflow-wrap: anywhere; }
+    .uml ul { margin: 0; padding: 8px 10px 9px; border-top: 1px solid #ffffff24; list-style: none; color: #c8d3e6; font: 11px/1.6 "SFMono-Regular", Consolas, monospace; }
+    .uml li { overflow-wrap: anywhere; }
+    .uml .methods { border-top-style: dashed; }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-7 { grid-column: span 7; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: 1 / -1; }
+    .offset-2 { grid-column-start: 2; }
+    .offset-3 { grid-column-start: 3; }
+    .offset-4 { grid-column-start: 4; }
+    .offset-5 { grid-column-start: 5; }
+    .relation {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      color: #7d8da8;
+      font: 11px/1.2 "SFMono-Regular", Consolas, monospace;
+      text-align: center;
+    }
+    .relation::before, .relation::after { content: ""; width: 26%; height: 1px; margin: 0 10px; background: #40506a; }
+    .relation strong { color: #b6c5de; }
+    .arrow { color: #9eb1cf; font-size: 18px; vertical-align: -1px; }
+    .note { grid-column: 1 / -1; padding: 12px 14px; border-left: 3px solid var(--problem-line); border-radius: 5px 9px 9px 5px; background: #24151c; color: #e5b8bf; }
+    .after .note { border-left-color: var(--vo-line); background: #0f281e; color: #bce8d1; }
+    .constraints { margin-top: 22px; padding: 22px; border: 1px solid #29354a; border-radius: 18px; background: #0e141ee8; }
+    .constraint-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+    .constraint { padding: 13px; border: 1px solid #334057; border-radius: 10px; background: #111925; }
+    .constraint b { display: block; margin-bottom: 4px; }
+    .constraint p { margin: 0; font-size: 12px; }
+    .connection-section, .definitions { margin-top: 22px; padding: 22px; border: 1px solid #29354a; border-radius: 18px; background: #0e141ee8; }
+    .connection-section > p, .definitions > p { max-width: 1050px; }
+    .lane { display: grid; grid-template-columns: 150px minmax(150px, 1fr) 54px minmax(150px, 1fr) 54px minmax(150px, 1fr) 54px minmax(150px, 1fr); align-items: center; gap: 7px; margin-top: 14px; padding: 13px; border: 1px solid #2d3a50; border-radius: 13px; background: #0a1019; }
+    .lane-title { color: #cdd9ed; font-weight: 800; }
+    .lane-title small { display: block; margin-top: 3px; color: var(--muted); font-weight: 400; }
+    .lane-node { min-height: 82px; display: grid; align-content: center; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); text-align: center; }
+    .lane-node b { display: block; overflow-wrap: anywhere; }
+    .lane-node small { display: block; margin-top: 4px; color: var(--muted); }
+    .lane-node.entity { border-color: var(--entity-line); background: var(--entity); }
+    .lane-node.vo { border-color: var(--vo-line); background: var(--vo); }
+    .lane-node.interface { border-color: var(--interface-line); background: var(--interface); }
+    .lane-node.infra { border-color: var(--infra-line); background: var(--infra); }
+    .edge { position: relative; height: 2px; background: #60718d; }
+    .edge::after { content: ""; position: absolute; right: -1px; top: -5px; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid #60718d; }
+    .edge span { position: absolute; left: 50%; bottom: 7px; width: 88px; transform: translateX(-50%); color: #91a2bd; font: 9px/1.2 "SFMono-Regular", Consolas, monospace; text-align: center; }
+    .definition-table { width: 100%; margin-top: 16px; border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #2d3a50; border-radius: 12px; }
+    .definition-table th, .definition-table td { padding: 11px 12px; border-right: 1px solid #2d3a50; border-bottom: 1px solid #2d3a50; text-align: left; vertical-align: top; }
+    .definition-table th:last-child, .definition-table td:last-child { border-right: 0; }
+    .definition-table tr:last-child td { border-bottom: 0; }
+    .definition-table thead th { background: #172033; color: #d6e2f6; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+    .definition-table tbody td { color: var(--muted); background: #0c121c; }
+    .definition-table tbody td:first-child { color: #e1eafa; font-family: "SFMono-Regular", Consolas, monospace; font-weight: 700; }
+    .yes { color: #91dfb6; }
+    .no { color: #ef9aa5; }
+    .plain-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px; }
+    .plain-card { padding: 16px; border: 1px solid #334159; border-radius: 12px; background: #0c131e; }
+    .plain-card h3 { margin-bottom: 9px; color: #e4edfc; }
+    .plain-card p { margin-bottom: 9px; }
+    .plain-card dl { display: grid; grid-template-columns: 112px 1fr; gap: 7px 10px; margin: 0; }
+    .plain-card dt { color: #aebdd5; font-weight: 800; }
+    .plain-card dd { margin: 0; color: var(--muted); }
+    .dependency-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 9px 0 0; }
+    .dependency-chain code { padding: 4px 7px; border: 1px solid #39475e; border-radius: 6px; background: #111a28; font-size: 11px; }
+    .dependency-chain b { color: #70819d; }
+    .status-decided { color: #8fe0b5; font-weight: 800; }
+    .status-open { color: #f2ca76; font-weight: 800; }
+    @media (max-width: 1200px) {
+      .diagrams { grid-template-columns: 1fr; }
+      .diagram-head { min-height: 0; }
+    }
+    @media (max-width: 700px) {
+      main { width: min(100% - 22px, 1740px); padding-top: 30px; }
+      .diagram { padding: 14px; border-radius: 14px; }
+      .uml-grid { grid-template-columns: 1fr; }
+      .uml, .span-3, .span-4, .span-5, .span-6, .span-7, .span-8, .span-12, .offset-2, .offset-3, .offset-4, .offset-5 { grid-column: 1; }
+      .constraint-grid { grid-template-columns: 1fr; }
+      .lane { grid-template-columns: 1fr; }
+      .edge { width: 2px; height: 34px; margin: auto; }
+      .edge::after { top: auto; right: -5px; bottom: -1px; border-top: 9px solid #60718d; border-right: 6px solid transparent; border-left: 6px solid transparent; border-bottom: 0; }
+      .edge span { left: 12px; bottom: 10px; transform: none; text-align: left; }
+      .definition-table { display: block; overflow-x: auto; }
+      .plain-grid { grid-template-columns: 1fr; }
+      .plain-card dl { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <span class="eyebrow">Palladin · UML class diagrams</span>
+    <h1>Crypto model — przed i po</h1>
+    <p>Dwa diagramy klas pokazują różnicę między obecnym modelem opartym na powielonych polach i globalnych stałych a docelowym modelem z domenowymi Value Objects oraz zamkniętymi implementacjami suite.</p>
+  </header>
+
+  <div class="legend">
+    <span><i style="border-color:var(--entity-line);background:var(--entity)"></i> Entity / Aggregate</span>
+    <span><i style="border-color:var(--vo-line);background:var(--vo)"></i> Domain Value Object</span>
+    <span><i style="border-color:var(--interface-line);background:var(--interface)"></i> Interface / registry</span>
+    <span><i style="border-color:var(--infra-line);background:var(--infra)"></i> Infrastructure implementation</span>
+    <span><i style="border-color:var(--problem-line);background:var(--problem)"></i> Algorithm coupling / duplicated shape</span>
+  </div>
+
+  <section class="diagrams">
+    <article class="diagram before">
+      <div class="diagram-head">
+        <h2>Przed refaktorem</h2>
+        <p>Encje i Value Objects przechowują własne kopie tych samych pól, a walidacja porównuje je z jedną globalną suite.</p>
+      </div>
+      <div class="uml-grid">
+        <div class="uml problem span-5 offset-5">
+          <div class="stereo">«static configuration»</div>
+          <div class="name">VaultProtocol</div>
+          <ul>
+            <li>+ CurrentVersion: ushort = 2</li>
+            <li>+ AlgorithmSuite: ushort = 1</li>
+            <li>+ NonceBytes: int = 24</li>
+            <li>+ FingerprintBytes: int = 32</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>każdy typ porównuje z globalnymi stałymi</strong> <span class="arrow">↓</span></span></div>
+
+        <div class="uml problem span-4">
+          <div class="stereo">«value object»</div>
+          <div class="name">EntryEnvelopeHeader</div>
+          <ul>
+            <li>+ ProtocolVersion: ushort</li>
+            <li>+ AlgorithmSuite: ushort</li>
+            <li>+ ResourceKind: ushort</li>
+            <li>+ ProjectionKind: ushort</li>
+            <li>+ ResourceRevision: ulong</li>
+            <li>+ KeyVersion: uint</li>
+            <li>+ Nonce: byte[]</li>
+          </ul>
+          <ul class="methods"><li>+ Create(...)</li></ul>
+        </div>
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">VaultEntry</div>
+          <ul>
+            <li>+ MemberIndexAlgorithmSuite</li>
+            <li>+ MemberIndexNonce</li>
+            <li>+ MemberIndexCiphertext</li>
+            <li>+ AgentDiscoveryAlgorithmSuite?</li>
+            <li>+ AgentDiscoveryNonce?</li>
+            <li>+ AgentDiscoveryCiphertext?</li>
+          </ul>
+        </div>
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">VaultEntryVersion</div>
+          <ul>
+            <li>+ AlgorithmSuite</li>
+            <li>+ Nonce</li>
+            <li>+ MemberSecretCiphertext</li>
+            <li>+ Revision</li>
+            <li>+ KeyVersion</li>
+          </ul>
+        </div>
+
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">VaultEntryKey</div>
+          <ul>
+            <li>+ ProtocolVersion</li>
+            <li>+ AlgorithmSuite</li>
+            <li>+ Nonce</li>
+            <li>+ WrappedEntryDekByVk</li>
+          </ul>
+        </div>
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">GrantEntryEnvelope</div>
+          <ul>
+            <li>+ AlgorithmSuite</li>
+            <li>+ Nonce</li>
+            <li>+ Ciphertext</li>
+            <li>+ AgentWrappedDek</li>
+          </ul>
+        </div>
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">VaultKeyMaterialEnvelope</div>
+          <ul>
+            <li>+ AlgorithmSuite</li>
+            <li>+ Nonce</li>
+            <li>+ Ciphertext</li>
+            <li>+ Kind</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>osobna ścieżka podpisów</strong> <span class="arrow">↓</span></span></div>
+
+        <div class="uml problem span-6">
+          <div class="stereo">«infrastructure service»</div>
+          <div class="name">AgentSignatureVerifier</div>
+          <ul>
+            <li>- publicKeyBytes = 32</li>
+            <li>- signatureBytes = 64</li>
+            <li>- bodyHash = SHA-256</li>
+          </ul>
+          <ul class="methods"><li>+ Verify(SignatureAlgorithm.Ed25519)</li></ul>
+        </div>
+        <div class="uml problem span-6">
+          <div class="stereo">«contracts / persistence»</div>
+          <div class="name">Algorithm-specific names</div>
+          <ul>
+            <li>AgentEd25519Fingerprint</li>
+            <li>AgentX25519Fingerprint</li>
+            <li>Ed25519PublicKey</li>
+            <li>X25519PrivateKey slot</li>
+          </ul>
+        </div>
+
+        <div class="note"><b>Konsekwencja:</b> zmiana algorytmu wymaga edycji wielu encji, DTO, walidatorów, klientów, storage slots i fixtures. Pole <code>AlgorithmSuite</code> istnieje, ale większość kodu akceptuje wyłącznie globalną wartość <code>1</code>.</div>
+      </div>
+    </article>
+
+    <article class="diagram after">
+      <div class="diagram-head">
+        <h2>Po refaktorze</h2>
+        <p>Transport pozostaje surowy, implementacje suite walidują swój format, a agregaty przyjmują konkretne domenowe Value Objects.</p>
+      </div>
+      <div class="uml-grid">
+        <div class="uml span-5 offset-2">
+          <div class="stereo">«API contract»</div>
+          <div class="name">EncryptedEnvelopeContract</div>
+          <ul>
+            <li>+ Descriptor: EnvelopeDescriptorContract</li>
+            <li>+ EncodedSuitePayload: byte[]</li>
+          </ul>
+        </div>
+        <div class="uml interface span-5">
+          <div class="stereo">«interface»</div>
+          <div class="name">ICryptoSuiteRegistry</div>
+          <ul class="methods">
+            <li>+ Resolve(SuiteId): IEnvelopeSuite</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>contract</strong> <span class="arrow">→</span> resolve profile <span class="arrow">→</span> decode + structural validation</span></div>
+
+        <div class="uml interface span-4">
+          <div class="stereo">«interface»</div>
+          <div class="name">IEnvelopeSuite</div>
+          <ul>
+            <li>+ Id: CryptoSuiteId</li>
+          </ul>
+          <ul class="methods">
+            <li>+ ValidateEncodedPayload(descriptor, payload)</li>
+          </ul>
+        </div>
+        <div class="uml infra span-4">
+          <div class="stereo">«implementation»</div>
+          <div class="name">XChaChaVaultEnvelopeSuite</div>
+          <ul>
+            <li>+ Id = palladin-vault-xchacha-v1</li>
+            <li>+ nonceBytes = 24</li>
+            <li>+ tagBytes = 16</li>
+            <li>+ subkeys = HKDF-SHA-256</li>
+          </ul>
+        </div>
+        <div class="uml interface span-4">
+          <div class="stereo">«client interface»</div>
+          <div class="name">IClientEnvelopeSuite</div>
+          <ul>
+            <li>+ extends IEnvelopeSuite</li>
+          </ul>
+          <ul class="methods">
+            <li>+ Seal(descriptor, plaintext, key)</li>
+            <li>+ Open(descriptor, payload, key)</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>stabilna etykieta + nieprzezroczysty format suite</strong> <span class="arrow">↓</span></span></div>
+
+        <div class="uml vo span-6">
+          <div class="stereo">«value object»</div>
+          <div class="name">EnvelopeDescriptor</div>
+          <ul>
+            <li>+ ProtocolVersion</li>
+            <li>+ CryptoSuiteId</li>
+            <li>+ Purpose + Scope</li>
+            <li>+ ResourceRevision + KeyVersion</li>
+            <li>+ MemberKeyGeneration?</li>
+          </ul>
+          <ul class="methods"><li>- constructor(...)</li></ul>
+        </div>
+        <div class="uml vo span-6">
+          <div class="stereo">«opaque value object»</div>
+          <div class="name">EncodedSuitePayload</div>
+          <ul>
+            <li>+ Bytes: ReadOnlyMemory&lt;byte&gt;</li>
+            <li>+ bounded by selected suite</li>
+            <li>- no common nonce/tag/wrapper fields</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>domain factory tworzy właściwy typ znaczeniowy</strong> <span class="arrow">↓</span></span></div>
+
+        <div class="uml vo span-3">
+          <div class="stereo">«value object»</div>
+          <div class="name">MemberSecretEnvelope</div>
+          <ul>
+            <li>+ EntryScope</li>
+            <li>+ EntryRevision</li>
+            <li>+ EntryKeyVersion</li>
+            <li>+ Descriptor: EnvelopeDescriptor</li>
+            <li>+ Payload: EncodedSuitePayload</li>
+          </ul>
+        </div>
+        <div class="uml vo span-3">
+          <div class="stereo">«value object»</div>
+          <div class="name">MemberIndexEnvelope</div>
+          <ul>
+            <li>+ EntryScope</li>
+            <li>+ IndexRevision</li>
+            <li>+ EntryKeyVersion</li>
+            <li>+ Descriptor: EnvelopeDescriptor</li>
+            <li>+ Payload: EncodedSuitePayload</li>
+          </ul>
+        </div>
+        <div class="uml vo span-3">
+          <div class="stereo">«value object»</div>
+          <div class="name">AgentDiscoveryEnvelope</div>
+          <ul>
+            <li>+ EntryScope</li>
+            <li>+ DiscoveryRevision</li>
+            <li>+ VdkVersion</li>
+            <li>+ Descriptor: EnvelopeDescriptor</li>
+            <li>+ Payload: EncodedSuitePayload</li>
+          </ul>
+        </div>
+        <div class="uml vo span-3">
+          <div class="stereo">«value object»</div>
+          <div class="name">GrantPayloadEnvelope</div>
+          <ul>
+            <li>+ GrantScope</li>
+            <li>+ GrantRevision</li>
+            <li>+ GrantKeyVersion</li>
+            <li>+ Descriptor: EnvelopeDescriptor</li>
+            <li>+ Payload: EncodedSuitePayload</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>kompozycja</strong> <span class="arrow">◆→</span> encje i agregaty</span></div>
+
+        <div class="uml entity span-4">
+          <div class="stereo">«aggregate»</div>
+          <div class="name">VaultEntry</div>
+          <ul>
+            <li>+ CurrentRevision</li>
+            <li>+ MemberIndexEnvelope</li>
+            <li>+ AgentDiscoveryEnvelope?</li>
+          </ul>
+          <ul class="methods"><li>+ ApplyMutation(...)</li></ul>
+        </div>
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">VaultEntryVersion</div>
+          <ul>
+            <li>+ Revision</li>
+            <li>+ MemberSecretEnvelope</li>
+          </ul>
+        </div>
+        <div class="uml entity span-4">
+          <div class="stereo">«entity»</div>
+          <div class="name">GrantEntry</div>
+          <ul>
+            <li>+ GrantScope</li>
+            <li>+ GrantPayloadEnvelope</li>
+          </ul>
+        </div>
+
+        <div class="relation"><span><strong>oddzielne profile dla niezależnych protokołów</strong> <span class="arrow">↓</span></span></div>
+
+        <div class="uml interface span-4">
+          <div class="stereo">«interface»</div>
+          <div class="name">ISignatureScheme</div>
+          <ul class="methods"><li>+ ValidatePublicKey(...)</li><li>+ Verify(context, message, signature)</li></ul>
+        </div>
+        <div class="uml interface span-4">
+          <div class="stereo">«interface»</div>
+          <div class="name">IRecipientKeyWrapper</div>
+          <ul class="methods"><li>+ ValidateKey(...)</li><li>+ Open / Seal(...)</li></ul>
+        </div>
+        <div class="uml interface span-4">
+          <div class="stereo">«interface»</div>
+          <div class="name">IKdfProfile</div>
+          <ul class="methods"><li>+ Id</li><li>+ Derive(input, salt)</li></ul>
+        </div>
+        <div class="uml infra span-4">
+          <div class="stereo">«implementation»</div>
+          <div class="name">Ed25519SignatureScheme</div>
+          <ul><li>key = 32 bytes</li><li>signature = 64 bytes</li><li>domain separation</li></ul>
+        </div>
+        <div class="uml infra span-4">
+          <div class="stereo">«implementation»</div>
+          <div class="name">X25519RecipientWrapper</div>
+          <ul><li>recipient key = 32 bytes</li><li>versioned wrapper contract</li></ul>
+        </div>
+        <div class="uml infra span-4">
+          <div class="stereo">«implementation»</div>
+          <div class="name">Argon2idPasswordV1</div>
+          <ul><li>memory = 32 MiB</li><li>t=2 / p=1</li><li>salt=16 / output=32</li></ul>
+        </div>
+
+        <div class="note"><b>Rezultat:</b> zielone typy są konkretnymi Value Objects, nie abstrakcjami. Samo istnienie obiektu oznacza spełnienie invariants, które dana warstwa może sprawdzić. Kryptograficzne uwierzytelnienie AEAD następuje dopiero na kliencie posiadającym klucz.</div>
+      </div>
+    </article>
+  </section>
+
+  <section class="connection-section">
+    <h2>Rzeczywiste połączenia i kierunek użycia</h2>
+    <p>Strzałka oznacza wywołanie albo utworzenie typu po prawej stronie. Registry nie przechowuje rekordów z bazy — jest skompilowaną mapą identyfikatorów do bezstanowych implementacji działającą w pamięci każdego komponentu.</p>
+
+    <div class="lane">
+      <div class="lane-title">Backend API<small>bez klucza do AEAD</small></div>
+      <div class="lane-node"><b>EncryptedEnvelopeContract</b><small>dane requestu / bazy</small></div>
+      <div class="edge"><span>SuiteId</span></div>
+      <div class="lane-node interface"><b>CryptoSuiteRegistry</b><small>resolve w pamięci</small></div>
+      <div class="edge"><span>wybiera</span></div>
+      <div class="lane-node infra"><b>XChaChaVaultEnvelopeSuite</b><small>format + limity</small></div>
+      <div class="edge"><span>tworzy</span></div>
+      <div class="lane-node vo"><b>MemberSecretEnvelope</b><small>domenowy Value Object</small></div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-title">User Client<small>web lub mobile</small></div>
+      <div class="lane-node vo"><b>MemberSecretEnvelope</b><small>descriptor + opaque suite payload</small></div>
+      <div class="edge"><span>SuiteId</span></div>
+      <div class="lane-node interface"><b>Local CryptoSuiteRegistry</b><small>ten sam profile ID</small></div>
+      <div class="edge"><span>open()</span></div>
+      <div class="lane-node infra"><b>XChaCha implementation</b><small>VK → EntryDEK → subkey</small></div>
+      <div class="edge"><span>zwraca</span></div>
+      <div class="lane-node entity"><b>MemberSecret plaintext</b><small>wyłącznie pamięć klienta</small></div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-title">Agent Runtime<small>native Rust boundary</small></div>
+      <div class="lane-node vo"><b>GrantPayloadEnvelope</b><small>filtered ciphertext</small></div>
+      <div class="edge"><span>SuiteId</span></div>
+      <div class="lane-node interface"><b>Local CryptoSuiteRegistry</b><small>fail closed</small></div>
+      <div class="edge"><span>open()</span></div>
+      <div class="lane-node infra"><b>X25519 + XChaCha</b><small>unwrap GrantDEK + AEAD</small></div>
+      <div class="edge"><span>zwraca</span></div>
+      <div class="lane-node entity"><b>Approved secret subset</b><small>get / exec, potem zeroize</small></div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-title">Agent Auth<small>osobny protokół</small></div>
+      <div class="lane-node"><b>Signed HTTP Request</b><small>timestamp + nonce + body hash</small></div>
+      <div class="edge"><span>SchemeId</span></div>
+      <div class="lane-node interface"><b>SignatureSchemeRegistry</b><small>zamknięta allowlista</small></div>
+      <div class="edge"><span>verify()</span></div>
+      <div class="lane-node infra"><b>Ed25519SignatureScheme</b><small>key 32 / signature 64</small></div>
+      <div class="edge"><span>wynik</span></div>
+      <div class="lane-node entity"><b>Authenticated Agent</b><small>principal + access epoch</small></div>
+    </div>
+  </section>
+
+  <section class="definitions">
+    <h2>Dokładne definicje elementów</h2>
+    <p>Poniższa tabela rozróżnia dane trwałe, obiekty działające w pamięci oraz komponent, który faktycznie z nich korzysta.</p>
+    <table class="definition-table">
+      <thead>
+        <tr><th>Element</th><th>Czym jest</th><th>Czy trafia do bazy?</th><th>Jak korzysta Backend</th><th>Jak korzysta User / Agent</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>CryptoSuiteId</td><td>Stabilny identyfikator pełnego formatu envelope, np. <code>palladin-vault-xchacha-v1</code>.</td><td><span class="yes">Tak</span>, przy każdym envelope.</td><td>Wybiera validator struktury.</td><td>Wybiera właściwą implementację seal/open.</td></tr>
+        <tr><td>CryptoSuiteRegistry</td><td>Bezstanowa, skompilowana allowlista <code>SuiteId → implementation</code>.</td><td><span class="no">Nie</span>. Istnieje tylko w pamięci procesu.</td><td>Odrzuca nieznaną suite i rozwiązuje validator.</td><td>Rozwiązuje lokalny kod szyfrowania/deszyfrowania.</td></tr>
+        <tr><td>IEnvelopeSuite</td><td>Wspólna umowa pozwalająca wskazanej suite zweryfikować jej własny, opaque format payloadu.</td><td><span class="no">Nie</span>.</td><td>Wywołuje <code>ValidateEncodedPayload</code>: format, canonical encoding i limity, bez odszyfrowania.</td><td>Klientowa odmiana dodaje seal/open i uwierzytelnienie AEAD.</td></tr>
+        <tr><td>XChaChaVaultEnvelopeSuite</td><td>Konkretna implementacja suite startowej: XChaCha20-Poly1305, HKDF-SHA-256, nonce 24 i tag 16.</td><td><span class="no">Nie</span>.</td><td>Sprawdza kształt bez odszyfrowania.</td><td>Szyfruje lub odszyfrowuje, posiadając odpowiedni klucz.</td></tr>
+        <tr><td>EncryptedEnvelopeContract</td><td>Surowy kontrakt transportowy/API: stabilny descriptor oraz opaque payload konkretnej suite.</td><td><span class="yes">Po mapowaniu</span> jako kolumny descriptora i bounded blob payloadu.</td><td>Odbiera go z requestu lub rekonstruuje z persistence.</td><td>Wysyła go po seal albo odbiera przed open.</td></tr>
+        <tr><td>EnvelopeDescriptor</td><td>Stabilna, niezależna od algorytmu etykieta: wersja protokołu, SuiteId, purpose, scope i wersje zasobu/klucza.</td><td><span class="yes">Tak</span>, jako jawne kolumny.</td><td>Autoryzuje kontekst, wybiera suite i pilnuje spójności domenowej.</td><td>Klient kanonicznie koduje go jako AAD do seal/open.</td></tr>
+        <tr><td>EncodedSuitePayload</td><td>Ograniczony rozmiarem, nieprzezroczysty blob. Jego wewnętrzne pola definiuje wyłącznie wskazana suite.</td><td><span class="yes">Tak</span>, jako pojedynczy blob.</td><td>Nie rozbija go na wspólne nonce/tag/wrapper; deleguje walidację do suite.</td><td>Implementacja suite parsuje go i uwierzytelnia przy <code>open()</code>.</td></tr>
+        <tr><td>MemberSecretEnvelope</td><td>Konkretny domenowy Value Object wiążący ciphertext ze scope, EntryRevision i EntryKeyVersion.</td><td><span class="yes">Tak</span>, jako część <code>VaultEntryVersion</code>.</td><td>Egzekwuje scope, CAS, wersje i transakcję.</td><td>User client odszyfrowuje go Entry-derived key.</td></tr>
+        <tr><td>GrantPayloadEnvelope</td><td>Domenowy Value Object zawierający filtrowany payload przeznaczony dla jednego grantu i Agenta.</td><td><span class="yes">Tak</span>, jako bieżący envelope grantu.</td><td>Sprawdza grant lifecycle, method, use count i EntryRevision.</td><td>Agent unwrapuje GrantDEK i odszyfrowuje zatwierdzone pola.</td></tr>
+        <tr><td>SigningPublicKey</td><td>Domenowy Value Object: <code>SignatureSchemeId + encoded key + fingerprint</code>.</td><td><span class="yes">Tak</span>, publiczna część klucza.</td><td>Weryfikuje podpis requestu lub manifestu.</td><td>Agent przechowuje prywatny odpowiednik wyłącznie w secure boundary.</td></tr>
+        <tr><td>KdfProfileId</td><td>Identyfikator osobnego profilu Identity KDF, niezależnego od Vault suite.</td><td><span class="yes">Tak</span>, przy koncie wraz z salt.</td><td>Sprawdza dozwolony profil, ale nie wyprowadza MK.</td><td>Web/mobile rozwiązuje profil i lokalnie wykonuje Argon2id.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="definitions">
+    <h2>Na chłopski rozum: kto za co odpowiada</h2>
+    <p>Każdy element ma jedną odpowiedzialność. Identyfikator mówi „który przepis”, registry znajduje przepis, implementacja wykonuje przepis, Value Object nadaje wynikowi znaczenie domenowe, a encja pilnuje procesu biznesowego.</p>
+    <div class="plain-grid">
+      <article class="plain-card">
+        <h3><code>KdfProfileId</code> — numer przepisu na klucz z hasła</h3>
+        <p>To etykieta zapisana przy koncie, np. <code>identity-argon2id-password-v1</code>. Sama niczego nie liczy i nie zawiera hasła.</p>
+        <dl>
+          <dt>Kto używa?</dt><dd>Web i mobile podczas rejestracji, unlocku, recovery i zmiany hasła.</dd>
+          <dt>Z czego korzysta?</dt><dd>Z lokalnego <code>KdfProfileRegistry</code>, który zwraca implementację Argon2id dla tego ID.</dd>
+          <dt>Co daje?</dt><dd>32-bajtowy materiał kluczowy używany dalej do otwarcia zaszyfrowanego private key.</dd>
+          <dt>Czego nie robi?</dt><dd>Backend nie wyprowadza MK i nie może podmienić parametrów zapisanych w kodzie profilu.</dd>
+        </dl>
+        <div class="dependency-chain"><code>Account.KdfProfileId</code><b>→</b><code>KdfRegistry</code><b>→</b><code>Argon2idPasswordV1</code><b>→</b><code>AccountRoot</code></div>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>CryptoSuiteId</code> — numer przepisu na envelope</h3>
+        <p>To etykieta zapisana przy ciphertextcie, np. <code>palladin-vault-xchacha-v1</code>. Informuje, jak czytać payload i jakich algorytmów użyć.</p>
+        <dl>
+          <dt>Kto używa?</dt><dd>Backend do walidacji struktury oraz web/mobile/Rust do seal/open.</dd>
+          <dt>Z czego korzysta?</dt><dd>Z <code>CryptoSuiteRegistry</code>.</dd>
+          <dt>Co daje?</dt><dd>Jednoznaczną implementację suite; bez negocjowania parametrów z requestu.</dd>
+          <dt>Czego nie robi?</dt><dd>Nie jest kluczem, nie szyfruje i nie przechowuje parametrów w bazie.</dd>
+        </dl>
+        <div class="dependency-chain"><code>Envelope.SuiteId</code><b>→</b><code>SuiteRegistry</code><b>→</b><code>XChaChaSuite</code></div>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>CryptoSuiteRegistry</code> — zamknięta książka przepisów</h3>
+        <p>To słownik działający w pamięci. Dla znanego ID oddaje dokładnie jedną implementację. Dla nieznanego ID zwraca błąd.</p>
+        <dl>
+          <dt>Kto używa?</dt><dd>Contract mapper na backendzie oraz shared crypto layer na każdym kliencie.</dd>
+          <dt>Z czego korzysta?</dt><dd>Z bezstanowych implementacji zarejestrowanych w kodzie.</dd>
+          <dt>Co przechowuje?</dt><dd>Referencje do implementacji, nie ciphertexty, nie klucze i nie rekordy użytkowników.</dd>
+          <dt>Lifetime</dt><dd>Singleton procesu; odtwarzany po każdym uruchomieniu aplikacji.</dd>
+        </dl>
+        <div class="dependency-chain"><code>Registry</code><b>→</b><code>Suite v1</code><b>·</b><code>Suite v2 w przyszłości</code></div>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>IEnvelopeSuite</code> — umowa dla jednego przepisu</h3>
+        <p>Mówi, jak konkretna suite sprawdza swój własny opaque payload. Nie narzuca wspólnych pól nonce, tag ani wrapper.</p>
+        <dl>
+          <dt>Backend</dt><dd>Przekazuje descriptor i blob do <code>ValidateEncodedPayload</code>; suite sprawdza format, canonical encoding i limity.</dd>
+          <dt>Klient</dt><dd><code>IClientEnvelopeSuite</code> dodatkowo szyfruje, odszyfrowuje, sprawdza tag AEAD i wyprowadza subkeys.</dd>
+          <dt>Dlaczego?</dt><dd>Nowy format może mieć inny nonce, tag lub wrapper bez zmiany encji domenowych.</dd>
+          <dt>Ważne</dt><dd>Backendowe „valid” oznacza poprawną strukturę, nie potwierdzony tag AEAD.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>EncryptedEnvelopeContract</code> — paczka przychodząca przez API</h3>
+        <p>To surowe dane z sieci: stabilny descriptor i opaque payload wybranej suite. Traktujemy je jako niezaufane.</p>
+        <dl>
+          <dt>Kto tworzy?</dt><dd>Web/mobile podczas zapisu albo Agent podczas encrypted reason.</dd>
+          <dt>Kto odbiera?</dt><dd>Backend endpoint i contract mapper.</dd>
+          <dt>Co dalej?</dt><dd>Registry wybiera suite, suite waliduje swój blob, fabryka tworzy domenowy Value Object.</dd>
+          <dt>Czego nie wolno?</dt><dd>Przekazać contractu bezpośrednio do agregatu lub persistence.</dd>
+        </dl>
+        <div class="dependency-chain"><code>HTTP Contract</code><b>→</b><code>Mapper</code><b>→</b><code>Suite</code><b>→</b><code>Domain VO</code></div>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>EnvelopeDescriptor</code> — etykieta na paczce</h3>
+        <p>To wspólna, stabilna część: mówi, do czego paczka należy i jaką suite trzeba wybrać. Nie opisuje wnętrza ciphertextu.</p>
+        <dl>
+          <dt>Co zawiera?</dt><dd>ProtocolVersion, CryptoSuiteId, purpose, scope, revision, key version i opcjonalną key generation.</dd>
+          <dt>Kto używa?</dt><dd>Backend do reguł domenowych i wyboru suite; klient jako canonical AAD przy seal/open.</dd>
+          <dt>Persistence</dt><dd>Jawne kolumny, aby filtrowanie i kontrola wersji nie wymagały parsowania blobu.</dd>
+          <dt>Ważne</dt><dd>Zmiana algorytmu nie zmienia descriptora; zmienia SuiteId i format payloadu.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>EncodedSuitePayload</code> — zaplombowana zawartość</h3>
+        <p>To bounded blob, którego wspólna domena celowo nie rozumie. Jego layout należy wyłącznie do suite wskazanej przez <code>CryptoSuiteId</code>.</p>
+        <dl>
+          <dt>Suite startowa</dt><dd>Po zdekodowaniu zna m.in. 24-bajtowy nonce oraz ciphertext z 16-bajtowym tagiem XChaCha20-Poly1305.</dd>
+          <dt>Przyszła suite</dt><dd>Może mieć zupełnie inne pola i długości bez dodawania ich do wspólnych encji.</dd>
+          <dt>Backend</dt><dd>Przechowuje jeden blob i zleca suite wyłącznie strukturalną walidację.</dd>
+          <dt>Klient</dt><dd>Wybrana implementacja parsuje blob, wiąże descriptor jako AAD i dopiero z kluczem wykonuje <code>open()</code>.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>MemberSecretEnvelope</code> — zaszyfrowana wersja Entry dla człowieka</h3>
+        <p>Konkretny Value Object. Łączy opaque ciphertext z dokładnym Vaultem, Entry, rewizją i wersją EntryDEK.</p>
+        <dl>
+          <dt>Kto tworzy?</dt><dd>Domenowa fabryka po strukturalnej walidacji suite.</dd>
+          <dt>Kto przechowuje?</dt><dd><code>VaultEntryVersion</code>.</dd>
+          <dt>Kto otwiera?</dt><dd>Odblokowany web/mobile posiadający VK i możliwość otwarcia EntryDEK.</dd>
+          <dt>Co chroni?</dt><dd>Pełną kanoniczną zawartość Entry i Agent Visibility Policy.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>GrantPayloadEnvelope</code> — paczka przygotowana dla jednego Agenta</h3>
+        <p>Zawiera tylko pola i methods zaakceptowane przez Usera. Nie zawiera VK ani EntryDEK.</p>
+        <dl>
+          <dt>Kto tworzy?</dt><dd>Odblokowany web/mobile podczas approve lub refreshu.</dd>
+          <dt>Kto przechowuje?</dt><dd>Backend jako bieżący payload konkretnego Grant + Entry + Agent.</dd>
+          <dt>Kto otwiera?</dt><dd>Native Agent Runtime po autoryzowanym delivery.</dd>
+          <dt>Jakim kluczem?</dt><dd>Świeżym GrantDEK owiniętym do Recipient X25519 key Agenta.</dd>
+        </dl>
+        <div class="dependency-chain"><code>MemberSecret</code><b>→ filtr</b><code>GrantPayload</code><b>→</b><code>GrantDEK</code><b>→</b><code>Agent</code></div>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>SignatureSchemeId</code> — numer przepisu na podpis</h3>
+        <p>Oddzielny identyfikator dla podpisów requestów i manifestów. Startowo wskazuje Ed25519.</p>
+        <dl>
+          <dt>Kto używa?</dt><dd>Agent runtime do podpisu, backend do verify, User client do podpisów Vault manifest.</dd>
+          <dt>Z czego korzysta?</dt><dd>Z zamkniętego <code>SignatureSchemeRegistry</code>.</dd>
+          <dt>Dlaczego osobno?</dt><dd>Zmiana podpisu nie powinna wymuszać zmiany szyfrowania każdego Entry.</dd>
+          <dt>Co jest podpisane?</dt><dd>Canonical request lub domain-separated manifest/transcript.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3><code>RecipientKeyWrapper</code> — koperta na klucz dla odbiorcy</h3>
+        <p>Odpowiada za owinięcie małego DEK do publicznego klucza odbiorcy. Startowo używa X25519 contract.</p>
+        <dl>
+          <dt>Kto seal?</dt><dd>User client owija VK/GrantDEK/VDK do wskazanego recipient public key.</dd>
+          <dt>Kto open?</dt><dd>User lub Agent posiadający odpowiedni private key.</dd>
+          <dt>Backend</dt><dd>Przechowuje wrapper i fingerprint, ale nie może go otworzyć.</dd>
+          <dt>Ważne</dt><dd>Recipient fingerprint i wrapper scheme są związane przez AAD/manifest.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3>Domenowy Value Object — rzecz z konkretnym znaczeniem</h3>
+        <p>To nie interfejs ani encja. Przykład: <code>MemberSecretEnvelope</code> zawsze oznacza MemberSecret, nigdy Grant lub Discovery.</p>
+        <dl>
+          <dt>Kto używa?</dt><dd>Agregaty i encje domenowe.</dd>
+          <dt>Po co?</dt><dd>Żeby nie pomylić dwóch ciphertextów o podobnym technicznym kształcie.</dd>
+          <dt>Stan?</dt><dd>Niemutowalny; prywatny konstruktor i kontrolowana fabryka.</dd>
+          <dt>Przykłady</dt><dd>MemberSecretEnvelope, MemberIndexEnvelope, GrantPayloadEnvelope.</dd>
+        </dl>
+      </article>
+
+      <article class="plain-card">
+        <h3>Encja / agregat — pilnuje procesu biznesowego</h3>
+        <p><code>VaultEntry</code>, <code>VaultEntryVersion</code> i <code>GrantEntry</code> nie wybierają algorytmów.</p>
+        <dl>
+          <dt>Z czego korzysta?</dt><dd>Z gotowych domenowych Value Objects.</dd>
+          <dt>Co sprawdza?</dt><dd>Scope, revision, CAS, lifecycle, key generation i kompletność transakcji.</dd>
+          <dt>Czego nie robi?</dt><dd>Nie importuje libsodium/NSec i nie odszyfrowuje danych.</dd>
+          <dt>Persistence</dt><dd>EF zapisuje jego stan po zmianie wykonanej metodą domenową.</dd>
+        </dl>
+      </article>
+    </div>
+  </section>
+
+  <section class="definitions">
+    <h2>Startowy zestaw algorytmów i właściwości</h2>
+    <p>To karta canonical cutoveru. „Zdecydowane” pochodzi z zaakceptowanego target ADR lub bieżących kontraktów. „Do domknięcia” wymaga jeszcze jednego precyzyjnego wire contractu i wspólnych vectors przed implementacją.</p>
+    <table class="definition-table">
+      <thead><tr><th>Profil / element</th><th>Startowa wartość</th><th>Właściwości</th><th>Użycie</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>VaultCryptoSuiteId</td><td><code>palladin-vault-xchacha-v1</code></td><td>Zamknięty composite profile, brak negocjacji i fallbacku.</td><td>Wszystkie nowe Vault/Entry/Grant/Discovery envelope.</td><td class="status-decided">Zdecydowane</td></tr>
+        <tr><td>Payload AEAD</td><td>XChaCha20-Poly1305 IETF</td><td>key 32 B, nonce 24 B, tag 16 B, świeży losowy nonce.</td><td>Member metadata, MemberIndex, MemberSecret, Discovery, reason i GrantPayload.</td><td class="status-decided">Zdecydowane</td></tr>
+        <tr><td>Subkey derivation</td><td>HKDF-SHA-256</td><td>Oddzielne wersjonowane context strings per purpose.</td><td>VK/EntryDEK/VDK → klucze konkretnych projekcji.</td><td class="status-decided">Algorytm zdecydowany</td></tr>
+        <tr><td>HKDF contexts</td><td><code>member-secret</code>, <code>member-index</code>, <code>agent-discovery</code>…</td><td>Muszą zawierać wersję i canonical scope zgodny z vectors.</td><td>Key-purpose separation.</td><td class="status-open">Do zamrożenia w spec</td></tr>
+        <tr><td>Recipient wrapper</td><td><code>x25519-v1</code></td><td>32 B raw RFC 7748 public/private keys; fingerprint 32 B.</td><td>WrappedVK, AgentWrappedVDK, wrapped GrantDEK i ReasonDEK.</td><td class="status-decided">X25519 zdecydowany</td></tr>
+        <tr><td>X25519 wire wrapper</td><td>Wersjonowany Palladin recipient envelope</td><td>Dokładny KEM/KDF/AEAD layout oraz długość encapsulated key.</td><td>Interoperacyjność web/mobile/Rust.</td><td class="status-open">Do zamrożenia w vectors</td></tr>
+        <tr><td>SignatureSchemeId</td><td><code>ed25519-v1</code></td><td>public key 32 B, seed 32 B, signature 64 B.</td><td>Agent HTTP proof, Vault manifests, pairing transcripts, encrypted reason.</td><td class="status-decided">Zdecydowane</td></tr>
+        <tr><td>Signed JSON</td><td>RFC 8785 JCS</td><td>I-JSON, bounded integers, duplicate fields rejected, domain separation.</td><td>Manifesty i transcript podpisywane Ed25519.</td><td class="status-decided">Zdecydowane</td></tr>
+        <tr><td>Fingerprint</td><td>domain-separated SHA-256</td><td>output 32 B; preimage wiąże protocol version, key kind i raw public key.</td><td>Key substitution detection i recipient binding.</td><td class="status-decided">Zdecydowane</td></tr>
+        <tr><td>AAD encoding</td><td>Canonical Palladin Binary</td><td>SuiteId, purpose, scope, revision, key version i generation.</td><td>Chroni przed substitution, replay i algorithm confusion.</td><td class="status-open">Pola znane; bajty do vectors</td></tr>
+        <tr><td>Identity KdfProfileId</td><td><code>identity-argon2id-password-v1</code></td><td>Argon2id, memory 32 MiB, t=2, p=1, salt 16 B, output 32 B.</td><td>Rejestracja, unlock, recovery i zmiana hasła.</td><td class="status-open">Backend gotowy; klienci do synchronizacji</td></tr>
+        <tr><td>Encoding</td><td>base64url bez paddingu na JSON boundary</td><td>Po dekodowaniu twarde limity bajtowe; binary containers tam, gdzie wskazuje ADR.</td><td>Transport publicznych kluczy, nonce, signatures i ciphertextów.</td><td class="status-open">Do ujednolicenia legacy base64</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="constraints">
+    <h2>Najważniejsze zależności UML</h2>
+    <div class="constraint-grid">
+      <div class="constraint"><b>Realization</b><p><code>XChaChaVaultEnvelopeSuite --|&gt; IEnvelopeSuite</code></p></div>
+      <div class="constraint"><b>Composition</b><p><code>VaultEntryVersion *-- MemberSecretEnvelope</code></p></div>
+      <div class="constraint"><b>Value composition</b><p><code>MemberSecretEnvelope *-- EnvelopeDescriptor</code><br><code>MemberSecretEnvelope *-- EncodedSuitePayload</code></p></div>
+      <div class="constraint"><b>Registry dependency</b><p><code>ContractMapper ..&gt; ICryptoSuiteRegistry</code></p></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

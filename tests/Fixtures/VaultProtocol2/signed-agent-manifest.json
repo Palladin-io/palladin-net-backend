@@ -1,0 +1,22 @@
+{
+  "organizationId": "11111111-1111-4111-8111-111111111111",
+  "vaultId": "22222222-2222-4222-8222-222222222222",
+  "agentId": "55555555-5555-4555-8555-555555555555",
+  "agentEncryptionPublicKey": "00A1C45C5BB331818C82C133A1CD4140698634BE09D8DD0A55B7238155327161",
+  "agentSigningPublicKey": "0F57FDC1EB05F7DF4A144FE572D805C83E811287B7C6AF8143DF8202DE9B019E",
+  "recipientKeyFingerprint": "5_TqWHxCJp_8YuW5qFpHT7FWTR4IjjfUNToVqeXSiAs",
+  "agentWrappedVdk": "o51M87XftRMWVHXedhpoP4NHbGnj_eMRt9dbNmbOgA9qhslcCQIXKQaVFLu_i24yMuVL6v4xxhuYATaW2yL2jI83SX3CILutT5b2rxmqTlhiTRrznBpnMtHceL6IDfjMGngpR1eLaKV-8y6sUW32iS6gPjFayAQQzSNBBpocEa18olvhTyassiyF5htR-e3IImfpURpvHq2yBgQTMrCZvu3B6NKSw-S0dn28xl5keoggYiV6SLvNIjVPFil5bTFTGOA_uoPSXEST-gNXLkuNk-XN-VRvz_L_iwgkN1g9P_WMxD8K2v_VqGckMtSeJ9W7kmmtlt4sfA8UmAC8FwPWw3BA7m1yOenyNJDAmZDsYRR8pnt-NZEMWBIP8GT_53c4-r0",
+  "manifestRevision": "14",
+  "signature": "0u40MbgzfT969F146HIUiL8isHdQBzZD31lyksR2RcA2GOahbq6S7yFL3I8rkX97fULo-S16MsOyl6mD5AeXDA",
+  "agentEd25519Fingerprint": "D6cpTuaLNE0XaYY0vhZ7GBNMr7VE32LS3X0-qBO_824",
+  "vaultSigningPublicKey": "7TOHWQSUxij4GcAybEQvqMQH8iYtaF4eakWWrvHjMw8",
+  "vaultSigningKeyFingerprint": "3sGfTYj8-M2IfDCdCEXHspvFkOHQvh5x6l_3r9Hu7uM",
+  "manifestSigningKeyVersion": 9,
+  "vaultAgentMessagePublicKey": "Mv3gb82XhfM580qeQ0CgjGHwnFs-pkMCX_RrW9zANzw",
+  "vaultAgentMessageKeyFingerprint": "ojHRS-__tD-sMNLFWJ_iiO8fO5gY8Oh16JyAYSG5dsE",
+  "agentMessageKeyVersion": 4,
+  "vdkVersion": 6,
+  "agentWrappedVdkDigest": "5w06ntJ4-KKmhYbMF6PsHwb72I3JgRkuNUQ6ZKjk4Zc",
+  "issuedAt": "2026-07-17T06:00:00.123456Z",
+  "minimumAgentRuntimeProtocol": 2
+}

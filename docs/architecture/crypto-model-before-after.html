@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Palladin — model kryptograficzny: obecnie i po refaktorze</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #080b12;
+      --panel: #101521;
+      --panel-2: #151c2b;
+      --line: #2a3449;
+      --text: #edf2ff;
+      --muted: #9ba8c2;
+      --red: #ff6868;
+      --red-soft: #321c25;
+      --green: #39d98a;
+      --green-soft: #123126;
+      --blue: #6ca8ff;
+      --blue-soft: #162a47;
+      --amber: #ffc857;
+      --amber-soft: #352b15;
+      --violet: #b99cff;
+      --violet-soft: #2a2142;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 12% 0%, #17233d 0, transparent 30rem),
+        radial-gradient(circle at 88% 8%, #231837 0, transparent 28rem),
+        var(--page);
+      color: var(--text);
+      font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1500px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 56px 0 80px;
+    }
+
+    header { max-width: 880px; margin-bottom: 34px; }
+    h1 { margin: 0 0 12px; font-size: clamp(30px, 4vw, 52px); line-height: 1.08; letter-spacing: -.035em; }
+    h2 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+    h3 { margin: 0 0 10px; font-size: 16px; }
+    p { margin: 0; color: var(--muted); }
+    code { color: #d8e5ff; font-family: "SFMono-Regular", Consolas, monospace; }
+
+    .eyebrow {
+      display: inline-flex;
+      margin-bottom: 14px;
+      padding: 5px 10px;
+      border: 1px solid #34415b;
+      border-radius: 999px;
+      color: #cbd8f3;
+      background: #111827a8;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .side {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(150deg, #131a28e8, #0e131ee8);
+      box-shadow: 0 22px 70px #0005;
+    }
+
+    .side.current { border-top: 3px solid var(--red); }
+    .side.target { border-top: 3px solid var(--green); }
+    .side-title { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 22px; }
+
+    .badge {
+      flex: none;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .badge.red { color: #ffc4c4; background: var(--red-soft); }
+    .badge.green { color: #bff5d8; background: var(--green-soft); }
+
+    .stack { display: grid; gap: 12px; }
+
+    .box {
+      position: relative;
+      padding: 15px 16px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--panel-2);
+    }
+    .box.red { border-color: #70404a; background: var(--red-soft); }
+    .box.green { border-color: #286447; background: var(--green-soft); }
+    .box.blue { border-color: #315a8f; background: var(--blue-soft); }
+    .box.violet { border-color: #574580; background: var(--violet-soft); }
+    .box.amber { border-color: #705b28; background: var(--amber-soft); }
+    .box small { display: block; margin-top: 4px; color: var(--muted); }
+
+    .arrow {
+      position: relative;
+      height: 26px;
+      color: #6f7d99;
+      text-align: center;
+      font-size: 22px;
+      line-height: 26px;
+    }
+
+    .models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .model { padding: 12px; border: 1px solid #313b50; border-radius: 10px; background: #0e1420; }
+    .model strong { display: block; margin-bottom: 7px; font-size: 13px; }
+    .fields { margin: 0; padding: 0; list-style: none; color: var(--muted); font: 12px/1.7 "SFMono-Regular", Consolas, monospace; }
+    .duplicate { color: #ff9b9b; }
+    .stable { color: #8be5b7; }
+
+    .callout {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-left: 3px solid var(--amber);
+      border-radius: 5px 12px 12px 5px;
+      color: #ead9ad;
+      background: #2a2214;
+    }
+
+    .migration {
+      margin-top: 24px;
+      padding: 25px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #101621d9;
+    }
+
+    .migration-head { margin-bottom: 22px; }
+    .timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+    .step { position: relative; padding: 40px 15px 15px; border-top: 2px solid #40506d; }
+    .step::before {
+      content: attr(data-step);
+      position: absolute;
+      top: -16px;
+      left: 14px;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border: 2px solid #607395;
+      border-radius: 50%;
+      background: #131b2a;
+      color: white;
+      font-weight: 800;
+    }
+    .step strong { display: block; margin-bottom: 6px; }
+    .step:last-child { border-top-color: var(--green); }
+    .step:last-child::before { border-color: var(--green); background: var(--green-soft); }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 9px 18px; margin-top: 18px; color: var(--muted); font-size: 12px; }
+    .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 7px; border-radius: 2px; background: currentColor; }
+
+    @media (max-width: 980px) {
+      .comparison { grid-template-columns: 1fr; }
+      .timeline { grid-template-columns: 1fr; gap: 16px; }
+      .step { padding: 15px 15px 15px 52px; border-top: 0; border-left: 2px solid #40506d; }
+      .step::before { top: 10px; left: -16px; }
+      .step:last-child { border-left-color: var(--green); }
+    }
+
+    @media (max-width: 560px) {
+      main { width: min(100% - 24px, 1500px); padding-top: 30px; }
+      .side, .migration { padding: 17px; border-radius: 15px; }
+      .models { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="eyebrow">Palladin · Vault crypto architecture</span>
+    <h1>Model kryptograficzny<br>obecnie i po refaktorze</h1>
+    <p>Backend pozostaje zero-knowledge: nie szyfruje danych. Modeluje wyłącznie bezpieczny, wersjonowany format envelope i pilnuje jego reguł.</p>
+  </header>
+
+  <section class="comparison" aria-label="Porównanie architektury">
+    <article class="side current">
+      <div class="side-title">
+        <h2>Obecnie</h2>
+        <span class="badge red">silne sprzężenie</span>
+      </div>
+
+      <div class="stack">
+        <div class="box red">
+          <h3><code>VaultProtocol</code></h3>
+          <code>CurrentVersion = 2</code><br>
+          <code>AlgorithmSuite = 1</code><br>
+          <code>NonceBytes = 24</code>
+          <small>Jedna globalna, aktualna konfiguracja.</small>
+        </div>
+        <div class="arrow">↓</div>
+        <div class="box amber">
+          <h3>Walidacja domenowa</h3>
+          <code>header.AlgorithmSuite != VaultProtocol.AlgorithmSuite → reject</code>
+          <small>Pole jest wersjonowane, ale domena akceptuje tylko suite 1.</small>
+        </div>
+        <div class="arrow">↓</div>
+        <div class="models">
+          <div class="model">
+            <strong>VaultEntry</strong>
+            <ul class="fields">
+              <li class="duplicate">AlgorithmSuite</li>
+              <li class="duplicate">Nonce</li>
+              <li class="duplicate">Ciphertext</li>
+              <li>Revision</li>
+            </ul>
+          </div>
+          <div class="model">
+            <strong>VaultEntryVersion</strong>
+            <ul class="fields">
+              <li class="duplicate">AlgorithmSuite</li>
+              <li class="duplicate">Nonce</li>
+              <li class="duplicate">Ciphertext</li>
+              <li>KeyVersion</li>
+            </ul>
+          </div>
+          <div class="model">
+            <strong>GrantEntryEnvelope</strong>
+            <ul class="fields">
+              <li class="duplicate">AlgorithmSuite</li>
+              <li class="duplicate">Nonce</li>
+              <li class="duplicate">Ciphertext</li>
+              <li>GrantId</li>
+            </ul>
+          </div>
+          <div class="model">
+            <strong>KeyMaterialEnvelope</strong>
+            <ul class="fields">
+              <li class="duplicate">AlgorithmSuite</li>
+              <li class="duplicate">Nonce</li>
+              <li class="duplicate">Ciphertext</li>
+              <li>Kind</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout"><strong>Skutek:</strong> suite 2 wymaga przekrojowej zmiany wielu modeli, walidatorów, mapowań i klientów.</div>
+    </article>
+
+    <article class="side target">
+      <div class="side-title">
+        <h2>Po refaktorze</h2>
+        <span class="badge green">wersjonowany protokół</span>
+      </div>
+
+      <div class="stack">
+        <div class="box violet">
+          <h3><code>CryptoSuiteRegistry</code></h3>
+          <code>suite-1 → XSalsa20-Poly1305 / sealed box / nonce 24</code><br>
+          <code>suite-2 → docelowy zestaw AEAD / wrapping / signing</code>
+          <small>Kontrolowana allowlista, bez algorytmów dostarczanych przez klienta.</small>
+        </div>
+        <div class="arrow">↓ resolve SuiteId</div>
+        <div class="box blue">
+          <h3><code>EncryptedEnvelope</code></h3>
+          <code>ProtocolVersion</code> · <code>CryptoSuiteId</code> · <code>Purpose</code><br>
+          <code>Revision</code> · <code>KeyVersion</code> · <code>Nonce</code> · <code>Ciphertext</code>
+          <small>Jedno miejsce dla wspólnego formatu i walidacji technicznej.</small>
+        </div>
+        <div class="arrow">↓ composed by</div>
+        <div class="models">
+          <div class="model">
+            <strong>MemberIndexCiphertext</strong>
+            <ul class="fields">
+              <li class="stable">EncryptedEnvelope</li>
+              <li>EntryScope</li>
+              <li>IndexRevision</li>
+            </ul>
+          </div>
+          <div class="model">
+            <strong>MemberSecretCiphertext</strong>
+            <ul class="fields">
+              <li class="stable">EncryptedEnvelope</li>
+              <li>EntryScope</li>
+              <li>Operation</li>
+            </ul>
+          </div>
+          <div class="model">
+            <strong>GrantEntryEnvelope</strong>
+            <ul class="fields">
+              <li class="stable">EncryptedEnvelope</li>
+              <li>GrantId</li>
+              <li>Recipient</li>
+            </ul>
+          </div>
+          <div class="model">
+            <strong>VaultKeyMaterial</strong>
+            <ul class="fields">
+              <li class="stable">EncryptedEnvelope</li>
+              <li>VaultScope</li>
+              <li>MaterialKind</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout"><strong>Skutek:</strong> modele zachowują znaczenie domenowe, a zmienny format crypto jest kompozycją, nie zestawem powielonych pól.</div>
+    </article>
+  </section>
+
+  <section class="migration">
+    <div class="migration-head">
+      <h2>Jednorazowy canonical cutover przed produkcją</h2>
+      <p>Nie utrzymujemy ścieżki zgodności ani dwóch aktywnych suite. Cały protokół, klienci i fixtures przechodzą atomowo na jeden docelowy kontrakt.</p>
+    </div>
+    <div class="timeline">
+      <div class="step" data-step="1">
+        <strong>Zdefiniuj docelową suite</strong>
+        <p>Jeden identyfikator obejmuje AEAD, wrapping, signing, KDF, AAD i format kluczy.</p>
+      </div>
+      <div class="step" data-step="2">
+        <strong>Zmień wszystkie komponenty</strong>
+        <p>Backend, web, mobile, Agent runtime oraz wspólne contract vectors wdrażają ten sam format.</p>
+      </div>
+      <div class="step" data-step="3">
+        <strong>Zresetuj dane testowe</strong>
+        <p>Stare envelope, profile i kolejki są usuwane; nie powstaje kod dual-read ani migracja produkcyjna.</p>
+      </div>
+      <div class="step" data-step="4">
+        <strong>Uruchom contract gate</strong>
+        <p>Każdy komponent musi przejść te same wektory i odrzucać poprzedni format fail-closed.</p>
+      </div>
+    </div>
+    <div class="legend">
+      <span style="color:var(--red)">powielone szczegóły algorytmu</span>
+      <span style="color:var(--blue)">wspólny format envelope</span>
+      <span style="color:var(--violet)">rejestr dozwolonych suite</span>
+      <span style="color:var(--green)">model domenowy</span>
+    </div>
+  </section>
+</main>
+</body>
+</html>

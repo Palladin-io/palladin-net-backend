@@ -1,0 +1,10 @@
+{{ eventTitle }}
+
+Hi{% if name %} {{ name }}{% endif %}, we're letting you know about activity on your {{ appName }} account.
+
+{{ eventDescription }}
+{% if occurredAt %}When: {{ occurredAt }}
+{% endif %}
+If this was you, no action is needed. If you don't recognize it, secure your account right away:
+{{ baseUrl }}
+{% include '_footer.en.text.liquid' %}

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup>
+      <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0"/>
+      <PackageReference Include="NodaTime.Serialization.SystemTextJson" Version="1.3.0"/>
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL.NodaTime" Version="10.0.0" />
+    </ItemGroup>
+    <ItemGroup>
+      <ProjectReference Include="..\Palladin.Core.Api\Palladin.Core.Api.csproj" />
+      <ProjectReference Include="..\Palladin.Core.Events\Palladin.Core.Events.csproj" />
+    </ItemGroup>
+</Project>

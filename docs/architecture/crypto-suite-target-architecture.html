@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Palladin — docelowa architektura crypto suite</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b12;
+      --surface: #101622;
+      --surface-2: #151d2c;
+      --surface-3: #0c111b;
+      --line: #29354b;
+      --line-strong: #405170;
+      --text: #edf3ff;
+      --muted: #9cabc5;
+      --blue: #68a6ff;
+      --blue-bg: #142944;
+      --green: #42dc91;
+      --green-bg: #103225;
+      --violet: #ba9cff;
+      --violet-bg: #2b2145;
+      --amber: #ffc857;
+      --amber-bg: #352a14;
+      --red: #ff7171;
+      --red-bg: #351b23;
+      --cyan: #59d8e8;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 5% -5%, #172a4a 0, transparent 34rem),
+        radial-gradient(circle at 95% 5%, #2d1c48 0, transparent 32rem),
+        var(--bg);
+      color: var(--text);
+      font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main { width: min(1540px, calc(100% - 40px)); margin: auto; padding: 52px 0 90px; }
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { margin-bottom: 14px; font-size: clamp(34px, 5vw, 58px); line-height: 1.03; letter-spacing: -.045em; }
+    h2 { margin-bottom: 9px; font-size: 26px; letter-spacing: -.025em; }
+    h3 { margin-bottom: 8px; font-size: 17px; }
+    h4 { margin-bottom: 6px; font-size: 14px; }
+    p { color: var(--muted); }
+    code { color: #dce8ff; font-family: "SFMono-Regular", Consolas, monospace; }
+
+    .hero { max-width: 1000px; margin-bottom: 32px; }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 5px 10px;
+      border: 1px solid #3b4962;
+      border-radius: 999px;
+      background: #111827a8;
+      color: #cbd9f4;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .notice {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      margin: 22px 0 0;
+      padding: 15px 17px;
+      border: 1px solid #705b28;
+      border-radius: 13px;
+      background: var(--amber-bg);
+      color: #f2ddb0;
+    }
+    .notice b { color: var(--amber); }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+    .nav a {
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #111827;
+      color: #bfcce3;
+      text-decoration: none;
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 25px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(150deg, #121a28e8, #0d121ce8);
+      box-shadow: 0 20px 70px #0004;
+    }
+    .section-head { max-width: 980px; margin-bottom: 22px; }
+
+    .suite-grid { display: grid; grid-template-columns: 1.25fr repeat(2, 1fr); gap: 12px; }
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--surface-2);
+    }
+    .card.primary { border-color: #326248; background: var(--green-bg); }
+    .card.blue { border-color: #345d8c; background: var(--blue-bg); }
+    .card.violet { border-color: #5d4885; background: var(--violet-bg); }
+    .card.amber { border-color: #705b28; background: var(--amber-bg); }
+    .card.red { border-color: #74404b; background: var(--red-bg); }
+    .card p:last-child { margin-bottom: 0; }
+
+    .pill {
+      display: inline-flex;
+      margin: 2px 4px 2px 0;
+      padding: 3px 7px;
+      border: 1px solid #394963;
+      border-radius: 999px;
+      color: #c9d7ef;
+      background: #101827;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .kv { width: 100%; border-collapse: collapse; }
+    .kv th, .kv td { padding: 9px 10px; border-bottom: 1px solid #29354b; text-align: left; vertical-align: top; }
+    .kv th { width: 38%; color: #c9d6ed; font-weight: 700; }
+    .kv td { color: var(--muted); }
+    .kv tr:last-child th, .kv tr:last-child td { border-bottom: 0; }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: minmax(210px, .8fr) 44px minmax(350px, 1.4fr) 44px minmax(250px, 1fr);
+      align-items: stretch;
+      gap: 10px;
+    }
+    .column { display: grid; align-content: start; gap: 10px; }
+    .column-title { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    .arrow-col { display: grid; place-items: center; color: #6e7f9d; font-size: 26px; }
+    .node {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-3);
+    }
+    .node b { display: block; margin-bottom: 4px; }
+    .node small { color: var(--muted); }
+    .node.green { border-color: #2f694a; background: var(--green-bg); }
+    .node.blue { border-color: #345d8c; background: var(--blue-bg); }
+    .node.violet { border-color: #5d4885; background: var(--violet-bg); }
+
+    .code-block {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      border: 1px solid #2f3d54;
+      border-radius: 12px;
+      background: #090e17;
+      color: #cfe0ff;
+      font: 12px/1.7 "SFMono-Regular", Consolas, monospace;
+      white-space: pre;
+    }
+
+    .envelope-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 14px; }
+    .field-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .field-list li { padding: 8px 10px; border: 1px solid #303c52; border-radius: 8px; background: #0e1521; }
+    .field-list b { color: #dfe9fb; }
+    .field-list span { color: var(--muted); }
+
+    .flows { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .flow { padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: #0d131e; }
+    .flow.user { border-top: 3px solid var(--blue); }
+    .flow.agent { border-top: 3px solid var(--violet); }
+    .flow-head { margin-bottom: 18px; }
+    .steps { display: grid; gap: 0; }
+    .step {
+      position: relative;
+      margin-left: 15px;
+      padding: 0 0 22px 30px;
+      border-left: 2px solid #35435c;
+    }
+    .step:last-child { padding-bottom: 0; border-left-color: transparent; }
+    .step::before {
+      content: attr(data-n);
+      position: absolute;
+      top: -2px;
+      left: -15px;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 2px solid #5a6d8d;
+      border-radius: 50%;
+      background: #111927;
+      color: white;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .step b { display: block; margin-bottom: 3px; }
+    .step p { margin-bottom: 6px; }
+    .step .crypto { color: var(--cyan); font: 11px/1.5 "SFMono-Regular", Consolas, monospace; }
+
+    .boundary {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px dashed #496080;
+      border-radius: 10px;
+      color: #c2d0e8;
+      background: #111a29;
+    }
+
+    .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .rule { padding: 15px; border-left: 3px solid var(--green); border-radius: 5px 11px 11px 5px; background: #101824; }
+    .rule.warn { border-left-color: var(--amber); }
+    .rule.stop { border-left-color: var(--red); }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 18px; color: var(--muted); font-size: 11px; }
+    .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 2px; background: currentColor; }
+
+    @media (max-width: 1100px) {
+      .suite-grid { grid-template-columns: 1fr 1fr; }
+      .suite-grid .primary { grid-column: 1 / -1; }
+      .architecture { grid-template-columns: 1fr; }
+      .arrow-col { min-height: 28px; transform: rotate(90deg); }
+    }
+    @media (max-width: 820px) {
+      main { width: min(100% - 24px, 1540px); padding-top: 32px; }
+      .section { padding: 17px; border-radius: 15px; }
+      .suite-grid, .envelope-grid, .flows, .rules { grid-template-columns: 1fr; }
+      .suite-grid .primary { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <span class="eyebrow">Palladin · proposed canonical cutover</span>
+    <h1>Docelowa struktura<br>protokołu kryptograficznego</h1>
+    <p>Dokument pokazuje minimalną abstrakcję suite, dokładne algorytmy startowe oraz dwa przepływy pobrania secretu. Backend pozostaje zero-knowledge i nigdy nie otrzymuje surowych MK, VK, EntryDEK ani GrantDEK.</p>
+    <div class="notice">
+      <b>!</b>
+      <div><b>Stan dokumentu:</b> propozycja architektury do zatwierdzenia. Docelowy Vault protocol startuje od XChaCha20-Poly1305; legacy entry/grant flow używa dziś libsodium <code>crypto_secretbox</code> (XSalsa20-Poly1305). Cutover jest jednorazowy — bez dual-read.</div>
+    </div>
+  </header>
+
+  <nav class="nav" aria-label="Sekcje dokumentu">
+    <a href="#start">Suite startowa</a>
+    <a href="#structure">Struktura</a>
+    <a href="#envelope">Envelope</a>
+    <a href="#user-flow">User flow</a>
+    <a href="#agent-flow">Agent flow</a>
+    <a href="#rules">Reguły bezpieczeństwa</a>
+  </nav>
+
+  <section class="section" id="start">
+    <div class="section-head">
+      <h2>1. Dane startowe: canonical suite</h2>
+      <p>Suite jest zamkniętym profilem. Request nie może dostarczać dowolnej kombinacji algorytmów ani parametrów.</p>
+    </div>
+    <div class="suite-grid">
+      <article class="card primary">
+        <h3><code>palladin-vault-xchacha-v1</code></h3>
+        <p>Proponowany jedyny aktywny profil po pre-production cutoverze.</p>
+        <span class="pill">Protocol v3</span>
+        <span class="pill">fail closed</span>
+        <span class="pill">no fallback</span>
+        <span class="pill">shared vectors</span>
+      </article>
+      <article class="card blue">
+        <h3>Symmetric envelope</h3>
+        <table class="kv">
+          <tr><th>AEAD</th><td>XChaCha20-Poly1305</td></tr>
+          <tr><th>Key</th><td>32 bytes</td></tr>
+          <tr><th>Nonce</th><td>24 bytes, fresh random</td></tr>
+          <tr><th>Tag</th><td>16 bytes, authenticated</td></tr>
+          <tr><th>Subkeys</th><td>HKDF-SHA-256</td></tr>
+        </table>
+      </article>
+      <article class="card violet">
+        <h3>Asymmetric and signatures</h3>
+        <table class="kv">
+          <tr><th>Recipient keys</th><td>X25519</td></tr>
+          <tr><th>Signatures</th><td>Ed25519</td></tr>
+          <tr><th>Fingerprint</th><td>domain-separated SHA-256</td></tr>
+          <tr><th>Manifests</th><td>RFC 8785 JCS + Ed25519</td></tr>
+          <tr><th>Wire encoding</th><td>canonical binary / base64url</td></tr>
+        </table>
+      </article>
+      <article class="card amber">
+        <h3>Identity KDF — osobny profil</h3>
+        <table class="kv">
+          <tr><th>Profile</th><td><code>identity-argon2id-password-v1</code></td></tr>
+          <tr><th>Algorithm</th><td>Argon2id</td></tr>
+          <tr><th>Memory</th><td>32 MiB w profilu password-only v1</td></tr>
+          <tr><th>Time / lanes</th><td>t=2 / p=1</td></tr>
+          <tr><th>Salt / output</th><td>16 / 32 bytes</td></tr>
+        </table>
+      </article>
+      <article class="card red">
+        <h3>Cutover gate</h3>
+        <p>Web i mobile mają obecnie stałe 19 MiB. Przed przełączeniem muszą rozwiązywać dokładnie ten sam <code>KdfProfileId</code> co backend i przejść wspólne wektory.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="structure">
+    <div class="section-head">
+      <h2>2. Dokładna struktura odpowiedzialności</h2>
+      <p>Domena zachowuje scope, purpose, rewizje i key lifecycle. Implementacja suite zna format kryptograficzny i bibliotekę.</p>
+    </div>
+    <div class="architecture">
+      <div class="column">
+        <div class="column-title">API / persisted contract</div>
+        <div class="node"><b>EncryptedEnvelopeContract</b><small>Stabilny header + opaque suite payload</small></div>
+        <div class="node"><b>SigningKeyContract</b><small>schemeId + encoded public key</small></div>
+        <div class="node"><b>KdfProfileId</b><small>Id profilu, nigdy dowolne parametry</small></div>
+      </div>
+      <div class="arrow-col">→</div>
+      <div class="column">
+        <div class="column-title">Infrastructure / shared crypto</div>
+        <div class="node violet"><b>CryptoSuiteRegistry</b><small>Jawna allowlista; resolve bez fallbacku</small></div>
+        <div class="node blue"><b>XChaChaVaultEnvelopeSuite</b><small>decode, limits, nonce/tag, AAD, HKDF contexts</small></div>
+        <div class="node blue"><b>X25519RecipientWrapper</b><small>seal/open DEK do konkretnego recipient key</small></div>
+        <div class="node blue"><b>Ed25519SignatureScheme</b><small>key/signature validation, verify, domain separation</small></div>
+        <div class="node blue"><b>Argon2idPasswordV1</b><small>password-only, identyczna implementacja parametrów na klientach</small></div>
+      </div>
+      <div class="arrow-col">→</div>
+      <div class="column">
+        <div class="column-title">Domain</div>
+        <div class="node green"><b>ValidatedMemberSecretEnvelope</b><small>scope + revision + key version już zweryfikowane</small></div>
+        <div class="node green"><b>ValidatedGrantEnvelope</b><small>grant, entry, agent i methods są związane przez AAD</small></div>
+        <div class="node green"><b>ValidatedDiscoveryEnvelope</b><small>VDK version i organization scope</small></div>
+        <div class="node green"><b>ValidatedSigningKey</b><small>semantyczny klucz, bez publicznego konstruktora</small></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span style="color:var(--violet)">wybór zamkniętego profilu</span>
+      <span style="color:var(--blue)">szczegóły kryptograficzne</span>
+      <span style="color:var(--green)">invariants domenowe</span>
+    </div>
+  </section>
+
+  <section class="section" id="envelope">
+    <div class="section-head">
+      <h2>3. Stabilny header i zależny od suite payload</h2>
+      <p>Nie cały envelope jest blobem. Pola potrzebne do autoryzacji, CAS, transakcji i routingu pozostają jawne oraz są jednocześnie uwierzytelnione przez AAD.</p>
+    </div>
+    <div class="envelope-grid">
+      <article class="card">
+        <h3>Stabilny header domenowy</h3>
+        <ul class="field-list">
+          <li><b>ProtocolVersion</b> <span>— format całego protokołu</span></li>
+          <li><b>CryptoSuiteId</b> <span>— wybór jednej implementacji</span></li>
+          <li><b>Purpose</b> <span>— MemberSecret, GrantPayload, Discovery…</span></li>
+          <li><b>Scope</b> <span>— OrganizationId, VaultId, EntryId, opcjonalnie GrantId/AgentId</span></li>
+          <li><b>ResourceRevision</b> <span>— optimistic concurrency / rollback resistance</span></li>
+          <li><b>KeyVersion</b> <span>— generacja klucza użytego przez payload</span></li>
+          <li><b>MemberKeyGeneration</b> <span>— fence po usunięciu Membera</span></li>
+        </ul>
+      </article>
+      <article class="card blue">
+        <h3><code>XChaChaVaultPayloadV1</code></h3>
+        <pre class="code-block">{
+  nonce: bytes[24],
+  ciphertextAndTag: bytes[plaintext + 16],
+  wrappedKey?: {
+    recipientScheme: "x25519-v1",
+    recipientKeyVersion: uint32,
+    recipientFingerprint: bytes[32],
+    encapsulatedKey: bounded bytes
+  }
+}
+
+AAD = CanonicalBinary(
+  protocolVersion, suiteId, purpose,
+  organizationId, vaultId, entryId,
+  optionalGrantId, optionalAgentId,
+  resourceRevision, keyVersion,
+  memberKeyGeneration
+)</pre>
+      </article>
+    </div>
+    <div class="boundary"><b>Warunek bezpieczeństwa:</b> <code>CryptoSuiteId</code>, purpose, scope, rewizje i key version są częścią AAD lub podpisanego transcriptu. Podmiana któregokolwiek pola musi kończyć się błędem uwierzytelnienia.</div>
+  </section>
+
+  <section class="section" id="user-flow">
+    <div class="section-head">
+      <h2>4. Pobranie wartości secretu przez Użytkownika</h2>
+      <p>Przykład dla odblokowanego web/mobile. Backend zwraca tylko opaque envelope i owinięte klucze.</p>
+    </div>
+    <div class="flows">
+      <article class="flow user">
+        <div class="flow-head"><h3>Faza A — odblokowanie i VK</h3><p>Wykonywana lokalnie, klucze pozostają w pamięci klienta.</p></div>
+        <div class="steps">
+          <div class="step" data-n="1"><b>Rozwiąż profil KDF</b><p>Klient odczytuje zapisany <code>KdfProfileId</code>. Nieznany profil jest odrzucany.</p><div class="crypto">Argon2id v1 · salt 16 · output 32</div></div>
+          <div class="step" data-n="2"><b>Wyprowadź MK / Account Root</b><p>Dokładne bajty UTF-8 hasła są przetwarzane wyłącznie lokalnie.</p><div class="crypto">password → Argon2id → AccountRoot → HKDF(AuthCredential, MK)</div></div>
+          <div class="step" data-n="3"><b>Otwórz Member private key</b><p>Klient uwierzytelnia zaszyfrowany klucz prywatny użytkownika.</p><div class="crypto">XChaCha20-Poly1305 envelope</div></div>
+          <div class="step" data-n="4"><b>Pobierz członkostwo Vault</b><p>API zwraca <code>WrappedVK</code> przypisany temu Memberowi.</p><div class="crypto">backend sees ciphertext only</div></div>
+          <div class="step" data-n="5"><b>Otwórz VK</b><p>Member private key otwiera VK; VK pozostaje tylko w pamięci.</p><div class="crypto">X25519 recipient envelope → VK[32]</div></div>
+        </div>
+      </article>
+      <article class="flow user">
+        <div class="flow-head"><h3>Faza B — reveal konkretnego Entry</h3><p>Sekret jest pobierany leniwie dopiero przy reveal/copy/edit.</p></div>
+        <div class="steps">
+          <div class="step" data-n="6"><b>Pobierz Entry head i current version</b><p>API zwraca <code>VaultEntryKey</code> oraz <code>MemberSecretEnvelope</code>.</p><div class="crypto">no plaintext labels / values</div></div>
+          <div class="step" data-n="7"><b>Registry rozwiązuje suite</b><p>Klient sprawdza protocol, suite, limity i canonical encoding bez fallbacku.</p><div class="crypto">palladin-vault-xchacha-v1</div></div>
+          <div class="step" data-n="8"><b>Otwórz EntryDEK</b><p>VK uwierzytelnia wrapper związany z EntryId, key version i generation.</p><div class="crypto">VK + AAD → EntryDEK[32]</div></div>
+          <div class="step" data-n="9"><b>Wyprowadź MemberSecretKey</b><p>Osobny context zapobiega użyciu tego samego klucza dla MemberIndex.</p><div class="crypto">HKDF-SHA-256(EntryDEK, "member-secret")</div></div>
+          <div class="step" data-n="10"><b>Odszyfruj i pokaż</b><p>AAD wiąże envelope ze scope i rewizją. Plaintext trafia tylko do pamięci UI.</p><div class="crypto">XChaCha20-Poly1305 open → secret</div></div>
+          <div class="step" data-n="11"><b>Wyczyść pamięć</b><p>Lock, logout, unmount lub koniec operacji usuwa VK, EntryDEK, subkey i plaintext.</p><div class="crypto">zeroize where runtime permits</div></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="agent-flow">
+    <div class="section-head">
+      <h2>5. Pobranie wartości secretu przez Agenta</h2>
+      <p>Agent nigdy nie otrzymuje VK ani EntryDEK. Dostaje wyłącznie świeży, filtrowany GrantPayload i per-grant GrantDEK.</p>
+    </div>
+    <div class="flows">
+      <article class="flow agent">
+        <div class="flow-head"><h3>Faza A — discovery i approval</h3><p>Discovery pozwala wybrać Entry bez ujawniania jego danych backendowi.</p></div>
+        <div class="steps">
+          <div class="step" data-n="1"><b>Agent uwierzytelnia request</b><p>Organization API key wybiera tenant; Ed25519 proof identyfikuje konkretnego Agenta.</p><div class="crypto">HTTPS + API key + Ed25519 canonical request</div></div>
+          <div class="step" data-n="2"><b>Otwórz VDK w native boundary</b><p>Backend zwraca manifest i <code>AgentWrappedVDK</code> dla X25519 identity Agenta.</p><div class="crypto">X25519 recipient envelope → VDK</div></div>
+          <div class="step" data-n="3"><b>Przeszukaj Discovery lokalnie</b><p>Agent pobiera zaszyfrowane projekcje i odszyfrowuje je VDK-derived key.</p><div class="crypto">HKDF("agent-discovery") + XChaCha open</div></div>
+          <div class="step" data-n="4"><b>Wyślij encrypted reason</b><p>Reason jest AEAD-encrypted do Vault Message key i podpisany identity Agenta.</p><div class="crypto">fresh ReasonDEK + X25519 wrap + Ed25519 signature</div></div>
+          <div class="step" data-n="5"><b>Member zatwierdza</b><p>Odblokowany klient czyta MemberSecret, filtruje pola/methods i tworzy świeży GrantPayload.</p><div class="crypto">fresh GrantDEK · no VK / EntryDEK for Agent</div></div>
+          <div class="step" data-n="6"><b>Zapis atomowy</b><p>Grant state oraz envelope mają właściwy EntryRevision, GrantKeyVersion i pełny scope.</p><div class="crypto">one backend transaction or rollback</div></div>
+        </div>
+      </article>
+      <article class="flow agent">
+        <div class="flow-head"><h3>Faza B — delivery i użycie</h3><p>Plaintext powstaje dopiero wewnątrz natywnej granicy Agenta.</p></div>
+        <div class="steps">
+          <div class="step" data-n="7"><b>Signed credential request</b><p>Runtime wysyła entry, method, timestamp, nonce i Ed25519 signature.</p><div class="crypto">get / exec · replay protected</div></div>
+          <div class="step" data-n="8"><b>Backend atomowo wydaje envelope</b><p>Sprawdza Agent status, grant, TTL, use count, methods, Entry revision i incrementuje użycie.</p><div class="crypto">authorized response only; otherwise no ciphertext</div></div>
+          <div class="step" data-n="9"><b>Registry waliduje suite i AAD</b><p>Nieznany profil, stara rewizja lub zmieniony AgentId/GrantId kończy operację.</p><div class="crypto">fail closed before plaintext</div></div>
+          <div class="step" data-n="10"><b>Otwórz GrantDEK</b><p>X25519 private key jest otwierany tylko w wybranej OS/native security boundary.</p><div class="crypto">Agent recipient private key → GrantDEK[32]</div></div>
+          <div class="step" data-n="11"><b>Odszyfruj filtrowany payload</b><p>Agent otrzymuje tylko zatwierdzone pola, nigdy MemberSecret ani EntryDEK.</p><div class="crypto">XChaCha20-Poly1305 open → approved secret subset</div></div>
+          <div class="step" data-n="12"><b>Użyj i wyczyść</b><p><code>get</code> może zwrócić plaintext; <code>exec</code> przekazuje go tylko subprocessowi, a output dla modelu jest withheld.</p><div class="crypto">bounded memory → zeroize → close session</div></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="rules">
+    <div class="section-head">
+      <h2>6. Niezmienne reguły bezpieczeństwa</h2>
+      <p>Te warunki są ważniejsze niż nazwy klas i nie mogą zostać osłabione przez abstrakcję.</p>
+    </div>
+    <div class="rules">
+      <div class="rule"><h3>Suite jest uwierzytelniona</h3><p><code>suiteId</code>, purpose, scope, rewizja i key version zawsze należą do AAD lub podpisu.</p></div>
+      <div class="rule"><h3>Registry jest zamknięty</h3><p>Brak reflection, pluginów, konfiguracji z requestu, negocjacji i domyślnego fallbacku.</p></div>
+      <div class="rule"><h3>Klucze mają purpose</h3><p>VK, EntryDEK, GrantDEK, VDK, signing key i recipient key nigdy nie są wymienne.</p></div>
+      <div class="rule warn"><h3>Jedna trwała kopia</h3><p>Walidacja używa spans/memory; encja wykonuje najwyżej jedną defensywną kopię ciphertextu.</p></div>
+      <div class="rule warn"><h3>Bounded processing</h3><p>Rozmiary, batch size i EF tracking są ograniczone; żadna rotacja nie trzyma całego Vaultu w pamięci.</p></div>
+      <div class="rule stop"><h3>Backend bez plaintextu</h3><p>Serwer nigdy nie rozwiązuje kluczy ani nie odszyfrowuje envelope. Waliduje strukturę, scope i podpisy.</p></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

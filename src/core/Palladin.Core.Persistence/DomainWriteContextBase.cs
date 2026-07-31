@@ -1,0 +1,103 @@
+using System.Linq.Expressions;
+using Palladin.Core.Events;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace Palladin.Core.Persistence;
+
+public abstract class DomainWriteContextBase(
+    DbContext writeContext,
+    IEnumerable<IEventPublisher> eventPublisher)
+{
+    protected IQueryable<TEntity> Track<TEntity>() where TEntity : class => writeContext.Set<TEntity>();
+
+    public void Add(object entity) => writeContext.Add(entity);
+
+    public void AddRange(IEnumerable<object> entity) => writeContext.AddRange(entity);
+
+    public void Update(object entity) => writeContext.Update(entity);
+
+    public void MarkPropertyAsUpdated<TEntity>(TEntity entity, Expression<Func<TEntity, object>> selector)
+        where TEntity : class
+    {
+        var entry = writeContext.Entry(entity);
+
+        writeContext.Set<TEntity>().Attach(entity);
+        entry.Property(selector).IsModified = true;
+    }
+
+    public void RemoveRange(IEnumerable<object> entity) => writeContext.RemoveRange(entity);
+
+    public IQueryable<TResult> SqlQuery<TResult>(FormattableString query) =>
+        writeContext.Database.SqlQuery<TResult>(query);
+
+    public IQueryable<TEntity> FromSqlInterpolated<TEntity>(FormattableString query)
+        where TEntity : class =>
+        writeContext.Set<TEntity>().FromSqlInterpolated(query);
+
+    public Task<int> ExecuteSqlInterpolatedAsync(
+        FormattableString command,
+        CancellationToken cancellationToken = default) =>
+        writeContext.Database.ExecuteSqlInterpolatedAsync(command, cancellationToken);
+
+    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default) =>
+        writeContext.Database.BeginTransactionAsync(cancellationToken);
+
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        var changes = writeContext.ChangeTracker.Entries().ToList();
+        var events = GetEvents(changes);
+
+        await writeContext.SaveChangesAsync(cancellationToken);
+
+        await PublishEventsAsync(events, cancellationToken);
+    }
+
+    public async Task CommitAsync(
+        IDbContextTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        var changes = writeContext.ChangeTracker.Entries().ToList();
+        var events = GetEvents(changes);
+
+        await writeContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await PublishEventsAsync(events, cancellationToken);
+    }
+
+    private async Task PublishEventsAsync(
+        IEnumerable<IEvent> events,
+        CancellationToken cancellationToken)
+    {
+        foreach (var @event in events)
+        {
+            await HandleEventAsync(@event, cancellationToken);
+        }
+    }
+
+    public void Clear() => writeContext.ChangeTracker.Clear();
+
+    private static List<IEvent> GetEvents(List<EntityEntry> changes) =>
+        changes.Where(x => x.Entity is IEventEntity)
+            .SelectMany(
+                x =>
+                {
+                    var events = ((IEventEntity)x.Entity).FetchEvents();
+
+                    return events;
+                }
+            )
+            .ToList();
+
+    protected virtual async Task HandleEventAsync(IEvent @event, CancellationToken cancellationToken = default)
+    {
+        foreach (var publisher in eventPublisher)
+        {
+            await publisher.PublishAsync(@event, cancellationToken);
+        }
+    }
+
+    public void Remove(object entity) => writeContext.Remove(entity);
+}

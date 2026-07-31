@@ -1,0 +1,50 @@
+## Build results
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## IDE
+.vs/
+.idea/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+riderModule.iml
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+/_ReSharper.Caches/
+
+## NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Test results
+[Tt]est[Rr]esult*/
+coverage*.json
+coverage*.xml
+coverage*.info
+*.coverage
+*.coveragexml
+
+## Environment
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+
+## Claude Code (user-specific only)
+.claude/settings.local.json
+.claude/worktrees/

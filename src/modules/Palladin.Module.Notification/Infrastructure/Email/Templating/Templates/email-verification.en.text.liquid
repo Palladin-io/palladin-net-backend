@@ -1,0 +1,10 @@
+Confirm your email
+
+Hi{% if name %} {{ name }}{% endif %}, welcome to {{ appName }}. Please confirm this email address to activate your account by opening the link below:
+
+{{ verificationUrl }}
+
+This link expires in {{ expiryMinutes }} minutes. If it stops working, sign in again to request a new one.
+
+If you didn't create a {{ appName }} account, you can safely ignore this email.
+{% include '_footer.en.text.liquid' %}

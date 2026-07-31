@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup>
+      <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.7" />
+    </ItemGroup>
+    <ItemGroup>
+      <ProjectReference Include="..\Palladin.Core.Events\Palladin.Core.Events.csproj" />
+      <ProjectReference Include="..\Palladin.Core.Json\Palladin.Core.Json.csproj" />
+      <ProjectReference Include="..\Palladin.Core.Transport\Palladin.Core.Transport.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.2" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.2" />
+    </ItemGroup>
+</Project>

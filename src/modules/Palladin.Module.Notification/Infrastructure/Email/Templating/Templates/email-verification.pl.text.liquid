@@ -1,0 +1,10 @@
+Potwierdź swój e-mail
+
+Cześć{% if name %} {{ name }}{% endif %}, witamy w {{ appName }}. Potwierdź ten adres e-mail, aby aktywować konto, otwierając poniższy link:
+
+{{ verificationUrl }}
+
+Link wygasa po {{ expiryMinutes }} minutach. Jeśli przestanie działać, zaloguj się ponownie, aby otrzymać nowy.
+
+Jeśli to nie Ty zakładałeś konto w {{ appName }}, po prostu zignoruj tę wiadomość.
+{% include '_footer.pl.text.liquid' %}

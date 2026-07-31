@@ -1,0 +1,16 @@
+title = "Palladin backend secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic cryptographic test vectors and a non-secret C# contract type identifier"
+paths = [
+  '''^tests/Fixtures/IdentityKdf/password-only-v1\.json$''',
+  '''^tests/Fixtures/VaultProtocol2/envelope-xchacha-hkdf\.json$''',
+  '''^tests/Fixtures/VaultProtocol2/pairing\.json$''',
+  '''^tests/Fixtures/VaultProtocol2/signed-agent-manifest\.json$''',
+]
+regexes = [
+  '''^X25519RecipientKeyKindContract$''',
+]

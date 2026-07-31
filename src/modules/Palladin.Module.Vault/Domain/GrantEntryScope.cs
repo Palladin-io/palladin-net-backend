@@ -1,0 +1,99 @@
+using Palladin.Core.Types.Exceptions;
+using Palladin.Core.Types;
+
+namespace Palladin.Module.Vault.Domain;
+
+internal sealed class GrantEntryScope
+{
+    internal Guid OrganizationId { get; private set; }
+    internal Guid VaultId { get; private set; }
+    internal Guid GrantId { get; private set; }
+    internal Guid EntryId { get; private set; }
+    internal GrantMethods Methods { get; private set; }
+    internal string FieldIds { get; private set; } = string.Empty;
+    internal GrantEntryEnvelope? Envelope { get; private set; }
+
+    private GrantEntryScope() { }
+
+    internal static GrantEntryScope Create(
+        EntryScope entry,
+        Guid grantId,
+        GrantMethods methods,
+        IEnumerable<string> fieldIds,
+        GrantEntryEnvelope envelope)
+    {
+        entry.Validate();
+        if (grantId == Guid.Empty || !methods.IsValidSet())
+        {
+            throw new DomainException("Grant scope is invalid.");
+        }
+
+        var submittedFields = fieldIds.ToArray();
+        if (submittedFields.Any(x => x?.Contains('\n', StringComparison.Ordinal) == true
+                                     || x?.Contains('\r', StringComparison.Ordinal) == true))
+        {
+            throw new DomainException("Grant field identifiers cannot contain line delimiters.");
+        }
+
+        var canonicalFields = submittedFields
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var serializedFields = string.Join('\n', canonicalFields);
+        if (canonicalFields.Length == 0 || canonicalFields.Any(x => x.Length > 128)
+            || serializedFields.Length > 32_768)
+        {
+            throw new DomainException("Grant scope must contain valid field identifiers.");
+        }
+
+        envelope.ValidateScope(entry, grantId);
+        return new GrantEntryScope
+        {
+            OrganizationId = entry.OrganizationId,
+            VaultId = entry.VaultId,
+            GrantId = grantId,
+            EntryId = entry.EntryId,
+            Methods = methods,
+            FieldIds = serializedFields,
+            Envelope = envelope,
+        };
+    }
+
+    internal void DeleteEnvelope() => Envelope = null;
+
+    internal void Refresh(GrantEntryEnvelope envelope)
+    {
+        envelope.ValidateScope(new EntryScope(OrganizationId, VaultId, EntryId), GrantId);
+        if (Envelope is null
+            || envelope.GrantEnvelopeRevision != Envelope.GrantEnvelopeRevision + 1
+            || envelope.GrantKeyVersion != Envelope.GrantKeyVersion + 1
+            || envelope.EntryRevision <= Envelope.EntryRevision)
+        {
+            throw new DomainException("Grant envelope refresh is stale or skips a revision.");
+        }
+
+        Envelope.RefreshFrom(envelope);
+    }
+
+    internal void NarrowAndRefresh(GrantEntryScope refreshed)
+    {
+        if (OrganizationId != refreshed.OrganizationId || VaultId != refreshed.VaultId
+            || GrantId != refreshed.GrantId || EntryId != refreshed.EntryId || Methods != refreshed.Methods
+            || refreshed.Envelope is null)
+        {
+            throw new DomainException("Grant refresh scope is invalid.");
+        }
+
+        var currentFields = FieldIds.Split('\n').ToHashSet(StringComparer.Ordinal);
+        var refreshedFields = refreshed.FieldIds.Split('\n').ToHashSet(StringComparer.Ordinal);
+        if (!refreshedFields.IsSubsetOf(currentFields))
+        {
+            throw new DomainException("Grant refresh cannot broaden the durable field scope.");
+        }
+
+        Refresh(refreshed.Envelope);
+        FieldIds = refreshed.FieldIds;
+    }
+}

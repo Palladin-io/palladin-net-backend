@@ -1,0 +1,9 @@
+{% include '_header.html.liquid' %}
+<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">Jedno kliknięcie do darmowego miesiąca</h1>
+<p style="margin:0 0 16px">Dziękujemy za zapis na listę oczekujących {{ appName }} — menedżera haseł stworzonego dla agentów AI. Potwierdź swój adres e-mail, aby zarezerwować miejsce i nagrodę: <b>miesiąc Premium za darmo na start</b>.</p>
+<p style="margin:0 0 24px">
+  <a href="{{ verificationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Potwierdzam adres e-mail</a>
+</p>
+<p style="margin:0 0 16px;font-size:13px;color:#6a6a6a">Link wygasa po {{ expiryHours }} godzinach. Jeśli przestanie działać, po prostu zapisz się ponownie na {{ baseUrl }}.</p>
+<p style="margin:0;font-size:13px;color:#6a6a6a">Jeśli to nie Ty zapisywałeś się na listę {{ appName }}, zignoruj tę wiadomość — nie odezwiemy się ponownie.</p>
+{% include '_footer.pl.html.liquid' %}

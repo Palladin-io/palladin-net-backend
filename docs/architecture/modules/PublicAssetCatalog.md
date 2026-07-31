@@ -25,8 +25,8 @@ raster, re-encodes it as PNG, and publishes exactly once under the reserved revi
 - `POST /api/public-assets/uploads/{uploadSessionId}/complete`
 
 Public read endpoints are anonymous and return metadata plus a render-ready delivery URL. Ensure is
-authenticated and rate-limited to 30 requests per Member per minute because it may schedule outbound
-acquisition. Production
+authenticated and rate-limited both to 30 requests and 500 submitted hostnames per Member per minute
+because it may schedule outbound acquisition. Production
 sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environments configure the direct
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
 
@@ -39,8 +39,8 @@ migration deterministically removes duplicate pre-production hostname assets bef
 The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
 index prevents duplicate website assets. The reserved revision key is written with S3 `If-None-Match: *`,
-and a retry after an object-store/database partial commit downloads the bounded existing object and
-accepts it only when its digest, media type, and length match, so duplicate
+and a retry after an object-store/database partial commit downloads and decodes the bounded existing
+object, then completes the aggregate from those authoritative first-writer bytes, so duplicate
 deliveries can finish the database transition without overwriting different bytes. Clients persist the
 returned `id`, `revision`, and `url` inside encrypted Vault presentation data. Vault list/detail reads
 never call ensure, resolve, by-id, or get-by-id for Entry icons; the browser/app performs only the image GET.

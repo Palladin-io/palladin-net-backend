@@ -113,8 +113,20 @@ internal sealed class WebsiteIconAcquirer(
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
             var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
             sanitized.Position = 0;
-            await storage.PublishImmutableAsync(sanitized, key, "image/png", digest, sanitized.Length, ct);
-            asset.Publish(digest, "image/png", sanitized.Length, image.Width, image.Height, key, clock.GetCurrentInstant());
+            var published = await storage.PublishImmutableAsync(sanitized, key, "image/png", digest, sanitized.Length, ct);
+            var width = image.Width;
+            var height = image.Height;
+            if (published.ExistingContent is not null)
+            {
+                await using var storedSource = new MemoryStream(published.ExistingContent, writable: false);
+                using var storedImage = await Image.LoadAsync(storedSource, ct);
+                if (storedImage.Width is < 1 or > 2048 || storedImage.Height is < 1 or > 2048
+                    || (long)storedImage.Width * storedImage.Height > 4_000_000)
+                    throw new InvalidDataException("The immutable website icon has invalid dimensions.");
+                width = storedImage.Width;
+                height = storedImage.Height;
+            }
+            asset.Publish(published.Digest, "image/png", published.Length, width, height, key, clock.GetCurrentInstant());
             try { await db.CommitAsync(ct); }
             catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
             {

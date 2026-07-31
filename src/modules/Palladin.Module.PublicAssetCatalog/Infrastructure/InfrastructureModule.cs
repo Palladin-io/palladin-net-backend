@@ -16,6 +16,7 @@ internal static class InfrastructureModule
         services.AddSingleton<IPublicAssetStorage, S3PublicAssetStorage>();
         services.AddHostedService<LocalPublicAssetBucketInitializer>();
         services.AddScoped<IWebsiteIconAcquirer, WebsiteIconAcquirer>();
+        services.AddSingleton<WebsiteIconEnsureLimiter>();
         return services;
     }
 }

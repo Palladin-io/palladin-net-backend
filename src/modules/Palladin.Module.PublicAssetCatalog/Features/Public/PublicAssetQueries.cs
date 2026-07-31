@@ -8,9 +8,11 @@ using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using MassTransit;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Npgsql;
 using Palladin.Core.Guid;
+using Palladin.Core.Security;
 
 namespace Palladin.Module.PublicAssetCatalog.Features;
 
@@ -78,12 +80,17 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
 }
 [UsedImplicitly] internal sealed class EnsureWebsiteIconsValidator : Validator<EnsureWebsiteIconsRequest> { public EnsureWebsiteIconsValidator() { RuleFor(x => x.Hostnames).NotEmpty().Must(x => x.Count <= 500); RuleForEach(x => x.Hostnames).Must(x => PublicAssetContracts.TryHostname(x, out _)); } }
 [PublicAPI]
-internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
+internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids, WebsiteIconEnsureLimiter limiter) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
 {
     public override void Configure() { Post("api/public-assets/website-icons/ensure"); AuthSchemes(JwtBearerDefaults.AuthenticationScheme); Tags("Public Assets"); }
     public override async Task HandleAsync(EnsureWebsiteIconsRequest req, CancellationToken ct)
     {
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
+        if (!limiter.TryAcquire(User.GetUserId()!.Value, hosts.Length))
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            return;
+        }
         List<PublicAsset> assets = [];
         for (var attempt = 0; attempt < 3; attempt++)
         {

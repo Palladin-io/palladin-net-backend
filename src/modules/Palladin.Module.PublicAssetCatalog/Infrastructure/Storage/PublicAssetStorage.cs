@@ -23,12 +23,13 @@ internal sealed class PublicAssetStorageOptions
     public long MaximumBytes { get; init; } = 1024 * 1024;
 }
 internal sealed record StagedObject(Stream Content, long Length, string? MediaType);
+internal sealed record ImmutablePublishedObject(byte[]? ExistingContent, string Digest, long Length);
 internal interface IPublicAssetStorage
 {
     Task<string> CreateUploadUrlAsync(string key, string mediaType, Instant expiresAt, CancellationToken ct);
     Task<StagedObject?> OpenStagedAsync(string key, CancellationToken ct);
     Task PublishAsync(string stagingKey, Stream validatedContent, string publishedKey, string mediaType, CancellationToken ct, bool overwrite = true);
-    Task PublishImmutableAsync(Stream validatedContent, string publishedKey, string mediaType, string digest, long length, CancellationToken ct);
+    Task<ImmutablePublishedObject> PublishImmutableAsync(Stream validatedContent, string publishedKey, string mediaType, string digest, long length, CancellationToken ct);
     Task DeleteStagedAsync(string stagingKey, CancellationToken ct);
     string GetDeliveryUrl(string key);
 }
@@ -48,7 +49,7 @@ internal sealed class S3PublicAssetStorage(IOptions<PublicAssetStorageOptions> c
         await s3.PutObjectAsync(new PutObjectRequest { BucketName = options.BucketName, Key = publishedKey, InputStream = validatedContent, AutoCloseStream = false, ContentType = mediaType, IfNoneMatch = overwrite ? null : "*", Headers = { CacheControl = "public,max-age=31536000,immutable" } }, ct);
         if (!string.IsNullOrEmpty(stagingKey)) await s3.DeleteObjectAsync(options.BucketName, stagingKey, ct);
     }
-    public async Task PublishImmutableAsync(Stream validatedContent, string publishedKey, string mediaType, string digest, long length, CancellationToken ct)
+    public async Task<ImmutablePublishedObject> PublishImmutableAsync(Stream validatedContent, string publishedKey, string mediaType, string digest, long length, CancellationToken ct)
     {
         try
         {
@@ -63,19 +64,24 @@ internal sealed class S3PublicAssetStorage(IOptions<PublicAssetStorageOptions> c
                 Headers = { CacheControl = "public,max-age=31536000,immutable" },
             };
             await s3.PutObjectAsync(request, ct);
+            return new(null, digest, length);
         }
         catch (AmazonS3Exception exception) when (exception.StatusCode == HttpStatusCode.PreconditionFailed)
         {
-            // A previous delivery may have stored the immutable object and
-            // crashed before committing the aggregate. Only accept that object
-            // when its actual bytes match the sanitized content that this
-            // delivery independently produced.
+            // The first immutable write is authoritative. A previous delivery
+            // may have stored it and crashed before committing the aggregate,
+            // while the mutable upstream favicon may since have changed.
             using var existing = await s3.GetObjectAsync(options.BucketName, publishedKey, ct);
-            var existingDigest = Convert.ToHexString(await SHA256.HashDataAsync(existing.ResponseStream, ct)).ToLowerInvariant();
-            if (!string.Equals(existingDigest, digest, StringComparison.Ordinal)
-                || existing.ContentLength != length
+            if (existing.ContentLength is < 1 || existing.ContentLength > options.MaximumBytes
                 || !string.Equals(existing.Headers.ContentType, mediaType, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Immutable public asset '{publishedKey}' already exists with different content.", exception);
+                throw new InvalidOperationException($"Immutable public asset '{publishedKey}' has invalid metadata.", exception);
+            await using var content = new MemoryStream((int)existing.ContentLength);
+            await existing.ResponseStream.CopyToAsync(content, ct);
+            if (content.Length != existing.ContentLength)
+                throw new InvalidOperationException($"Immutable public asset '{publishedKey}' has an invalid length.", exception);
+            var bytes = content.ToArray();
+            var existingDigest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            return new(bytes, existingDigest, bytes.LongLength);
         }
     }
     public Task DeleteStagedAsync(string stagingKey, CancellationToken ct) => s3.DeleteObjectAsync(options.BucketName, stagingKey, ct);

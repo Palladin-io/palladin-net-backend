@@ -27,6 +27,18 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
+    public void When_Ensure_Submits_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
+    {
+        using var limiter = new WebsiteIconEnsureLimiter();
+        var member = Guid.NewGuid();
+
+        limiter.TryAcquire(member, 499).ShouldBeTrue();
+        limiter.TryAcquire(member, 1).ShouldBeTrue();
+        limiter.TryAcquire(member, 1).ShouldBeFalse();
+        limiter.TryAcquire(Guid.NewGuid(), 500).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task When_Dns_Or_Download_Does_Not_Complete_Then_The_Worker_Operation_Is_Bounded()
     {
         var elapsed = Stopwatch.StartNew();

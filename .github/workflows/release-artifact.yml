@@ -76,17 +76,19 @@ jobs:
           (cd "$release" && sha256sum --check SHA256SUMS-backend)
 
       - name: Attest the backend image archive
+        if: github.event.repository.visibility == 'public'
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ runner.temp }}/backend-release/palladin-api-${{ env.SOURCE_SHA }}.tar
 
       - name: Attest the backend image SBOM
+        if: github.event.repository.visibility == 'public'
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: ${{ runner.temp }}/backend-release/palladin-api-${{ env.SOURCE_SHA }}.tar
           sbom-path: ${{ runner.temp }}/backend-release/sbom-backend.spdx.json
 
-      - name: Retain the attested backend release set
+      - name: Retain the backend release set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-release-${{ env.SOURCE_SHA }}

@@ -54,6 +54,18 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
+    public void When_A_Pending_Website_Upload_Is_Abandoned_Then_Its_Hostnames_Are_Released()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
+
+        asset.AbandonPendingWebsiteUpload();
+
+        asset.Status.ShouldBe(PublicAssetStatus.Deleted);
+        asset.Aliases.ShouldBeEmpty();
+        PublicAssetContracts.BuildHostnameMap([asset]).ShouldBeEmpty();
+    }
+
+    [Fact]
     public void When_Ensure_Submits_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
     {
         using var limiter = new WebsiteIconEnsureLimiter();

@@ -9,6 +9,8 @@ internal enum PublicAssetAliasKind { Hostname = 1, Name = 2, Slug = 3, Tag = 4 }
 
 internal sealed class PublicAssetHostnameConflictException()
     : ConflictException("A hostname is already assigned to another catalog asset.");
+internal sealed class PublicAssetStateConflictException()
+    : ConflictException("Public asset state changed concurrently.");
 
 internal sealed class PublicAsset
 {
@@ -30,6 +32,13 @@ internal sealed class PublicAsset
     }
     internal static PublicAsset CreateAgentIcon(Guid id, Guid organizationId, Guid ownerId, string name) =>
         new() { Id = id, Type = PublicAssetType.AgentIcon, Name = name, OrganizationId = organizationId, OwnerId = ownerId, Status = PublicAssetStatus.Pending };
+    internal void AbandonPendingWebsiteUpload()
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+            throw new InvalidOperationException("Only a pending website-icon upload can be abandoned.");
+        Aliases.Clear();
+        Status = PublicAssetStatus.Deleted;
+    }
     internal void Publish(string digest, string mediaType, long byteLength, int width, int height, string storageKey, Instant now)
     {
         if (Status == PublicAssetStatus.Ready && Type != PublicAssetType.AgentIcon) throw new InvalidOperationException("A published asset is immutable.");

@@ -40,11 +40,15 @@ The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
 index prevents duplicate website assets.
 Pending assets that own a service upload session are never treated as acquisition reservations: ensure
-returns no icon until that upload publishes its real digest-based revision. A service upload that loses
+returns no icon while that upload session is live. Once every session for a still-pending asset expires,
+the aggregate is marked deleted and releases its hostname aliases before ensure creates clean per-hostname
+acquisition reservations. `PublicAsset.Status` is an optimistic concurrency token, so upload completion
+cannot overwrite that transition. A service upload that loses
 a hostname reservation race is translated to HTTP 409 instead of leaking a database uniqueness error.
 The reserved revision key is written with S3 `If-None-Match: *`,
-and a retry after an object-store/database partial commit downloads and decodes the bounded existing
-object, then completes the aggregate from those authoritative first-writer bytes, so duplicate
+and every delivery probes that key before contacting the mutable upstream. A retry after an
+object-store/database partial commit downloads and decodes the bounded existing object, then completes
+the aggregate from those authoritative first-writer bytes even if upstream is unavailable, so duplicate
 deliveries can finish the database transition without overwriting different bytes. Clients persist the
 returned `id`, `revision`, and `url` inside encrypted Vault presentation data. Vault list/detail reads
 never call ensure, resolve, by-id, or get-by-id for Entry icons; the browser/app performs only the image GET.

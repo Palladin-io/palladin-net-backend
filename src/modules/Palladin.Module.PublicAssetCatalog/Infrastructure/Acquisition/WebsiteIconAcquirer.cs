@@ -48,6 +48,15 @@ internal sealed class WebsiteIconAcquirer(
                 && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && a.Value == hostname), ct);
         if (asset is null || asset.Status != PublicAssetStatus.Pending) return;
 
+        var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
+        var existing = await storage.OpenImmutableAsync(key, "image/png", ct);
+        if (existing is not null)
+        {
+            var dimensions = await ValidateImmutableImageAsync(existing, ct);
+            await CompleteAggregateAsync(asset, existing, dimensions.Width, dimensions.Height, key, ct);
+            return;
+        }
+
         var origin = new Uri($"https://{hostname}/");
         var fallbackHostname = ParentHostname(hostname);
         var candidates = new List<IconCandidate>();
@@ -111,27 +120,39 @@ internal sealed class WebsiteIconAcquirer(
             await image.SaveAsync(sanitized, new PngEncoder(), ct);
             if (sanitized.Length > MaximumDownloadBytes) return;
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
-            var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
             sanitized.Position = 0;
             var published = await storage.PublishImmutableAsync(sanitized, key, "image/png", digest, sanitized.Length, ct);
             var width = image.Width;
             var height = image.Height;
             if (published.ExistingContent is not null)
             {
-                await using var storedSource = new MemoryStream(published.ExistingContent, writable: false);
-                using var storedImage = await Image.LoadAsync(storedSource, ct);
-                if (storedImage.Width is < 1 or > 2048 || storedImage.Height is < 1 or > 2048
-                    || (long)storedImage.Width * storedImage.Height > 4_000_000)
-                    throw new InvalidDataException("The immutable website icon has invalid dimensions.");
-                width = storedImage.Width;
-                height = storedImage.Height;
+                var dimensions = await ValidateImmutableImageAsync(published, ct);
+                width = dimensions.Width;
+                height = dimensions.Height;
             }
-            asset.Publish(published.Digest, "image/png", published.Length, width, height, key, clock.GetCurrentInstant());
-            try { await db.CommitAsync(ct); }
-            catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-            {
-                // Another delivery completed the same immutable revision first.
-            }
+            await CompleteAggregateAsync(asset, published, width, height, key, ct);
+        }
+    }
+
+    private static async Task<(int Width, int Height)> ValidateImmutableImageAsync(ImmutablePublishedObject published, CancellationToken ct)
+    {
+        if (published.ExistingContent is null) throw new InvalidDataException("Immutable public asset content is missing.");
+        await using var source = new MemoryStream(published.ExistingContent, writable: false);
+        using var image = await Image.LoadAsync(source, ct);
+        if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048
+            || (long)image.Width * image.Height > 4_000_000)
+            throw new InvalidDataException("The immutable website icon has invalid dimensions.");
+        return (image.Width, image.Height);
+    }
+
+    private async Task CompleteAggregateAsync(PublicAsset asset, ImmutablePublishedObject published, int width, int height, string key, CancellationToken ct)
+    {
+        asset.Publish(published.Digest, "image/png", published.Length, width, height, key, clock.GetCurrentInstant());
+        try { await db.CommitAsync(ct); }
+        catch (DbUpdateConcurrencyException) { }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Another delivery completed the same immutable revision first.
         }
     }
 

@@ -47,6 +47,7 @@ namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Persistence.Migratio
                         .HasColumnType("uuid");
 
                     b.Property<int>("Status")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer");
 
                     b.Property<int>("Type")

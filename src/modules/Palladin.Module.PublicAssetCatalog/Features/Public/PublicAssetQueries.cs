@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Npgsql;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
+using NodaTime;
 
 namespace Palladin.Module.PublicAssetCatalog.Features;
 
@@ -35,12 +36,12 @@ internal static class PublicAssetContracts
     internal static string WebsiteIconStorageKey(Guid assetId) => $"published/website-icon/{assetId:N}/1.png";
     internal static PublicAssetContract MapReservedWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
         new(asset.Id, "websiteIcon", asset.Name, storage.GetDeliveryUrl(WebsiteIconStorageKey(asset.Id)), 1, asset.Aliases.Select(x => x.Value).ToArray());
-    internal static bool IsWebsiteAcquisitionReservation(PublicAsset asset, IReadOnlySet<Guid> uploadAssetIds) =>
-        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending && !uploadAssetIds.Contains(asset.Id);
-    internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IReadOnlySet<Guid> uploadAssetIds, IPublicAssetStorage storage) =>
+    internal static bool IsWebsiteAcquisitionReservation(PublicAsset asset, IReadOnlySet<Guid> liveUploadAssetIds) =>
+        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending && !liveUploadAssetIds.Contains(asset.Id);
+    internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IReadOnlySet<Guid> liveUploadAssetIds, IPublicAssetStorage storage) =>
         asset.Status == PublicAssetStatus.Ready
             ? Map(asset, storage)
-            : IsWebsiteAcquisitionReservation(asset, uploadAssetIds) ? MapReservedWebsiteIcon(asset, storage) : null;
+            : IsWebsiteAcquisitionReservation(asset, liveUploadAssetIds) ? MapReservedWebsiteIcon(asset, storage) : null;
     internal static bool TryHostname(string input, out string hostname)
     {
         hostname = input.Trim().TrimEnd('.').ToLowerInvariant();
@@ -86,7 +87,7 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
 }
 [UsedImplicitly] internal sealed class EnsureWebsiteIconsValidator : Validator<EnsureWebsiteIconsRequest> { public EnsureWebsiteIconsValidator() { RuleFor(x => x.Hostnames).NotEmpty().Must(x => x.Count <= 500); RuleForEach(x => x.Hostnames).Must(x => PublicAssetContracts.TryHostname(x, out _)); } }
 [PublicAPI]
-internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids, WebsiteIconEnsureLimiter limiter) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
+internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids, WebsiteIconEnsureLimiter limiter, IClock clock) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
 {
     public override void Configure()
     {
@@ -105,11 +106,34 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
             return;
         }
         List<PublicAsset> assets = [];
-        for (var attempt = 0; attempt < 3; attempt++)
+        HashSet<Guid> liveUploadAssetIds = [];
+        var committed = false;
+        for (var attempt = 0; attempt < 5; attempt++)
         {
             assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions)
                 .Where(x => x.Type == PublicAssetType.WebsiteIcon && x.Status != PublicAssetStatus.Deleted
                     && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && hosts.Contains(a.Value))).ToListAsync(ct);
+            var pendingAssetIds = assets.Where(x => x.Status == PublicAssetStatus.Pending).Select(x => x.Id).ToArray();
+            var uploadSessions = await db.UploadSessions.AsNoTracking()
+                .Where(x => pendingAssetIds.Contains(x.AssetId))
+                .Select(x => new { x.AssetId, x.CompletedAt, x.ExpiresAt })
+                .ToArrayAsync(ct);
+            var uploadAssetIds = uploadSessions.Select(x => x.AssetId).ToHashSet();
+            var now = clock.GetCurrentInstant();
+            liveUploadAssetIds = uploadSessions
+                .Where(x => x.CompletedAt is null && x.ExpiresAt > now)
+                .Select(x => x.AssetId)
+                .ToHashSet();
+            var abandonedUploads = assets.Where(x => x.Status == PublicAssetStatus.Pending
+                && uploadAssetIds.Contains(x.Id) && !liveUploadAssetIds.Contains(x.Id)).ToArray();
+            if (abandonedUploads.Length > 0)
+            {
+                foreach (var asset in abandonedUploads) asset.AbandonPendingWebsiteUpload();
+                try { await db.CommitAsync(ct); }
+                catch (DbUpdateConcurrencyException) { }
+                db.Clear();
+                continue;
+            }
             var known = PublicAssetContracts.BuildHostnameMap(assets);
             foreach (var hostname in hosts.Where(x => !known.ContainsKey(x)))
             {
@@ -120,6 +144,7 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
             try
             {
                 await db.CommitAsync(ct);
+                committed = true;
                 break;
             }
             catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
@@ -127,21 +152,15 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 // A concurrent ensure won one of the hostname reservations.
                 // Clear the rolled-back graph and rebuild the complete batch;
                 // this preserves idempotency without dropping unrelated hosts.
-                if (attempt == 2) throw new PublicAssetHostnameConflictException();
                 db.Clear();
             }
         }
+        if (!committed) throw new PublicAssetHostnameConflictException();
         var map = PublicAssetContracts.BuildHostnameMap(assets);
-        var mappedAssetIds = map.Values.Select(x => x.Id).Distinct().ToArray();
-        var uploadAssetIds = (await db.UploadSessions.AsNoTracking()
-            .Where(x => mappedAssetIds.Contains(x.AssetId))
-            .Select(x => x.AssetId)
-            .Distinct()
-            .ToArrayAsync(ct)).ToHashSet();
-        foreach (var asset in map.Values.Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, uploadAssetIds)).DistinctBy(x => x.Id))
+        foreach (var asset in map.Values.Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds)).DistinctBy(x => x.Id))
             await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
         await Send.OkAsync(new(hosts.Select(h => new EnsuredWebsiteIconContract(h, map.TryGetValue(h, out var asset)
-            ? PublicAssetContracts.MapEnsuredWebsiteIcon(asset, uploadAssetIds, storage)
+            ? PublicAssetContracts.MapEnsuredWebsiteIcon(asset, liveUploadAssetIds, storage)
             : null)).ToArray()), ct);
     }
 }

@@ -15,7 +15,7 @@ ARG SOURCE_REVISION=development
 
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.revision="$SOURCE_REVISION" \
-      org.opencontainers.image.source="https://github.com/Palladin-io/palladin-net-backend-oss"
+      org.opencontainers.image.source="https://github.com/Palladin-io/palladin-net-backend"
 
 ENV ASPNETCORE_URLS=http://+:8080
 

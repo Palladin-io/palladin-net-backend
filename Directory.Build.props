@@ -7,10 +7,10 @@
         <Authors>Patryk Roguszewski, trading as Patryk Roguszewski IT Solutions</Authors>
         <Copyright>Copyright 2026 Patryk Roguszewski, trading as Patryk Roguszewski IT Solutions</Copyright>
         <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
-        <PackageProjectUrl>https://github.com/Palladin-io/palladin-net-backend-oss</PackageProjectUrl>
+        <PackageProjectUrl>https://github.com/Palladin-io/palladin-net-backend</PackageProjectUrl>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
         <RepositoryType>git</RepositoryType>
-        <RepositoryUrl>https://github.com/Palladin-io/palladin-net-backend-oss.git</RepositoryUrl>
+        <RepositoryUrl>https://github.com/Palladin-io/palladin-net-backend.git</RepositoryUrl>
     </PropertyGroup>
 
     <ItemGroup>

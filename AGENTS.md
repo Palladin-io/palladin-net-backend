@@ -11,7 +11,7 @@ GitHub Actions workflow at `.github/workflows/test.yml` runs on PRs to `main`:
 
 **All changes must go through PRs** — CI must pass before merging.
 
-Repository: [Palladin-io/palladin-net-backend-oss](https://github.com/Palladin-io/palladin-net-backend-oss)
+Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/palladin-net-backend)
 
 ## Runtime Secrets
 

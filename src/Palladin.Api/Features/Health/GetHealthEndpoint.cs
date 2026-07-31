@@ -10,7 +10,7 @@ internal sealed record GetHealthResponse(string Status, string SourceCode, strin
 [PublicAPI]
 internal sealed class GetHealthEndpoint : EndpointWithoutRequest<GetHealthResponse>
 {
-    private const string RepositoryUrl = "https://github.com/Palladin-io/palladin-net-backend-oss";
+    private const string RepositoryUrl = "https://github.com/Palladin-io/palladin-net-backend";
     private static readonly string SourceCodeUrl = ResolveSourceCodeUrl();
 
     public override void Configure()

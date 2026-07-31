@@ -15,7 +15,16 @@ public sealed class PublicAssetSecurityTests
 {
     [Fact]
     public void When_Website_Icon_Is_Scheduled_Then_It_Uses_The_Durable_Command_Contract() =>
-        new AcquireWebsiteIconCommand("host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();
+        new AcquireWebsiteIconCommand(Guid.NewGuid(), "host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();
+
+    [Fact]
+    public void When_Website_Icon_Is_Reserved_Then_Its_Delivery_Key_Is_Stable()
+    {
+        var assetId = Guid.Parse("11111111-2222-4333-8444-555555555555");
+
+        PublicAssetContracts.WebsiteIconStorageKey(assetId)
+            .ShouldBe("published/website-icon/11111111222243338444555555555555/1.png");
+    }
 
     [Fact]
     public async Task When_Dns_Or_Download_Does_Not_Complete_Then_The_Worker_Operation_Is_Bounded()
@@ -143,7 +152,7 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_Historical_Assets_Share_A_Hostname_Then_Resolve_Map_Remains_Deterministic()
+    public void When_Historical_Assets_Share_A_Hostname_Then_Ensure_Map_Remains_Deterministic()
     {
         var first = PublicAsset.Create(Guid.Parse("10000000-0000-0000-0000-000000000000"), "First", [("bitmedia.io", PublicAssetAliasKind.Hostname)]);
         var second = PublicAsset.Create(Guid.Parse("20000000-0000-0000-0000-000000000000"), "Second", [("bitmedia.io", PublicAssetAliasKind.Hostname)]);

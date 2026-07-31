@@ -8,15 +8,18 @@ using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using MassTransit;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Npgsql;
+using Palladin.Core.Guid;
 
 namespace Palladin.Module.PublicAssetCatalog.Features;
 
 [PublicAPI] public sealed record PublicAssetContract(Guid Id, string Type, string Name, string Url, int Revision, IReadOnlyList<string>? Aliases = null);
 [PublicAPI] public sealed record SearchPublicAssetsRequest(string Type, string Q, int? Limit);
 [PublicAPI] public sealed record SearchPublicAssetsResponse(IReadOnlyList<PublicAssetContract> Items);
-[PublicAPI] public sealed record ResolvePublicAssetsRequest(string Type, IReadOnlyList<string> Hostnames, bool? AcquireMissing = null);
-[PublicAPI] public sealed record ResolvedPublicAssetContract(string Hostname, PublicAssetContract? Asset);
-[PublicAPI] public sealed record ResolvePublicAssetsResponse(IReadOnlyList<ResolvedPublicAssetContract> Items);
+[PublicAPI] public sealed record EnsureWebsiteIconsRequest(IReadOnlyList<string> Hostnames);
+[PublicAPI] public sealed record EnsuredWebsiteIconContract(string Hostname, PublicAssetContract? Asset);
+[PublicAPI] public sealed record EnsureWebsiteIconsResponse(IReadOnlyList<EnsuredWebsiteIconContract> Items);
 [PublicAPI] public sealed record GetPublicAssetRequest(Guid AssetId, int? V);
 [PublicAPI] public sealed record GetPublicAssetsByIdsRequest(IReadOnlyList<Guid> AssetIds);
 
@@ -27,6 +30,9 @@ internal static class PublicAssetContracts
         var revision = asset.Revisions.Single(x => x.Revision == asset.CurrentRevision);
         return new(asset.Id, asset.Type == PublicAssetType.AgentIcon ? "agentIcon" : "websiteIcon", asset.Name, storage.GetDeliveryUrl(revision.StorageKey), revision.Revision, asset.Aliases.Select(x => x.Value).ToArray());
     }
+    internal static string WebsiteIconStorageKey(Guid assetId) => $"published/website-icon/{assetId:N}/1.png";
+    internal static PublicAssetContract MapReservedWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
+        new(asset.Id, "websiteIcon", asset.Name, storage.GetDeliveryUrl(WebsiteIconStorageKey(asset.Id)), 1, asset.Aliases.Select(x => x.Value).ToArray());
     internal static bool TryHostname(string input, out string hostname)
     {
         hostname = input.Trim().TrimEnd('.').ToLowerInvariant();
@@ -39,7 +45,7 @@ internal static class PublicAssetContracts
                 .Select(alias => (alias.Value, Asset: asset)))
             .GroupBy(item => item.Value, StringComparer.Ordinal)
             // Historical retries may have produced duplicate catalog rows.
-            // Resolve remains total and deterministic instead of failing the
+            // Mapping remains total and deterministic instead of failing the
             // complete client batch because one hostname occurs twice.
             .ToDictionary(
                 group => group.Key,
@@ -71,24 +77,47 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
         await Send.OkAsync(new(assets.Select(x => PublicAssetContracts.Map(x, storage)).ToArray()), ct);
     }
 }
-[UsedImplicitly] internal sealed class ResolvePublicAssetsValidator : Validator<ResolvePublicAssetsRequest> { public ResolvePublicAssetsValidator() { RuleFor(x => x.Type).Equal("websiteIcon"); RuleFor(x => x.Hostnames).NotEmpty().Must(x => x.Count <= 500); RuleForEach(x => x.Hostnames).Must(x => PublicAssetContracts.TryHostname(x, out _)); } }
+[UsedImplicitly] internal sealed class EnsureWebsiteIconsValidator : Validator<EnsureWebsiteIconsRequest> { public EnsureWebsiteIconsValidator() { RuleFor(x => x.Hostnames).NotEmpty().Must(x => x.Count <= 500); RuleForEach(x => x.Hostnames).Must(x => PublicAssetContracts.TryHostname(x, out _)); } }
 [PublicAPI]
-internal sealed class ResolvePublicAssetsEndpoint(PublicAssetCatalogDomainReadContext db, IPublicAssetStorage storage, IPublishEndpoint publisher) : Endpoint<ResolvePublicAssetsRequest, ResolvePublicAssetsResponse>
+internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
 {
-    public override void Configure() { Post("api/public-assets/resolve"); AllowAnonymous(); Tags("Public Assets"); }
-    public override async Task HandleAsync(ResolvePublicAssetsRequest req, CancellationToken ct)
+    public override void Configure() { Post("api/public-assets/website-icons/ensure"); AuthSchemes(JwtBearerDefaults.AuthenticationScheme); Tags("Public Assets"); }
+    public override async Task HandleAsync(EnsureWebsiteIconsRequest req, CancellationToken ct)
     {
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
-        var knownHosts = await db.Assets.Where(x => x.Status == PublicAssetStatus.Ready).SelectMany(x => x.Aliases).Where(x => x.Kind == PublicAssetAliasKind.Hostname && hosts.Contains(x.Value)).Select(x => x.Value).ToArrayAsync(ct);
-        // RabbitMQ is the durable backpressure boundary. Imports may contain
-        // any number of client-side pages; accepted commands survive process
-        // restarts and are never dropped because an in-memory channel is full.
-        if (req.AcquireMissing is not false)
-            foreach (var hostname in hosts.Except(knownHosts))
-                await publisher.Publish(new AcquireWebsiteIconCommand(hostname), ct);
-        var assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions).Where(x => x.Status == PublicAssetStatus.Ready && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && hosts.Contains(a.Value))).ToListAsync(ct);
+        List<PublicAsset> assets = [];
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions)
+                .Where(x => x.Type == PublicAssetType.WebsiteIcon && x.Status != PublicAssetStatus.Deleted
+                    && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && hosts.Contains(a.Value))).ToListAsync(ct);
+            var known = PublicAssetContracts.BuildHostnameMap(assets);
+            foreach (var hostname in hosts.Where(x => !known.ContainsKey(x)))
+            {
+                var asset = PublicAsset.Create(ids.Generate(), hostname, [(hostname, PublicAssetAliasKind.Hostname)]);
+                db.Add(asset);
+                assets.Add(asset);
+            }
+            try
+            {
+                await db.CommitAsync(ct);
+                break;
+            }
+            catch (DbUpdateException exception) when (attempt < 2
+                && exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                // A concurrent ensure won one of the hostname reservations.
+                // Clear the rolled-back graph and rebuild the complete batch;
+                // this preserves idempotency without dropping unrelated hosts.
+                db.Clear();
+            }
+        }
         var map = PublicAssetContracts.BuildHostnameMap(assets);
-        await Send.OkAsync(new(hosts.Select(h => new ResolvedPublicAssetContract(h, map.TryGetValue(h, out var a) ? PublicAssetContracts.Map(a, storage) : null)).ToArray()), ct);
+        foreach (var asset in map.Values.Where(x => x.Status == PublicAssetStatus.Pending).DistinctBy(x => x.Id))
+            await publisher.Publish(new AcquireWebsiteIconCommand(asset.Id, asset.Name), ct);
+        await Send.OkAsync(new(hosts.Select(h => new EnsuredWebsiteIconContract(h, map.TryGetValue(h, out var asset)
+            ? asset.Status == PublicAssetStatus.Ready ? PublicAssetContracts.Map(asset, storage) : PublicAssetContracts.MapReservedWebsiteIcon(asset, storage)
+            : null)).ToArray()), ct);
     }
 }
 [PublicAPI]

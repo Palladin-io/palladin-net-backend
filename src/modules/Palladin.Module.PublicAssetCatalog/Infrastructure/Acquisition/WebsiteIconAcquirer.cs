@@ -7,8 +7,8 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NodaTime;
-using Palladin.Core.Guid;
 using Palladin.Module.PublicAssetCatalog.Domain;
+using Palladin.Module.PublicAssetCatalog.Features;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Persistence;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using SixLabors.ImageSharp;
@@ -18,14 +18,13 @@ namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 
 internal interface IWebsiteIconAcquirer
 {
-    Task AcquireAsync(string hostname, CancellationToken ct);
+    Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct);
 }
 
 /// <summary>Best-effort public favicon acquisition with DNS pinning and redirect revalidation.</summary>
 internal sealed class WebsiteIconAcquirer(
     PublicAssetCatalogDomainWriteContext db,
     IPublicAssetStorage storage,
-    IGuidProvider ids,
     IClock clock) : IWebsiteIconAcquirer
 {
     private const int MaximumDownloadBytes = 1024 * 1024;
@@ -38,10 +37,16 @@ internal sealed class WebsiteIconAcquirer(
         "/android-chrome-192x192.png",
     ];
 
-    public async Task AcquireAsync(string hostname, CancellationToken ct)
+    public async Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct)
     {
         if (!PublicNetworkPolicy.IsValidHostname(hostname)) return;
-        if (await db.Assets.AnyAsync(x => x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && a.Value == hostname), ct)) return;
+        var asset = await db.Assets
+            .Include(x => x.Aliases)
+            .Include(x => x.Revisions)
+            .SingleOrDefaultAsync(x => x.Id == assetId
+                && x.Type == PublicAssetType.WebsiteIcon
+                && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && a.Value == hostname), ct);
+        if (asset is null || asset.Status != PublicAssetStatus.Pending) return;
 
         var origin = new Uri($"https://{hostname}/");
         var fallbackHostname = ParentHostname(hostname);
@@ -106,16 +111,14 @@ internal sealed class WebsiteIconAcquirer(
             await image.SaveAsync(sanitized, new PngEncoder(), ct);
             if (sanitized.Length > MaximumDownloadBytes) return;
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
-            var asset = PublicAsset.Create(ids.Generate(), hostname, [(hostname, PublicAssetAliasKind.Hostname)]);
-            var key = $"published/website-icon/{digest[..2]}/{digest}/1.png";
+            var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
             sanitized.Position = 0;
-            await storage.PublishAsync(string.Empty, sanitized, key, "image/png", ct);
+            await storage.PublishAsync(string.Empty, sanitized, key, "image/png", ct, overwrite: false);
             asset.Publish(digest, "image/png", sanitized.Length, image.Width, image.Height, key, clock.GetCurrentInstant());
-            db.Add(asset);
             try { await db.CommitAsync(ct); }
             catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
             {
-                // The unique hostname index resolves concurrent acquisition races.
+                // Another delivery completed the same immutable revision first.
             }
         }
     }

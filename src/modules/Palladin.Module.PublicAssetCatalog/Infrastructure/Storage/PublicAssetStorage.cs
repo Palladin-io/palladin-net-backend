@@ -26,7 +26,7 @@ internal interface IPublicAssetStorage
 {
     Task<string> CreateUploadUrlAsync(string key, string mediaType, Instant expiresAt, CancellationToken ct);
     Task<StagedObject?> OpenStagedAsync(string key, CancellationToken ct);
-    Task PublishAsync(string stagingKey, Stream validatedContent, string publishedKey, string mediaType, CancellationToken ct);
+    Task PublishAsync(string stagingKey, Stream validatedContent, string publishedKey, string mediaType, CancellationToken ct, bool overwrite = true);
     Task DeleteStagedAsync(string stagingKey, CancellationToken ct);
     string GetDeliveryUrl(string key);
 }
@@ -41,9 +41,9 @@ internal sealed class S3PublicAssetStorage(IOptions<PublicAssetStorageOptions> c
         try { var response = await s3.GetObjectAsync(options.BucketName, key, ct); return new(response.ResponseStream, response.ContentLength, response.Headers.ContentType); }
         catch (AmazonS3Exception e) when (e.StatusCode == HttpStatusCode.NotFound) { return null; }
     }
-    public async Task PublishAsync(string stagingKey, Stream validatedContent, string publishedKey, string mediaType, CancellationToken ct)
+    public async Task PublishAsync(string stagingKey, Stream validatedContent, string publishedKey, string mediaType, CancellationToken ct, bool overwrite = true)
     {
-        await s3.PutObjectAsync(new PutObjectRequest { BucketName = options.BucketName, Key = publishedKey, InputStream = validatedContent, AutoCloseStream = false, ContentType = mediaType, Headers = { CacheControl = "public,max-age=31536000,immutable" } }, ct);
+        await s3.PutObjectAsync(new PutObjectRequest { BucketName = options.BucketName, Key = publishedKey, InputStream = validatedContent, AutoCloseStream = false, ContentType = mediaType, IfNoneMatch = overwrite ? null : "*", Headers = { CacheControl = "public,max-age=31536000,immutable" } }, ct);
         if (!string.IsNullOrEmpty(stagingKey)) await s3.DeleteObjectAsync(options.BucketName, stagingKey, ct);
     }
     public Task DeleteStagedAsync(string stagingKey, CancellationToken ct) => s3.DeleteObjectAsync(options.BucketName, stagingKey, ct);

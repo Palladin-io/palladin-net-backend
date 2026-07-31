@@ -17,7 +17,7 @@ internal sealed class PublicAssetConfiguration : IEntityTypeConfiguration<Public
 }
 internal sealed class PublicAssetAliasConfiguration : IEntityTypeConfiguration<PublicAssetAlias>
 {
-    public void Configure(EntityTypeBuilder<PublicAssetAlias> b) { b.HasKey(x => new { x.AssetId, x.Kind, x.Value }); b.Property(x => x.Value).HasMaxLength(253); b.HasIndex(x => new { x.Kind, x.Value }); }
+    public void Configure(EntityTypeBuilder<PublicAssetAlias> b) { b.HasKey(x => new { x.AssetId, x.Kind, x.Value }); b.Property(x => x.Value).HasMaxLength(253); b.HasIndex(x => new { x.Kind, x.Value }).IsUnique().HasFilter("\"Kind\" = 1"); }
 }
 internal sealed class PublicAssetRevisionConfiguration : IEntityTypeConfiguration<PublicAssetRevision>
 {

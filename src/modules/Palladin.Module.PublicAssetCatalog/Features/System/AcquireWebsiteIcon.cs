@@ -20,5 +20,5 @@ internal sealed class AcquireWebsiteIconConsumer(IWebsiteIconAcquirer acquirer)
     : IConsumer<AcquireWebsiteIconCommand>
 {
     public Task Consume(ConsumeContext<AcquireWebsiteIconCommand> context) =>
-        acquirer.AcquireAsync(context.Message.Hostname, context.CancellationToken);
+        acquirer.AcquireAsync(context.Message.AssetId, context.Message.Hostname, context.CancellationToken);
 }

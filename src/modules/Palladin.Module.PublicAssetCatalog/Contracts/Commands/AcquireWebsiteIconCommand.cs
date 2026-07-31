@@ -3,6 +3,10 @@ using Palladin.Core.Events;
 
 namespace Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 
-/// <summary>Durable request to acquire one public website icon by normalized hostname.</summary>
+/// <summary>Legacy pre-production contract retained so queued envelopes keep their original schema.</summary>
 [PublicAPI]
-public sealed record AcquireWebsiteIconCommand(Guid AssetId, string Hostname) : IIntegrationCommand;
+public sealed record AcquireWebsiteIconCommand(string Hostname) : IIntegrationCommand;
+
+/// <summary>Durable request to fill a previously reserved website-icon asset.</summary>
+[PublicAPI]
+public sealed record AcquireWebsiteIconV2Command(Guid AssetId, string Hostname) : IIntegrationCommand;

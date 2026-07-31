@@ -15,7 +15,7 @@ public sealed class PublicAssetSecurityTests
 {
     [Fact]
     public void When_Website_Icon_Is_Scheduled_Then_It_Uses_The_Durable_Command_Contract() =>
-        new AcquireWebsiteIconCommand(Guid.NewGuid(), "host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();
+        new AcquireWebsiteIconV2Command(Guid.NewGuid(), "host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();
 
     [Fact]
     public void When_Website_Icon_Is_Reserved_Then_Its_Delivery_Key_Is_Stable()

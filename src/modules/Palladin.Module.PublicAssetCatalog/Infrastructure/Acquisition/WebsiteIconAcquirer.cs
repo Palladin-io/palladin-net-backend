@@ -113,7 +113,7 @@ internal sealed class WebsiteIconAcquirer(
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
             var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
             sanitized.Position = 0;
-            await storage.PublishAsync(string.Empty, sanitized, key, "image/png", ct, overwrite: false);
+            await storage.PublishImmutableAsync(sanitized, key, "image/png", digest, sanitized.Length, ct);
             asset.Publish(digest, "image/png", sanitized.Length, image.Width, image.Height, key, clock.GetCurrentInstant());
             try { await db.CommitAsync(ct); }
             catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })

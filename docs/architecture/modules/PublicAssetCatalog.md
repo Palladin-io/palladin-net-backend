@@ -31,10 +31,16 @@ sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environment
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
 
 Missing website icons are first reserved under a unique hostname alias, then emitted as
-`AcquireWebsiteIconCommand(assetId, hostname)` integration commands to a durable
-RabbitMQ endpoint. The broker provides backpressure and retains accepted work across API restarts;
+`AcquireWebsiteIconV2Command(assetId, hostname)` integration commands to the durable
+`public-asset-catalog.commands.acquire-website-icon-v2` RabbitMQ endpoint. The previous
+pre-production command schema/queue is intentionally retired and may be purged during this
+non-production cutover; no production messages or catalog data exist to migrate. The uniqueness
+migration deterministically removes duplicate pre-production hostname assets before creating the index.
+The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
 index prevents duplicate website assets. The reserved revision key is written with S3 `If-None-Match: *`,
-so duplicate deliveries cannot overwrite an immutable URL with different bytes. Clients persist the
+and a retry after an object-store/database partial commit downloads the bounded existing object and
+accepts it only when its digest, media type, and length match, so duplicate
+deliveries can finish the database transition without overwriting different bytes. Clients persist the
 returned `id`, `revision`, and `url` inside encrypted Vault presentation data. Vault list/detail reads
 never call ensure, resolve, by-id, or get-by-id for Entry icons; the browser/app performs only the image GET.

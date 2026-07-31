@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
@@ -27,6 +28,7 @@ internal interface IPublicAssetStorage
     Task<string> CreateUploadUrlAsync(string key, string mediaType, Instant expiresAt, CancellationToken ct);
     Task<StagedObject?> OpenStagedAsync(string key, CancellationToken ct);
     Task PublishAsync(string stagingKey, Stream validatedContent, string publishedKey, string mediaType, CancellationToken ct, bool overwrite = true);
+    Task PublishImmutableAsync(Stream validatedContent, string publishedKey, string mediaType, string digest, long length, CancellationToken ct);
     Task DeleteStagedAsync(string stagingKey, CancellationToken ct);
     string GetDeliveryUrl(string key);
 }
@@ -45,6 +47,36 @@ internal sealed class S3PublicAssetStorage(IOptions<PublicAssetStorageOptions> c
     {
         await s3.PutObjectAsync(new PutObjectRequest { BucketName = options.BucketName, Key = publishedKey, InputStream = validatedContent, AutoCloseStream = false, ContentType = mediaType, IfNoneMatch = overwrite ? null : "*", Headers = { CacheControl = "public,max-age=31536000,immutable" } }, ct);
         if (!string.IsNullOrEmpty(stagingKey)) await s3.DeleteObjectAsync(options.BucketName, stagingKey, ct);
+    }
+    public async Task PublishImmutableAsync(Stream validatedContent, string publishedKey, string mediaType, string digest, long length, CancellationToken ct)
+    {
+        try
+        {
+            var request = new PutObjectRequest
+            {
+                BucketName = options.BucketName,
+                Key = publishedKey,
+                InputStream = validatedContent,
+                AutoCloseStream = false,
+                ContentType = mediaType,
+                IfNoneMatch = "*",
+                Headers = { CacheControl = "public,max-age=31536000,immutable" },
+            };
+            await s3.PutObjectAsync(request, ct);
+        }
+        catch (AmazonS3Exception exception) when (exception.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            // A previous delivery may have stored the immutable object and
+            // crashed before committing the aggregate. Only accept that object
+            // when its actual bytes match the sanitized content that this
+            // delivery independently produced.
+            using var existing = await s3.GetObjectAsync(options.BucketName, publishedKey, ct);
+            var existingDigest = Convert.ToHexString(await SHA256.HashDataAsync(existing.ResponseStream, ct)).ToLowerInvariant();
+            if (!string.Equals(existingDigest, digest, StringComparison.Ordinal)
+                || existing.ContentLength != length
+                || !string.Equals(existing.Headers.ContentType, mediaType, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Immutable public asset '{publishedKey}' already exists with different content.", exception);
+        }
     }
     public Task DeleteStagedAsync(string stagingKey, CancellationToken ct) => s3.DeleteObjectAsync(options.BucketName, stagingKey, ct);
     public string GetDeliveryUrl(string key)

@@ -44,9 +44,8 @@ internal static class PublicAssetContracts
                 .Where(alias => alias.Kind == PublicAssetAliasKind.Hostname)
                 .Select(alias => (alias.Value, Asset: asset)))
             .GroupBy(item => item.Value, StringComparer.Ordinal)
-            // Historical retries may have produced duplicate catalog rows.
-            // Mapping remains total and deterministic instead of failing the
-            // complete client batch because one hostname occurs twice.
+            // Stay defensive while a node can still observe rows created before
+            // the filtered uniqueness migration completed across the cluster.
             .ToDictionary(
                 group => group.Key,
                 group => group.OrderByDescending(item => item.Asset.CurrentRevision)
@@ -114,7 +113,7 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
         }
         var map = PublicAssetContracts.BuildHostnameMap(assets);
         foreach (var asset in map.Values.Where(x => x.Status == PublicAssetStatus.Pending).DistinctBy(x => x.Id))
-            await publisher.Publish(new AcquireWebsiteIconCommand(asset.Id, asset.Name), ct);
+            await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
         await Send.OkAsync(new(hosts.Select(h => new EnsuredWebsiteIconContract(h, map.TryGetValue(h, out var asset)
             ? asset.Status == PublicAssetStatus.Ready ? PublicAssetContracts.Map(asset, storage) : PublicAssetContracts.MapReservedWebsiteIcon(asset, storage)
             : null)).ToArray()), ct);

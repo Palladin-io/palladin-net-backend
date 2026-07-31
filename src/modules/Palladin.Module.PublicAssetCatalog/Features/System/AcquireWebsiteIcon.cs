@@ -6,19 +6,19 @@ using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 namespace Palladin.Module.PublicAssetCatalog.Features;
 
 [UsedImplicitly]
-internal sealed class AcquireWebsiteIconConsumerDefinition : ConsumerDefinition<AcquireWebsiteIconConsumer>
+internal sealed class AcquireWebsiteIconV2ConsumerDefinition : ConsumerDefinition<AcquireWebsiteIconV2Consumer>
 {
-    public AcquireWebsiteIconConsumerDefinition()
+    public AcquireWebsiteIconV2ConsumerDefinition()
     {
-        EndpointName = "public-asset-catalog.commands.acquire-website-icon";
+        EndpointName = "public-asset-catalog.commands.acquire-website-icon-v2";
         ConcurrentMessageLimit = 8;
     }
 }
 
 [UsedImplicitly]
-internal sealed class AcquireWebsiteIconConsumer(IWebsiteIconAcquirer acquirer)
-    : IConsumer<AcquireWebsiteIconCommand>
+internal sealed class AcquireWebsiteIconV2Consumer(IWebsiteIconAcquirer acquirer)
+    : IConsumer<AcquireWebsiteIconV2Command>
 {
-    public Task Consume(ConsumeContext<AcquireWebsiteIconCommand> context) =>
+    public Task Consume(ConsumeContext<AcquireWebsiteIconV2Command> context) =>
         acquirer.AcquireAsync(context.Message.AssetId, context.Message.Hostname, context.CancellationToken);
 }

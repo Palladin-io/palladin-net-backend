@@ -5,6 +5,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NodaTime;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
@@ -36,10 +37,16 @@ internal sealed class CreatePublicAssetUploadEndpoint(PublicAssetCatalogDomainWr
         var now = clock.GetCurrentInstant(); var assetId = ids.Generate(); var sessionId = ids.Generate();
         var aliases = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return (h, PublicAssetAliasKind.Hostname); }).Concat((req.Aliases ?? []).Select(x => (x.Trim().ToLowerInvariant(), PublicAssetAliasKind.Name)));
         var hostnames = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).ToArray();
-        if (await db.Assets.AnyAsync(x => x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && hostnames.Contains(a.Value)), ct)) { AddError("A hostname is already assigned to another catalog asset."); await Send.ErrorsAsync(cancellation: ct); return; }
+        if (await db.Assets.AnyAsync(x => x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && hostnames.Contains(a.Value)), ct)) throw new PublicAssetHostnameConflictException();
         var asset = req.Type == "agentIcon" ? await db.Assets.Include(x => x.Revisions).SingleOrDefaultAsync(x => x.OrganizationId == req.OrganizationId && x.Type == PublicAssetType.AgentIcon && x.OwnerId == req.OwnerId, ct) : null; var assetCreated = asset is null;
         asset ??= req.Type == "agentIcon" ? PublicAsset.CreateAgentIcon(assetId, req.OrganizationId!.Value, req.OwnerId!.Value, req.Name.Trim()) : PublicAsset.Create(assetId, req.Name.Trim(), aliases); assetId = asset.Id; var session = PublicAssetUploadSession.CreateForService(sessionId, assetId, serviceSubject, req.Sha256, req.MediaType, req.ByteLength, now + options.Value.UploadExpiry);
-        if (assetCreated) db.Add(asset); db.Add(session); await db.CommitAsync(ct); var url = await storage.CreateUploadUrlAsync(session.StagingKey, req.MediaType, session.ExpiresAt, ct);
+        if (assetCreated) db.Add(asset); db.Add(session);
+        try { await db.CommitAsync(ct); }
+        catch (DbUpdateException exception) when (req.Type == "websiteIcon" && exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            throw new PublicAssetHostnameConflictException();
+        }
+        var url = await storage.CreateUploadUrlAsync(session.StagingKey, req.MediaType, session.ExpiresAt, ct);
         await Send.OkAsync(new(assetId, sessionId, url, session.ExpiresAt, options.Value.MaximumBytes), ct);
     }
 }

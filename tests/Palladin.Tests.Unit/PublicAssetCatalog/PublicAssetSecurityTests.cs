@@ -8,6 +8,8 @@ using System.Diagnostics;
 using Palladin.Core.Events;
 using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
+using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
+using NSubstitute;
 
 namespace Palladin.Tests.Unit.PublicAssetCatalog;
 
@@ -24,6 +26,31 @@ public sealed class PublicAssetSecurityTests
 
         PublicAssetContracts.WebsiteIconStorageKey(assetId)
             .ShouldBe("published/website-icon/11111111222243338444555555555555/1.png");
+    }
+
+    [Fact]
+    public void When_A_Service_Upload_Is_Pending_Then_Ensure_Does_Not_Return_An_Acquisition_Url()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
+        var storage = Substitute.For<IPublicAssetStorage>();
+
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage)
+            .ShouldBeNull();
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid>(), storage)
+            .ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void When_A_Service_Upload_Is_Ready_Then_Ensure_Returns_The_Actual_Published_Revision()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
+        asset.Publish(new string('a', 64), "image/png", 10, 16, 16, "published/digest/1.png", Instant.FromUnixTimeSeconds(1));
+        var storage = Substitute.For<IPublicAssetStorage>();
+        storage.GetDeliveryUrl("published/digest/1.png").Returns("https://assets.palladin.io/published/digest/1.png");
+
+        var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage);
+
+        result.ShouldNotBeNull().Url.ShouldBe("https://assets.palladin.io/published/digest/1.png");
     }
 
     [Fact]

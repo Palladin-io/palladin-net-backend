@@ -24,8 +24,8 @@ raster, re-encodes it as PNG, and publishes exactly once under the reserved revi
 - `POST /api/public-assets/uploads`
 - `POST /api/public-assets/uploads/{uploadSessionId}/complete`
 
-Public read endpoints are anonymous and return metadata plus a render-ready delivery URL. Ensure is
-authenticated and rate-limited both to 30 requests and 500 submitted hostnames per Member per minute
+Public read endpoints are anonymous and return metadata plus a render-ready delivery URL. Ensure requires
+an email-verified Member with `VaultManage` and is rate-limited both to 30 requests and 500 submitted hostnames per Member per minute
 because it may schedule outbound acquisition. Production
 sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environments configure the direct
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
@@ -38,7 +38,11 @@ non-production cutover; no production messages or catalog data exist to migrate.
 migration deterministically removes duplicate pre-production hostname assets before creating the index.
 The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
-index prevents duplicate website assets. The reserved revision key is written with S3 `If-None-Match: *`,
+index prevents duplicate website assets.
+Pending assets that own a service upload session are never treated as acquisition reservations: ensure
+returns no icon until that upload publishes its real digest-based revision. A service upload that loses
+a hostname reservation race is translated to HTTP 409 instead of leaking a database uniqueness error.
+The reserved revision key is written with S3 `If-None-Match: *`,
 and a retry after an object-store/database partial commit downloads and decodes the bounded existing
 object, then completes the aggregate from those authoritative first-writer bytes, so duplicate
 deliveries can finish the database transition without overwriting different bytes. Clients persist the

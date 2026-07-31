@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\core\Palladin.Core.MassTransit\Palladin.Core.MassTransit.csproj" />
     <ProjectReference Include="..\..\core\Palladin.Core.Persistence\Palladin.Core.Persistence.csproj" />
     <ProjectReference Include="..\..\core\Palladin.Core.Security\Palladin.Core.Security.csproj" />
+    <ProjectReference Include="..\..\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
     <ProjectReference Include="Contracts\Palladin.Module.PublicAssetCatalog.Contracts.csproj" />
   </ItemGroup>
 </Project>

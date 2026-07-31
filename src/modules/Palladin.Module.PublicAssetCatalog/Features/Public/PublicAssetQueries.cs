@@ -35,6 +35,12 @@ internal static class PublicAssetContracts
     internal static string WebsiteIconStorageKey(Guid assetId) => $"published/website-icon/{assetId:N}/1.png";
     internal static PublicAssetContract MapReservedWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
         new(asset.Id, "websiteIcon", asset.Name, storage.GetDeliveryUrl(WebsiteIconStorageKey(asset.Id)), 1, asset.Aliases.Select(x => x.Value).ToArray());
+    internal static bool IsWebsiteAcquisitionReservation(PublicAsset asset, IReadOnlySet<Guid> uploadAssetIds) =>
+        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending && !uploadAssetIds.Contains(asset.Id);
+    internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IReadOnlySet<Guid> uploadAssetIds, IPublicAssetStorage storage) =>
+        asset.Status == PublicAssetStatus.Ready
+            ? Map(asset, storage)
+            : IsWebsiteAcquisitionReservation(asset, uploadAssetIds) ? MapReservedWebsiteIcon(asset, storage) : null;
     internal static bool TryHostname(string input, out string hostname)
     {
         hostname = input.Trim().TrimEnd('.').ToLowerInvariant();
@@ -82,7 +88,14 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
 [PublicAPI]
 internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids, WebsiteIconEnsureLimiter limiter) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
 {
-    public override void Configure() { Post("api/public-assets/website-icons/ensure"); AuthSchemes(JwtBearerDefaults.AuthenticationScheme); Tags("Public Assets"); }
+    public override void Configure()
+    {
+        Post("api/public-assets/website-icons/ensure");
+        AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        this.RequirePermission(Permission.VaultManage);
+        this.RequireEmailVerified();
+        Tags("Public Assets/Website Icons");
+    }
     public override async Task HandleAsync(EnsureWebsiteIconsRequest req, CancellationToken ct)
     {
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
@@ -109,20 +122,26 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 await db.CommitAsync(ct);
                 break;
             }
-            catch (DbUpdateException exception) when (attempt < 2
-                && exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
             {
                 // A concurrent ensure won one of the hostname reservations.
                 // Clear the rolled-back graph and rebuild the complete batch;
                 // this preserves idempotency without dropping unrelated hosts.
+                if (attempt == 2) throw new PublicAssetHostnameConflictException();
                 db.Clear();
             }
         }
         var map = PublicAssetContracts.BuildHostnameMap(assets);
-        foreach (var asset in map.Values.Where(x => x.Status == PublicAssetStatus.Pending).DistinctBy(x => x.Id))
+        var mappedAssetIds = map.Values.Select(x => x.Id).Distinct().ToArray();
+        var uploadAssetIds = (await db.UploadSessions.AsNoTracking()
+            .Where(x => mappedAssetIds.Contains(x.AssetId))
+            .Select(x => x.AssetId)
+            .Distinct()
+            .ToArrayAsync(ct)).ToHashSet();
+        foreach (var asset in map.Values.Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, uploadAssetIds)).DistinctBy(x => x.Id))
             await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
         await Send.OkAsync(new(hosts.Select(h => new EnsuredWebsiteIconContract(h, map.TryGetValue(h, out var asset)
-            ? asset.Status == PublicAssetStatus.Ready ? PublicAssetContracts.Map(asset, storage) : PublicAssetContracts.MapReservedWebsiteIcon(asset, storage)
+            ? PublicAssetContracts.MapEnsuredWebsiteIcon(asset, uploadAssetIds, storage)
             : null)).ToArray()), ct);
     }
 }

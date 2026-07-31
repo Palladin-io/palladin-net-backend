@@ -154,6 +154,17 @@ internal sealed class CredentialDeliveryService(
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MaterialUnavailable);
         }
 
+        // Entry type remains encrypted, but the already-server-readable FieldIds are committed by
+        // the authenticated envelope descriptor. Any delivered script runtime field therefore
+        // provides a privacy-compatible structural signal for the exec-only policy without adding
+        // a plaintext EntryType column. Reject before incrementing the grant use counter.
+        if (input.Method != GrantMethods.Exec
+            && material.FieldIds.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Any(fieldId => fieldId.StartsWith("script.", StringComparison.Ordinal)))
+        {
+            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.ScriptExecOnly);
+        }
+
         // BUG#2 fix: read denormalized names BEFORE the atomic increment / Consumed flip. A DB hiccup
         // on either FirstOrDefaultAsync after the increment would burn the use without delivering the
         // secret. Reading them upfront isolates the increment path from name-resolution failures.

@@ -9,6 +9,7 @@ using Npgsql;
 using NodaTime;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
+using Palladin.Core.Types.Exceptions;
 using Palladin.Module.PublicAssetCatalog.Domain;
 using Palladin.Module.PublicAssetCatalog.Infrastructure;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Persistence;

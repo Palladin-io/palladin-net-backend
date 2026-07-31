@@ -1,16 +1,10 @@
 using NodaTime;
-using Palladin.Core.Types.Exceptions;
 
 namespace Palladin.Module.PublicAssetCatalog.Domain;
 
 internal enum PublicAssetStatus { Pending = 1, Ready = 2, Deleted = 3 }
 internal enum PublicAssetType { WebsiteIcon = 1, AgentIcon = 2 }
 internal enum PublicAssetAliasKind { Hostname = 1, Name = 2, Slug = 3, Tag = 4 }
-
-internal sealed class PublicAssetHostnameConflictException()
-    : ConflictException("A hostname is already assigned to another catalog asset.");
-internal sealed class PublicAssetStateConflictException()
-    : ConflictException("Public asset state changed concurrently.");
 
 internal sealed class PublicAsset
 {

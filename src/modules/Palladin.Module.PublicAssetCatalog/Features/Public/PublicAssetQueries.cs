@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Npgsql;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
+using Palladin.Core.Types.Exceptions;
 using NodaTime;
 
 namespace Palladin.Module.PublicAssetCatalog.Features;

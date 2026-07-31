@@ -31,4 +31,27 @@ public sealed class SearchOrganizationEntriesTests(ApiFactory apiFactory) : Test
         result!.Items.ShouldHaveSingleItem().VaultId.ShouldBe(memberVault.Id);
         typeof(OrganizationEntryItem).GetProperty("VaultName").ShouldBeNull();
     }
+
+    [Fact]
+    public async Task When_MemberHasMoreEncryptedIndexes_Then_OrgListingContinuesWithOpaqueCursor()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var firstEntry = await apiFactory.Services.SeedEntryAsync(vault.Id, user.Id);
+        var secondEntry = await apiFactory.Services.SeedEntryAsync(vault.Id, user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        var (_, firstPage) = await client
+            .GETAsync<SearchOrganizationEntriesEndpoint, SearchOrganizationEntriesRequest, SearchOrganizationEntriesResponse>(
+                new SearchOrganizationEntriesRequest { PageSize = 1 });
+        var (_, secondPage) = await client
+            .GETAsync<SearchOrganizationEntriesEndpoint, SearchOrganizationEntriesRequest, SearchOrganizationEntriesResponse>(
+                new SearchOrganizationEntriesRequest { PageSize = 1, Cursor = firstPage!.NextCursor });
+
+        firstPage.NextCursor.ShouldNotBeNullOrWhiteSpace();
+        secondPage!.Items.ShouldHaveSingleItem();
+        secondPage.NextCursor.ShouldBeNull();
+        new[] { firstPage.Items.Single().Id, secondPage.Items.Single().Id }
+            .ShouldBe(new[] { firstEntry.Id, secondEntry.Id }, ignoreOrder: true);
+    }
 }

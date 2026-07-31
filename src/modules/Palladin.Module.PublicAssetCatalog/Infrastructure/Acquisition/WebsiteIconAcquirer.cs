@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using NodaTime;
 using Palladin.Module.PublicAssetCatalog.Domain;
 using Palladin.Module.PublicAssetCatalog.Features;
@@ -148,12 +147,7 @@ internal sealed class WebsiteIconAcquirer(
     private async Task CompleteAggregateAsync(PublicAsset asset, ImmutablePublishedObject published, int width, int height, string key, CancellationToken ct)
     {
         asset.Publish(published.Digest, "image/png", published.Length, width, height, key, clock.GetCurrentInstant());
-        try { await db.CommitAsync(ct); }
-        catch (DbUpdateConcurrencyException) { }
-        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-        {
-            // Another delivery completed the same immutable revision first.
-        }
+        await db.CommitAsync(ct);
     }
 
     private sealed record IconCandidate(Uri Uri, int Score);

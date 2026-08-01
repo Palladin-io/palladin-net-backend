@@ -133,6 +133,7 @@ internal static class EnvelopeDescriptorCodec
                 WriteWrapperRecipient(stream, grant.WrapperSuiteId, grant.RecipientKeyVersion,
                     grant.RecipientKeyFingerprint);
                 WriteUInt16(stream, grant.ApprovedMethods);
+                WriteUInt16(stream, grant.DeliveryPolicy);
                 WriteFixed(stream, grant.FieldSetCommitment, 32, "field-set commitment");
                 WriteNullableInstant(stream, grant.ExpiresAtUnixSeconds, grant.ExpiresAtNanoseconds);
                 stream.WriteByte(grant.RemainingUses.HasValue ? (byte)1 : (byte)0);

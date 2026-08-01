@@ -20,6 +20,7 @@ public sealed record GrantEnvelopeBindingContract(
     uint RecipientKeyVersion,
     string RecipientKeyFingerprint,
     ushort ApprovedMethods,
+    ushort DeliveryPolicy,
     string FieldSetCommitment,
     Instant? ExpiresAt,
     int? RemainingUses);
@@ -152,6 +153,10 @@ internal sealed class ReasonEnvelopeBindingContractValidator : AbstractValidator
 
 internal sealed class GrantEnvelopeBindingContractValidator : AbstractValidator<GrantEnvelopeBindingContract>
 {
+    internal GrantEnvelopeBindingContractValidator()
+    {
+        RuleFor(x => x.DeliveryPolicy).Must(value => ((GrantDeliveryPolicy)value).IsValid());
+    }
 }
 
 internal sealed class X25519WrappedKeyContractValidator : AbstractValidator<X25519WrappedKeyContract>

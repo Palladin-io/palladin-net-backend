@@ -47,6 +47,7 @@ internal abstract record CredentialDeliveryResult
         uint GrantKeyVersion,
         uint MemberKeyGeneration,
         uint RecipientAgentKeyVersion,
+        GrantDeliveryPolicy DeliveryPolicy,
         string[] FieldIds,
         byte[] EncodedSuitePayload,
         byte[] AgentWrappedGrantDek,
@@ -113,11 +114,13 @@ internal sealed class CredentialDeliveryService(
             .Select(scope => new
             {
                 FieldIds = scope.FieldIds,
+                scope.DeliveryPolicy,
                 envelope = scope.Envelope!,
             })
             .Select(scope => new
             {
                 scope.FieldIds,
+                scope.DeliveryPolicy,
                 scope.envelope.GrantEnvelopeRevision,
                 scope.envelope.EntryRevision,
                 scope.envelope.ProtocolVersion,
@@ -154,13 +157,10 @@ internal sealed class CredentialDeliveryService(
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MaterialUnavailable);
         }
 
-        // Entry type remains encrypted, but the already-server-readable FieldIds are committed by
-        // the authenticated envelope descriptor. Any delivered script runtime field therefore
-        // provides a privacy-compatible structural signal for the exec-only policy without adding
-        // a plaintext EntryType column. Reject before incrementing the grant use counter.
+        // DeliveryPolicy is authenticated by the grant descriptor and immutable on the durable
+        // scope. Field identifiers are never treated as an Entry-type discriminator.
         if (input.Method != GrantMethods.Exec
-            && material.FieldIds.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Any(fieldId => fieldId.StartsWith("script.", StringComparison.Ordinal)))
+            && material.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.ScriptExecOnly);
         }
@@ -359,6 +359,7 @@ internal sealed class CredentialDeliveryService(
             material.GrantKeyVersion,
             material.MemberKeyGeneration,
             material.RecipientAgentKeyVersion,
+            material.DeliveryPolicy,
             material.FieldIds.Split('\n', StringSplitOptions.RemoveEmptyEntries),
             material.EncodedSuitePayload,
             material.AgentWrappedGrantDek,

@@ -32,7 +32,8 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         Guid entryId,
         int? remainingUses = null,
         GrantMethods methods = GrantMethods.Get,
-        string[]? fieldIds = null) =>
+        string[]? fieldIds = null,
+        GrantDeliveryPolicy deliveryPolicy = GrantDeliveryPolicy.Standard) =>
         GrantEnvelopeTestData.Scope(
             orgId,
             vaultId,
@@ -40,7 +41,8 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
             entryId,
             methods: methods,
             remainingUses: remainingUses,
-            fieldIds: fieldIds);
+            fieldIds: fieldIds,
+            deliveryPolicy: deliveryPolicy);
 
     private async Task<(HttpClient AgentClient, Guid AgentId, Guid VaultId, Guid EntryId, Guid OrganizationId, Module.Identity.Domain.User User)> SetupAsync(
         uint authenticatedAccessEpoch = 1)
@@ -190,7 +192,7 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
     [InlineData(GrantMethods.Get, HttpStatusCode.Forbidden, 0)]
     [InlineData(GrantMethods.Inject, HttpStatusCode.Forbidden, 0)]
     [InlineData(GrantMethods.Exec, HttpStatusCode.OK, 1)]
-    public async Task When_GrantCarriesScriptRuntimeFields_Then_OnlyExecCanDeliver(
+    public async Task When_GrantIsExecOnly_Then_OnlyExecCanDeliver(
         GrantMethods requestedMethod,
         HttpStatusCode expectedStatus,
         int expectedQueryCount)
@@ -205,7 +207,8 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
             entryId,
             remainingUses: 5,
             methods: methods,
-            fieldIds: ["script.source", "script.interpreter"]);
+            fieldIds: ["custom:script-source"],
+            deliveryPolicy: GrantDeliveryPolicy.ExecOnly);
         var grant = GranularGrant.CreateProactively(
             grantId,
             vaultId,
@@ -233,6 +236,45 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         var readContext = scopeForAssertion.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         var persisted = await readContext.Grants.SingleAsync(x => x.Id == grantId);
         persisted.QueryCount.ShouldBe(expectedQueryCount);
+    }
+
+    [Fact]
+    public async Task When_StandardGrantUsesScriptLikeCustomFieldId_Then_GetIsNotBlocked()
+    {
+        var (agentClient, agentId, vaultId, entryId, orgId, _) = await SetupAsync();
+        var grantId = Guid.NewGuid();
+        var scope = Material(
+            orgId,
+            vaultId,
+            grantId,
+            entryId,
+            remainingUses: 5,
+            methods: GrantMethods.Get,
+            fieldIds: ["script.custom"],
+            deliveryPolicy: GrantDeliveryPolicy.Standard);
+        var grant = GranularGrant.CreateProactively(
+            grantId,
+            vaultId,
+            orgId,
+            agentId,
+            "pk",
+            entryId,
+            scope,
+            expiresAt: null,
+            queryLimit: 5,
+            expirySource: "uses",
+            GrantMethods.Get,
+            createdBy: Guid.NewGuid(),
+            TestNames,
+            SystemClock.Instance.GetCurrentInstant(),
+            agentAccessEpoch: 1);
+        await apiFactory.Services.SeedGranularGrantAsync(grant);
+
+        var response = await agentClient.GetAsync(
+            $"api/agent/vaults/{vaultId}/credentials/{entryId}?method={GrantMethods.Get}",
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]

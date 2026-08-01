@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -62,6 +63,7 @@ public sealed class EnvelopeDescriptorCodecTests
                 4,
                 Enumerable.Repeat((byte)0x5a, 32).ToArray(),
                 3,
+                (ushort)GrantDeliveryPolicy.Standard,
                 Enumerable.Repeat((byte)0xa5, 32).ToArray(),
                 1_700_000_000,
                 123_456_789,
@@ -72,7 +74,7 @@ public sealed class EnvelopeDescriptorCodecTests
             "000a001f00112233445566778899aabbccddeeff11112222333344448555666677778888" +
             "aaaaaaaabbbb4ccc8dddeeeeeeeeeeee123456781234423482341234567890abfedcba98765443218765abcdefabcdef" +
             "00000000000000070000000301000000090000000000000006001d70616c6c6164696e2d7832353531392d7365616c65642d626f782d7631" +
-            "000000045a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a0003" +
+            "000000045a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a00030000" +
             "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5" +
             "01000000006553f100075bcd150100000005");
     }
@@ -197,6 +199,7 @@ public sealed class EnvelopeDescriptorCodecTests
             value.GetProperty("recipientKeyVersion").GetUInt32(),
             Convert.FromHexString(value.GetProperty("recipientFingerprintHex").GetString()!),
             value.GetProperty("approvedMethods").GetUInt16(),
+            value.GetProperty("deliveryPolicy").GetUInt16(),
             Convert.FromHexString(value.GetProperty("fieldSetCommitmentHex").GetString()!),
             value.GetProperty("expiresAtUnixSeconds").GetInt64(),
             value.GetProperty("expiresAtNanoseconds").GetUInt32(), value.GetProperty("remainingUses").GetUInt32()));

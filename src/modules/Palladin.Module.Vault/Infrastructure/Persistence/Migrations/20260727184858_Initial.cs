@@ -598,6 +598,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     GrantId = table.Column<Guid>(type: "uuid", nullable: false),
                     EntryId = table.Column<Guid>(type: "uuid", nullable: false),
                     Methods = table.Column<int>(type: "integer", nullable: false),
+                    DeliveryPolicy = table.Column<int>(type: "integer", nullable: false),
                     FieldIds = table.Column<string>(type: "character varying(32768)", maxLength: 32768, nullable: false)
                 },
                 constraints: table =>

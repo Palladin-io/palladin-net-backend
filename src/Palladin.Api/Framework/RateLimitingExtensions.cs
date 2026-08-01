@@ -33,14 +33,12 @@ internal static class RateLimitingExtensions
                     return FixedWindow($"identity-security-write:{userId}", permitLimit: 5);
                 }
 
-                // Unknown-host resolution may perform a tightly sandboxed outbound favicon fetch.
-                // Keep anonymous callers from turning it into a bandwidth or connection amplifier.
-                if (path.StartsWithSegments("/api/public-assets/resolve"))
+                // Website-icon ensure may enqueue tightly sandboxed outbound favicon fetches.
+                // Partition authenticated callers so one Member cannot amplify acquisition traffic.
+                if (path.StartsWithSegments("/api/public-assets/website-icons/ensure"))
                 {
-                    var memberId = context.User.GetUserId()?.ToString();
-                    return memberId is null
-                        ? FixedWindow($"public-assets-resolve:anonymous:{ip}", permitLimit: 20)
-                        : FixedWindow($"public-assets-resolve:member:{memberId}", permitLimit: 60);
+                    var memberId = context.User.GetUserId()?.ToString() ?? ip;
+                    return FixedWindow($"public-assets-ensure:member:{memberId}", permitLimit: 30);
                 }
 
                 // Agent surfaces are partitioned by the org API key (SHA-256-hashed so the secret never lingers

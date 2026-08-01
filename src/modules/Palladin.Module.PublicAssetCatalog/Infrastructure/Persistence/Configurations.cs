@@ -8,7 +8,7 @@ internal sealed class PublicAssetConfiguration : IEntityTypeConfiguration<Public
 {
     public void Configure(EntityTypeBuilder<PublicAsset> b)
     {
-        b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(200);
+        b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(200); b.Property(x => x.Status).IsConcurrencyToken();
         b.HasMany(x => x.Aliases).WithOne().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(x => x.Revisions).WithOne().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => new { x.Type, x.Status, x.Name });
@@ -17,7 +17,7 @@ internal sealed class PublicAssetConfiguration : IEntityTypeConfiguration<Public
 }
 internal sealed class PublicAssetAliasConfiguration : IEntityTypeConfiguration<PublicAssetAlias>
 {
-    public void Configure(EntityTypeBuilder<PublicAssetAlias> b) { b.HasKey(x => new { x.AssetId, x.Kind, x.Value }); b.Property(x => x.Value).HasMaxLength(253); b.HasIndex(x => new { x.Kind, x.Value }); }
+    public void Configure(EntityTypeBuilder<PublicAssetAlias> b) { b.HasKey(x => new { x.AssetId, x.Kind, x.Value }); b.Property(x => x.Value).HasMaxLength(253); b.HasIndex(x => new { x.Kind, x.Value }).IsUnique().HasFilter("\"Kind\" = 1"); }
 }
 internal sealed class PublicAssetRevisionConfiguration : IEntityTypeConfiguration<PublicAssetRevision>
 {

@@ -8,6 +8,8 @@ using System.Diagnostics;
 using Palladin.Core.Events;
 using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
+using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
+using NSubstitute;
 
 namespace Palladin.Tests.Unit.PublicAssetCatalog;
 
@@ -15,7 +17,65 @@ public sealed class PublicAssetSecurityTests
 {
     [Fact]
     public void When_Website_Icon_Is_Scheduled_Then_It_Uses_The_Durable_Command_Contract() =>
-        new AcquireWebsiteIconCommand("host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();
+        new AcquireWebsiteIconV2Command(Guid.NewGuid(), "host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();
+
+    [Fact]
+    public void When_Website_Icon_Is_Reserved_Then_Its_Delivery_Key_Is_Stable()
+    {
+        var assetId = Guid.Parse("11111111-2222-4333-8444-555555555555");
+
+        PublicAssetContracts.WebsiteIconStorageKey(assetId)
+            .ShouldBe("published/website-icon/11111111222243338444555555555555/1.png");
+    }
+
+    [Fact]
+    public void When_A_Service_Upload_Is_Pending_Then_Ensure_Does_Not_Return_An_Acquisition_Url()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
+        var storage = Substitute.For<IPublicAssetStorage>();
+
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage)
+            .ShouldBeNull();
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid>(), storage)
+            .ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void When_A_Service_Upload_Is_Ready_Then_Ensure_Returns_The_Actual_Published_Revision()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
+        asset.Publish(new string('a', 64), "image/png", 10, 16, 16, "published/digest/1.png", Instant.FromUnixTimeSeconds(1));
+        var storage = Substitute.For<IPublicAssetStorage>();
+        storage.GetDeliveryUrl("published/digest/1.png").Returns("https://assets.palladin.io/published/digest/1.png");
+
+        var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage);
+
+        result.ShouldNotBeNull().Url.ShouldBe("https://assets.palladin.io/published/digest/1.png");
+    }
+
+    [Fact]
+    public void When_A_Pending_Website_Upload_Is_Abandoned_Then_Its_Hostnames_Are_Released()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
+
+        asset.AbandonPendingWebsiteUpload();
+
+        asset.Status.ShouldBe(PublicAssetStatus.Deleted);
+        asset.Aliases.ShouldBeEmpty();
+        PublicAssetContracts.BuildHostnameMap([asset]).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void When_Ensure_Submits_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
+    {
+        using var limiter = new WebsiteIconEnsureLimiter();
+        var member = Guid.NewGuid();
+
+        limiter.TryAcquire(member, 499).ShouldBeTrue();
+        limiter.TryAcquire(member, 1).ShouldBeTrue();
+        limiter.TryAcquire(member, 1).ShouldBeFalse();
+        limiter.TryAcquire(Guid.NewGuid(), 500).ShouldBeTrue();
+    }
 
     [Fact]
     public async Task When_Dns_Or_Download_Does_Not_Complete_Then_The_Worker_Operation_Is_Bounded()
@@ -143,7 +203,7 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_Historical_Assets_Share_A_Hostname_Then_Resolve_Map_Remains_Deterministic()
+    public void When_Historical_Assets_Share_A_Hostname_Then_Ensure_Map_Remains_Deterministic()
     {
         var first = PublicAsset.Create(Guid.Parse("10000000-0000-0000-0000-000000000000"), "First", [("bitmedia.io", PublicAssetAliasKind.Hostname)]);
         var second = PublicAsset.Create(Guid.Parse("20000000-0000-0000-0000-000000000000"), "Second", [("bitmedia.io", PublicAssetAliasKind.Hostname)]);

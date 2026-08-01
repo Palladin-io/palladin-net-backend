@@ -10,6 +10,7 @@ internal sealed class GrantEntryScope
     internal Guid GrantId { get; private set; }
     internal Guid EntryId { get; private set; }
     internal GrantMethods Methods { get; private set; }
+    internal GrantDeliveryPolicy DeliveryPolicy { get; private set; }
     internal string FieldIds { get; private set; } = string.Empty;
     internal GrantEntryEnvelope? Envelope { get; private set; }
 
@@ -19,11 +20,12 @@ internal sealed class GrantEntryScope
         EntryScope entry,
         Guid grantId,
         GrantMethods methods,
+        GrantDeliveryPolicy deliveryPolicy,
         IEnumerable<string> fieldIds,
         GrantEntryEnvelope envelope)
     {
         entry.Validate();
-        if (grantId == Guid.Empty || !methods.IsValidSet())
+        if (grantId == Guid.Empty || !methods.IsValidSet() || !deliveryPolicy.IsValid())
         {
             throw new DomainException("Grant scope is invalid.");
         }
@@ -56,6 +58,7 @@ internal sealed class GrantEntryScope
             GrantId = grantId,
             EntryId = entry.EntryId,
             Methods = methods,
+            DeliveryPolicy = deliveryPolicy,
             FieldIds = serializedFields,
             Envelope = envelope,
         };
@@ -81,6 +84,7 @@ internal sealed class GrantEntryScope
     {
         if (OrganizationId != refreshed.OrganizationId || VaultId != refreshed.VaultId
             || GrantId != refreshed.GrantId || EntryId != refreshed.EntryId || Methods != refreshed.Methods
+            || DeliveryPolicy != refreshed.DeliveryPolicy
             || refreshed.Envelope is null)
         {
             throw new DomainException("Grant refresh scope is invalid.");

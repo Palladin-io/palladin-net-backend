@@ -27,6 +27,9 @@ internal static class GrantEnvelopeContractMapper
             throw new DomainException("Grant envelope cannot bind both expiry policies.");
         if ((GrantMethods)binding.ApprovedMethods != methods)
             throw new DomainException("Grant methods do not match the authenticated envelope binding.");
+        var deliveryPolicy = (GrantDeliveryPolicy)binding.DeliveryPolicy;
+        if (!deliveryPolicy.IsValid())
+            throw new DomainException("Grant delivery policy is invalid.");
 
         var expectedCommitment = EnvelopeDescriptorCodec.ComputeFieldSetCommitment(contract.FieldIds);
         var submittedCommitment = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(binding.FieldSetCommitment);
@@ -47,7 +50,8 @@ internal static class GrantEnvelopeContractMapper
             contract.MemberKeyGeneration,
             new GrantEnvelopeBinding(
                 VaultEnvelopeContractMapper.ParseUInt64(binding.EntryRevision), binding.WrapperSuiteId,
-                binding.RecipientKeyVersion, fingerprint, binding.ApprovedMethods, submittedCommitment,
+                binding.RecipientKeyVersion, fingerprint, binding.ApprovedMethods, binding.DeliveryPolicy,
+                submittedCommitment,
                 expirySeconds, expiryNanos, binding.RemainingUses is null ? null : checked((uint)binding.RemainingUses)));
         if (descriptor.Purpose != EnvelopePurpose.GrantPayload)
             throw new DomainException("Grant envelope purpose is invalid.");
@@ -79,6 +83,6 @@ internal static class GrantEnvelopeContractMapper
             descriptor.KeyVersion, new MemberKeyGeneration(contract.MemberKeyGeneration),
             new AgentRecipientKeyVersion(binding.RecipientKeyVersion), payload.Ciphertext, payload.Nonce,
             wrapper, 1, fingerprint, binding.ExpiresAt, binding.RemainingUses);
-        return GrantEntryScope.Create(scope, contract.GrantId, methods, contract.FieldIds, envelope);
+        return GrantEntryScope.Create(scope, contract.GrantId, methods, deliveryPolicy, contract.FieldIds, envelope);
     }
 }

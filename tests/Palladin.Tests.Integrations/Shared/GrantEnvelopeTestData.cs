@@ -67,21 +67,23 @@ internal static class GrantEnvelopeTestData
         uint grantKeyVersion = 1,
         string[]? fieldIds = null,
         Guid? agentId = null,
-        GrantMethods methods = GrantMethods.Get) =>
+        GrantMethods methods = GrantMethods.Get,
+        GrantDeliveryPolicy deliveryPolicy = GrantDeliveryPolicy.Standard) =>
         CreateGrant(organizationId, vaultId, grantId, entryId, agentPublicKey, expiresAt, remainingUses,
             entryRevision, envelopeRevision, grantKeyVersion, fieldIds ?? ["username", "password"],
-            agentId ?? Guid.Parse("55555555-5555-4555-8555-555555555555"), methods);
+            agentId ?? Guid.Parse("55555555-5555-4555-8555-555555555555"), methods, deliveryPolicy);
 
     private static GrantEntryEnvelopeContract CreateGrant(Guid organizationId, Guid vaultId, Guid grantId,
         Guid entryId, string agentPublicKey, Instant? expiresAt, int? remainingUses, ulong entryRevision,
-        ulong envelopeRevision, uint grantKeyVersion, string[] fieldIds, Guid agentId, GrantMethods methods)
+        ulong envelopeRevision, uint grantKeyVersion, string[] fieldIds, Guid agentId, GrantMethods methods,
+        GrantDeliveryPolicy deliveryPolicy)
     {
         var fingerprint = WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
             Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519));
         var scope = new EnvelopeScopeContract(organizationId, vaultId, entryId, grantId, agentId);
         var commitment = WebEncoders.Base64UrlEncode(EnvelopeDescriptorCodec.ComputeFieldSetCommitment(fieldIds));
         var binding = new GrantEnvelopeBindingContract(entryRevision.ToString(), X25519SealedBoxContract.SuiteId,
-            1, fingerprint, (ushort)methods, commitment, expiresAt, remainingUses);
+            1, fingerprint, (ushort)methods, (ushort)deliveryPolicy, commitment, expiresAt, remainingUses);
         var descriptor = new EnvelopeDescriptorContract<GrantEnvelopeBindingContract>(2,
             CryptoSuiteId.XChaCha20Poly1305V1, EnvelopePurposeContract.GrantPayload, scope,
             envelopeRevision.ToString(), grantKeyVersion, 1, binding);
@@ -89,7 +91,7 @@ internal static class GrantEnvelopeTestData
             new EnvelopeScope(organizationId, vaultId, entryId, grantId, agentId), envelopeRevision, grantKeyVersion, 1,
             new GrantEnvelopeBinding(entryRevision, X25519SealedBoxContract.SuiteId, 1,
                 WebEncoders.Base64UrlDecode(fingerprint), (ushort)methods,
-                WebEncoders.Base64UrlDecode(commitment), expiresAt?.ToUnixTimeSeconds(),
+                (ushort)deliveryPolicy, WebEncoders.Base64UrlDecode(commitment), expiresAt?.ToUnixTimeSeconds(),
                 expiresAt is null ? null : (uint)(expiresAt.Value.ToUnixTimeTicks() % NodaConstants.TicksPerSecond * 100),
                 remainingUses is null ? null : checked((uint)remainingUses.Value)));
         var parentHash = WebEncoders.Base64UrlEncode(X25519WrapperContextCodec.ComputeParentDescriptorHash(domain));
@@ -113,12 +115,13 @@ internal static class GrantEnvelopeTestData
         uint grantKeyVersion = 1,
         string[]? fieldIds = null,
         Guid? agentId = null,
-        string? agentPublicKey = null)
+        string? agentPublicKey = null,
+        GrantDeliveryPolicy deliveryPolicy = GrantDeliveryPolicy.Standard)
     {
         var recipientAgentId = agentId ?? Guid.Parse("55555555-5555-4555-8555-555555555555");
         var contract = Contract(organizationId, vaultId, grantId, entryId,
             agentPublicKey ?? Convert.ToBase64String(new byte[32]), expiresAt, remainingUses, entryRevision,
-            envelopeRevision, grantKeyVersion, fieldIds, recipientAgentId, methods);
+            envelopeRevision, grantKeyVersion, fieldIds, recipientAgentId, methods, deliveryPolicy);
         return Palladin.Module.Vault.Infrastructure.Crypto.GrantEnvelopeContractMapper.ToDomain(
             contract, methods, recipientAgentId);
     }

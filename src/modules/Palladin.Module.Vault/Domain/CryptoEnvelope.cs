@@ -88,6 +88,7 @@ internal sealed record GrantEnvelopeBinding(
     uint RecipientKeyVersion,
     byte[] RecipientKeyFingerprint,
     ushort ApprovedMethods,
+    ushort DeliveryPolicy,
     byte[] FieldSetCommitment,
     long? ExpiresAtUnixSeconds,
     uint? ExpiresAtNanoseconds,

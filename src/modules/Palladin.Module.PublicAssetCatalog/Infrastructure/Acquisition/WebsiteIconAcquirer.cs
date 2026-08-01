@@ -5,10 +5,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using NodaTime;
-using Palladin.Core.Guid;
 using Palladin.Module.PublicAssetCatalog.Domain;
+using Palladin.Module.PublicAssetCatalog.Features;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Persistence;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using SixLabors.ImageSharp;
@@ -18,14 +17,13 @@ namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 
 internal interface IWebsiteIconAcquirer
 {
-    Task AcquireAsync(string hostname, CancellationToken ct);
+    Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct);
 }
 
 /// <summary>Best-effort public favicon acquisition with DNS pinning and redirect revalidation.</summary>
 internal sealed class WebsiteIconAcquirer(
     PublicAssetCatalogDomainWriteContext db,
     IPublicAssetStorage storage,
-    IGuidProvider ids,
     IClock clock) : IWebsiteIconAcquirer
 {
     private const int MaximumDownloadBytes = 1024 * 1024;
@@ -38,10 +36,25 @@ internal sealed class WebsiteIconAcquirer(
         "/android-chrome-192x192.png",
     ];
 
-    public async Task AcquireAsync(string hostname, CancellationToken ct)
+    public async Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct)
     {
         if (!PublicNetworkPolicy.IsValidHostname(hostname)) return;
-        if (await db.Assets.AnyAsync(x => x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && a.Value == hostname), ct)) return;
+        var asset = await db.Assets
+            .Include(x => x.Aliases)
+            .Include(x => x.Revisions)
+            .SingleOrDefaultAsync(x => x.Id == assetId
+                && x.Type == PublicAssetType.WebsiteIcon
+                && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && a.Value == hostname), ct);
+        if (asset is null || asset.Status != PublicAssetStatus.Pending) return;
+
+        var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
+        var existing = await storage.OpenImmutableAsync(key, "image/png", ct);
+        if (existing is not null)
+        {
+            var dimensions = await ValidateImmutableImageAsync(existing, ct);
+            await CompleteAggregateAsync(asset, existing, dimensions.Width, dimensions.Height, key, ct);
+            return;
+        }
 
         var origin = new Uri($"https://{hostname}/");
         var fallbackHostname = ParentHostname(hostname);
@@ -106,18 +119,35 @@ internal sealed class WebsiteIconAcquirer(
             await image.SaveAsync(sanitized, new PngEncoder(), ct);
             if (sanitized.Length > MaximumDownloadBytes) return;
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
-            var asset = PublicAsset.Create(ids.Generate(), hostname, [(hostname, PublicAssetAliasKind.Hostname)]);
-            var key = $"published/website-icon/{digest[..2]}/{digest}/1.png";
             sanitized.Position = 0;
-            await storage.PublishAsync(string.Empty, sanitized, key, "image/png", ct);
-            asset.Publish(digest, "image/png", sanitized.Length, image.Width, image.Height, key, clock.GetCurrentInstant());
-            db.Add(asset);
-            try { await db.CommitAsync(ct); }
-            catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+            var published = await storage.PublishImmutableAsync(sanitized, key, "image/png", digest, sanitized.Length, ct);
+            var width = image.Width;
+            var height = image.Height;
+            if (published.ExistingContent is not null)
             {
-                // The unique hostname index resolves concurrent acquisition races.
+                var dimensions = await ValidateImmutableImageAsync(published, ct);
+                width = dimensions.Width;
+                height = dimensions.Height;
             }
+            await CompleteAggregateAsync(asset, published, width, height, key, ct);
         }
+    }
+
+    private static async Task<(int Width, int Height)> ValidateImmutableImageAsync(ImmutablePublishedObject published, CancellationToken ct)
+    {
+        if (published.ExistingContent is null) throw new InvalidDataException("Immutable public asset content is missing.");
+        await using var source = new MemoryStream(published.ExistingContent, writable: false);
+        using var image = await Image.LoadAsync(source, ct);
+        if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048
+            || (long)image.Width * image.Height > 4_000_000)
+            throw new InvalidDataException("The immutable website icon has invalid dimensions.");
+        return (image.Width, image.Height);
+    }
+
+    private async Task CompleteAggregateAsync(PublicAsset asset, ImmutablePublishedObject published, int width, int height, string key, CancellationToken ct)
+    {
+        asset.Publish(published.Digest, "image/png", published.Length, width, height, key, clock.GetCurrentInstant());
+        await db.CommitAsync(ct);
     }
 
     private sealed record IconCandidate(Uri Uri, int Score);

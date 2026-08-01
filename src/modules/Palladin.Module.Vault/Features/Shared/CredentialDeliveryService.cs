@@ -47,6 +47,7 @@ internal abstract record CredentialDeliveryResult
         uint GrantKeyVersion,
         uint MemberKeyGeneration,
         uint RecipientAgentKeyVersion,
+        GrantDeliveryPolicy DeliveryPolicy,
         string[] FieldIds,
         byte[] EncodedSuitePayload,
         byte[] AgentWrappedGrantDek,
@@ -113,11 +114,13 @@ internal sealed class CredentialDeliveryService(
             .Select(scope => new
             {
                 FieldIds = scope.FieldIds,
+                scope.DeliveryPolicy,
                 envelope = scope.Envelope!,
             })
             .Select(scope => new
             {
                 scope.FieldIds,
+                scope.DeliveryPolicy,
                 scope.envelope.GrantEnvelopeRevision,
                 scope.envelope.EntryRevision,
                 scope.envelope.ProtocolVersion,
@@ -152,6 +155,14 @@ internal sealed class CredentialDeliveryService(
                 return new CredentialDeliveryResult.Denied(CredentialDenialReasons.QueryLimit);
             }
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MaterialUnavailable);
+        }
+
+        // DeliveryPolicy is authenticated by the grant descriptor and immutable on the durable
+        // scope. Field identifiers are never treated as an Entry-type discriminator.
+        if (input.Method != GrantMethods.Exec
+            && material.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly)
+        {
+            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.ScriptExecOnly);
         }
 
         // BUG#2 fix: read denormalized names BEFORE the atomic increment / Consumed flip. A DB hiccup
@@ -348,6 +359,7 @@ internal sealed class CredentialDeliveryService(
             material.GrantKeyVersion,
             material.MemberKeyGeneration,
             material.RecipientAgentKeyVersion,
+            material.DeliveryPolicy,
             material.FieldIds.Split('\n', StringSplitOptions.RemoveEmptyEntries),
             material.EncodedSuitePayload,
             material.AgentWrappedGrantDek,

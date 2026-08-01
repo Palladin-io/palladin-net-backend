@@ -697,6 +697,9 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32768)
                         .HasColumnType("character varying(32768)");
 
+                    b.Property<int>("DeliveryPolicy")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Methods")
                         .HasColumnType("integer");
 

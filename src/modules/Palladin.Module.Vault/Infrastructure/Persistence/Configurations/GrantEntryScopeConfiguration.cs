@@ -12,6 +12,7 @@ internal sealed class GrantEntryScopeConfiguration : IEntityTypeConfiguration<Gr
     {
         builder.HasKey(x => new { x.OrganizationId, x.VaultId, x.GrantId, x.EntryId });
         builder.Property(x => x.Methods).IsRequired();
+        builder.Property(x => x.DeliveryPolicy).IsRequired();
         builder.Property(x => x.FieldIds).HasMaxLength(32_768);
 
         builder.HasOne<VaultEntry>()

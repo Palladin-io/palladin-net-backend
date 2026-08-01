@@ -26,6 +26,13 @@ internal sealed class PublicAsset
     }
     internal static PublicAsset CreateAgentIcon(Guid id, Guid organizationId, Guid ownerId, string name) =>
         new() { Id = id, Type = PublicAssetType.AgentIcon, Name = name, OrganizationId = organizationId, OwnerId = ownerId, Status = PublicAssetStatus.Pending };
+    internal void AbandonPendingWebsiteUpload()
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+            throw new InvalidOperationException("Only a pending website-icon upload can be abandoned.");
+        Aliases.Clear();
+        Status = PublicAssetStatus.Deleted;
+    }
     internal void Publish(string digest, string mediaType, long byteLength, int width, int height, string storageKey, Instant now)
     {
         if (Status == PublicAssetStatus.Ready && Type != PublicAssetType.AgentIcon) throw new InvalidOperationException("A published asset is immutable.");

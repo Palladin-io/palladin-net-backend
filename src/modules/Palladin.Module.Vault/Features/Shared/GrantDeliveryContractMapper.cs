@@ -32,6 +32,7 @@ internal static class GrantDeliveryContractMapper
                     value.RecipientAgentKeyVersion,
                     WebEncoders.Base64UrlEncode(value.AgentKeyFingerprint),
                     (ushort)approvedMethods,
+                    (ushort)value.DeliveryPolicy,
                     WebEncoders.Base64UrlEncode(commitment),
                     value.EnvelopeExpiresAt,
                     value.EnvelopeRemainingUses));
@@ -42,7 +43,7 @@ internal static class GrantDeliveryContractMapper
             value.GrantEnvelopeRevision, value.GrantKeyVersion, value.MemberKeyGeneration,
             new Domain.GrantEnvelopeBinding(value.EntryRevision, value.WrapperSuiteId,
                 value.RecipientAgentKeyVersion, value.AgentKeyFingerprint, (ushort)approvedMethods,
-                commitment, value.EnvelopeExpiresAt?.ToUnixTimeSeconds(),
+                (ushort)value.DeliveryPolicy, commitment, value.EnvelopeExpiresAt?.ToUnixTimeSeconds(),
                 value.EnvelopeExpiresAt is null ? null : checked((uint)(value.EnvelopeExpiresAt.Value
                     - NodaTime.Instant.FromUnixTimeSeconds(value.EnvelopeExpiresAt.Value.ToUnixTimeSeconds())).TotalNanoseconds),
                 value.EnvelopeRemainingUses is null ? null : checked((uint)value.EnvelopeRemainingUses)));

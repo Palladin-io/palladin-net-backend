@@ -2,7 +2,7 @@ using System.Threading.RateLimiting;
 
 namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 
-/// <summary>Charges authenticated Members for every submitted hostname, not merely every HTTP call.</summary>
+/// <summary>Charges authenticated Members for every newly reserved acquisition hostname.</summary>
 internal sealed class WebsiteIconEnsureLimiter : IDisposable
 {
     private const int HostnamesPerMinute = 500;

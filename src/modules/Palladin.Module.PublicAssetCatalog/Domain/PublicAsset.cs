@@ -2,7 +2,7 @@ using NodaTime;
 
 namespace Palladin.Module.PublicAssetCatalog.Domain;
 
-internal enum PublicAssetStatus { Pending = 1, Ready = 2, Deleted = 3 }
+internal enum PublicAssetStatus { Pending = 1, Ready = 2, Deleted = 3, Failed = 4 }
 internal enum PublicAssetType { WebsiteIcon = 1, AgentIcon = 2 }
 internal enum PublicAssetAliasKind { Hostname = 1, Name = 2, Slug = 3, Tag = 4 }
 
@@ -32,6 +32,12 @@ internal sealed class PublicAsset
             throw new InvalidOperationException("Only a pending website-icon upload can be abandoned.");
         Aliases.Clear();
         Status = PublicAssetStatus.Deleted;
+    }
+    internal void FailWebsiteIconAcquisition()
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+            throw new InvalidOperationException("Only a pending website-icon acquisition can fail.");
+        Status = PublicAssetStatus.Failed;
     }
     internal void Publish(string digest, string mediaType, long byteLength, int width, int height, string storageKey, Instant now)
     {

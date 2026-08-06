@@ -111,13 +111,25 @@ internal sealed class WebsiteIconAcquirer(
             }
             if (image is not null) break;
         }
-        if (image is null) return;
+        if (image is null)
+        {
+            await FailAggregateAsync(asset, ct);
+            return;
+        }
         using (image)
         {
-            if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048 || (long)image.Width * image.Height > 4_000_000) return;
+            if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048 || (long)image.Width * image.Height > 4_000_000)
+            {
+                await FailAggregateAsync(asset, ct);
+                return;
+            }
             await using var sanitized = new MemoryStream();
             await image.SaveAsync(sanitized, new PngEncoder(), ct);
-            if (sanitized.Length > MaximumDownloadBytes) return;
+            if (sanitized.Length > MaximumDownloadBytes)
+            {
+                await FailAggregateAsync(asset, ct);
+                return;
+            }
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
             sanitized.Position = 0;
             var published = await storage.PublishImmutableAsync(sanitized, key, "image/png", digest, sanitized.Length, ct);
@@ -147,6 +159,12 @@ internal sealed class WebsiteIconAcquirer(
     private async Task CompleteAggregateAsync(PublicAsset asset, ImmutablePublishedObject published, int width, int height, string key, CancellationToken ct)
     {
         asset.Publish(published.Digest, "image/png", published.Length, width, height, key, clock.GetCurrentInstant());
+        await db.CommitAsync(ct);
+    }
+
+    private async Task FailAggregateAsync(PublicAsset asset, CancellationToken ct)
+    {
+        asset.FailWebsiteIconAcquisition();
         await db.CommitAsync(ct);
     }
 

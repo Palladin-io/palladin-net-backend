@@ -29,15 +29,14 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_A_Service_Upload_Is_Pending_Then_Ensure_Does_Not_Return_An_Acquisition_Url()
+    public void When_A_Website_Icon_Is_Not_Ready_Then_Ensure_Does_Not_Return_An_Url()
     {
         var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
         var storage = Substitute.For<IPublicAssetStorage>();
 
-        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage)
-            .ShouldBeNull();
-        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid>(), storage)
-            .ShouldNotBeNull();
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage).ShouldBeNull();
+        asset.FailWebsiteIconAcquisition();
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage).ShouldBeNull();
     }
 
     [Fact]
@@ -48,7 +47,7 @@ public sealed class PublicAssetSecurityTests
         var storage = Substitute.For<IPublicAssetStorage>();
         storage.GetDeliveryUrl("published/digest/1.png").Returns("https://assets.palladin.io/published/digest/1.png");
 
-        var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage);
+        var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage);
 
         result.ShouldNotBeNull().Url.ShouldBe("https://assets.palladin.io/published/digest/1.png");
     }
@@ -66,7 +65,7 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_Ensure_Submits_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
+    public void When_Ensure_Reserves_New_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
     {
         using var limiter = new WebsiteIconEnsureLimiter();
         var member = Guid.NewGuid();

@@ -35,8 +35,21 @@ public sealed class PublicAssetSecurityTests
         var storage = Substitute.For<IPublicAssetStorage>();
 
         PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage).ShouldBeNull();
+        PublicAssetContracts.MapWebsiteIconStatus(asset).ShouldBe("pending");
         asset.FailWebsiteIconAcquisition();
         PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage).ShouldBeNull();
+        PublicAssetContracts.MapWebsiteIconStatus(asset).ShouldBe("failed");
+    }
+
+    [Fact]
+    public void When_A_Pending_Acquisition_Is_Orphaned_Then_Ensure_Reschedules_It_Once_Per_Cooldown()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "example.com", [("example.com", PublicAssetAliasKind.Hostname)]);
+        var now = Instant.FromUnixTimeSeconds(100);
+
+        asset.TryScheduleWebsiteIconAcquisition(now, Duration.FromSeconds(30)).ShouldBeTrue();
+        asset.TryScheduleWebsiteIconAcquisition(now + Duration.FromSeconds(29), Duration.FromSeconds(30)).ShouldBeFalse();
+        asset.TryScheduleWebsiteIconAcquisition(now + Duration.FromSeconds(30), Duration.FromSeconds(30)).ShouldBeTrue();
     }
 
     [Fact]
@@ -50,6 +63,7 @@ public sealed class PublicAssetSecurityTests
         var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage);
 
         result.ShouldNotBeNull().Url.ShouldBe("https://assets.palladin.io/published/digest/1.png");
+        PublicAssetContracts.MapWebsiteIconStatus(asset).ShouldBe("ready");
     }
 
     [Fact]

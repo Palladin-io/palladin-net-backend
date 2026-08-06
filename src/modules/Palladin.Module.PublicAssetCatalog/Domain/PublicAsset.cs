@@ -15,6 +15,7 @@ internal sealed class PublicAsset
     public Guid? OwnerId { get; private set; }
     public PublicAssetStatus Status { get; private set; }
     public int? CurrentRevision { get; private set; }
+    public Instant? AcquisitionScheduledAt { get; private set; }
     public List<PublicAssetAlias> Aliases { get; private set; } = [];
     public List<PublicAssetRevision> Revisions { get; private set; } = [];
     private PublicAsset() { }
@@ -38,6 +39,15 @@ internal sealed class PublicAsset
         if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
             throw new InvalidOperationException("Only a pending website-icon acquisition can fail.");
         Status = PublicAssetStatus.Failed;
+    }
+    internal bool TryScheduleWebsiteIconAcquisition(Instant now, Duration retryAfter)
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+            return false;
+        if (AcquisitionScheduledAt is { } scheduledAt && now - scheduledAt < retryAfter)
+            return false;
+        AcquisitionScheduledAt = now;
+        return true;
     }
     internal void Publish(string digest, string mediaType, long byteLength, int width, int height, string storageKey, Instant now)
     {

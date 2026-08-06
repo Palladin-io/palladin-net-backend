@@ -22,7 +22,7 @@ namespace Palladin.Module.PublicAssetCatalog.Features;
 [PublicAPI] public sealed record SearchPublicAssetsRequest(string Type, string Q, int? Limit);
 [PublicAPI] public sealed record SearchPublicAssetsResponse(IReadOnlyList<PublicAssetContract> Items);
 [PublicAPI] public sealed record EnsureWebsiteIconsRequest(IReadOnlyList<string> Hostnames);
-[PublicAPI] public sealed record EnsuredWebsiteIconContract(string Hostname, PublicAssetContract? Asset);
+[PublicAPI] public sealed record EnsuredWebsiteIconContract(string Hostname, string Status, PublicAssetContract? Asset);
 [PublicAPI] public sealed record EnsureWebsiteIconsResponse(IReadOnlyList<EnsuredWebsiteIconContract> Items);
 [PublicAPI] public sealed record GetPublicAssetRequest(Guid AssetId, int? V);
 [PublicAPI] public sealed record GetPublicAssetsByIdsRequest(IReadOnlyList<Guid> AssetIds);
@@ -39,6 +39,13 @@ internal static class PublicAssetContracts
         asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending && !liveUploadAssetIds.Contains(asset.Id);
     internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
         asset.Status == PublicAssetStatus.Ready ? Map(asset, storage) : null;
+    internal static string MapWebsiteIconStatus(PublicAsset asset) => asset.Status switch
+    {
+        PublicAssetStatus.Pending => "pending",
+        PublicAssetStatus.Ready => "ready",
+        PublicAssetStatus.Failed => "failed",
+        _ => throw new InvalidOperationException("Deleted assets cannot be returned from website icon ensure."),
+    };
     internal static bool TryHostname(string input, out string hostname)
     {
         hostname = input.Trim().TrimEnd('.').ToLowerInvariant();
@@ -94,6 +101,7 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
 [PublicAPI]
 internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids, WebsiteIconEnsureLimiter limiter, IClock clock) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
 {
+    private static readonly Duration AcquisitionRetryAfter = Duration.FromSeconds(30);
     public override void Configure()
     {
         Post("api/public-assets/website-icons/ensure");
@@ -107,7 +115,7 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
         List<PublicAsset> assets = [];
         HashSet<Guid> liveUploadAssetIds = [];
-        HashSet<Guid> newlyReservedAssetIds = [];
+        HashSet<Guid> scheduledAssetIds = [];
         var limiterCharged = false;
         var committed = false;
         for (var attempt = 0; attempt < 5; attempt++)
@@ -152,8 +160,12 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 var asset = PublicAsset.Create(ids.Generate(), hostname, [(hostname, PublicAssetAliasKind.Hostname)]);
                 db.Add(asset);
                 assets.Add(asset);
-                newlyReservedAssetIds.Add(asset.Id);
             }
+            scheduledAssetIds = assets
+                .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds)
+                    && x.TryScheduleWebsiteIconAcquisition(now, AcquisitionRetryAfter))
+                .Select(x => x.Id)
+                .ToHashSet();
             try
             {
                 await db.CommitAsync(ct);
@@ -166,17 +178,23 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 // Clear the rolled-back graph and rebuild the complete batch;
                 // this preserves idempotency without dropping unrelated hosts.
                 db.Clear();
-                newlyReservedAssetIds.Clear();
+                scheduledAssetIds.Clear();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another ensure scheduled the same orphaned reservation.
+                // Rebuild the batch so only that winner publishes the command.
+                db.Clear();
+                scheduledAssetIds.Clear();
             }
         }
         if (!committed) throw new PublicAssetHostnameConflictException();
         var map = PublicAssetContracts.BuildHostnameMap(assets);
-        foreach (var asset in map.Values.Where(x => newlyReservedAssetIds.Contains(x.Id)
-            && PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds)).DistinctBy(x => x.Id))
+        foreach (var asset in map.Values.Where(x => scheduledAssetIds.Contains(x.Id)).DistinctBy(x => x.Id))
             await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
-        await Send.OkAsync(new(hosts.Select(h => new EnsuredWebsiteIconContract(h, map.TryGetValue(h, out var asset)
-            ? PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage)
-            : null)).ToArray()), ct);
+        await Send.OkAsync(new(hosts.Select(h => map.TryGetValue(h, out var asset)
+            ? new EnsuredWebsiteIconContract(h, PublicAssetContracts.MapWebsiteIconStatus(asset), PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage))
+            : new EnsuredWebsiteIconContract(h, "pending", null)).ToArray()), ct);
     }
 }
 [PublicAPI]

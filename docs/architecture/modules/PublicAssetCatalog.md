@@ -11,8 +11,8 @@ per environment. No storage key or provider URL is persisted by another module.
 - `PublicAssetAlias`: normalized hostname/name/tag lookup keys.
 - `PublicAssetUploadSession`: uploader-bound, expiring staging upload with expected MIME, length and digest.
 
-Search, lookup, and website-icon ensure return only `Ready` assets. Ensure reserves a logical asset but
-returns `asset: null` while acquisition is pending or after it fails. Completion identifies and decodes
+Search and lookup return only `Ready` assets. Website-icon ensure returns a per-host
+`pending`/`ready`/`failed` status and includes `asset` only for `ready`. Completion identifies and decodes
 the bounded raster, re-encodes it as PNG, and publishes exactly once under the reserved revision key.
 
 ## HTTP API
@@ -39,7 +39,7 @@ migration deterministically removes duplicate pre-production hostname assets bef
 The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
 index prevents duplicate website assets. Expected acquisition exhaustion moves the asset to `Failed`;
-failed assets retain their hostname alias, return `asset: null`, and are not re-enqueued by readiness checks.
+failed assets retain their hostname alias, return `status: failed` with `asset: null`, and are not re-enqueued by readiness checks.
 Anonymous catalog search exposes only ready website icons published through an explicit service upload.
 Website hostnames learned from an authenticated Member `ensure` request are acquisition-only records and
 never become anonymously enumerable through search, even after their image is ready.
@@ -49,6 +49,9 @@ the aggregate is marked deleted and releases its hostname aliases before ensure 
 acquisition reservations. `PublicAsset.Status` is an optimistic concurrency token, so upload completion
 cannot overwrite that transition. A service upload that loses
 a hostname reservation race is translated to HTTP 409 instead of leaking a database uniqueness error.
+Acquisition reservations persist their last scheduling time. Ensure re-enqueues an orphaned pending
+reservation only after a 30-second cooldown, so a lost broker publication self-heals without turning
+bounded client readiness checks into duplicate message fan-out.
 The reserved revision key is written with S3 `If-None-Match: *`,
 and every delivery probes that key before contacting the mutable upstream. A retry after an
 object-store/database partial commit downloads and decodes the bounded existing object, then completes

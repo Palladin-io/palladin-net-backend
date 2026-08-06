@@ -23,7 +23,7 @@ public sealed class GetHealthTests(ApiFactory apiFactory) : TestBase
         var result = await response.Content.ReadFromJsonAsync<GetHealthResponse>();
         Assert.NotNull(result);
         Assert.Equal("Healthy", result.Status);
-        Assert.StartsWith("https://github.com/Palladin-io/palladin-net-backend-oss/tree/", result.SourceCode);
+        Assert.StartsWith("https://github.com/Palladin-io/palladin-net-backend/tree/", result.SourceCode);
         Assert.Equal("AGPL-3.0-only", result.License);
     }
 }

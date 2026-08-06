@@ -17,7 +17,7 @@ machine-readable dependency inventory are in THIRD_PARTY_NOTICES.md and
 sbom.cdx.json. Trademark terms are in TRADEMARKS.md.
 
 Corresponding source:
-https://github.com/Palladin-io/palladin-net-backend-oss
+https://github.com/Palladin-io/palladin-net-backend
 
 Running instances expose their exact corresponding source revision through
 the anonymous GET /api/health response.

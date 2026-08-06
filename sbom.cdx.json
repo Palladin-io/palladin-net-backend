@@ -45,7 +45,7 @@
       ],
       "externalReferences": [
         {
-          "url": "https://github.com/Palladin-io/palladin-net-backend-oss",
+          "url": "https://github.com/Palladin-io/palladin-net-backend",
           "type": "vcs"
         }
       ]

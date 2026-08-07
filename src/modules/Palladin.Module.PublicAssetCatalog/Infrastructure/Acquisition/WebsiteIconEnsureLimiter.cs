@@ -6,6 +6,14 @@ namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 internal sealed class WebsiteIconEnsureLimiter : IDisposable
 {
     private const int HostnamesPerMinute = 500;
+    private readonly PartitionedRateLimiter<Guid> reservationLimiter =
+        PartitionedRateLimiter.Create<Guid, Guid>(memberId =>
+            RateLimitPartition.GetConcurrencyLimiter(memberId, _ => new ConcurrencyLimiterOptions
+            {
+                PermitLimit = 1,
+                QueueLimit = 100,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            }));
     private readonly PartitionedRateLimiter<(Guid MemberId, int Permits)> limiter =
         PartitionedRateLimiter.Create<(Guid MemberId, int Permits), Guid>(request =>
             RateLimitPartition.GetFixedWindowLimiter(request.MemberId, _ => new FixedWindowRateLimiterOptions
@@ -15,6 +23,9 @@ internal sealed class WebsiteIconEnsureLimiter : IDisposable
                 QueueLimit = 0,
             }));
 
+    internal ValueTask<RateLimitLease> AcquireReservationLeaseAsync(Guid memberId, CancellationToken ct) =>
+        reservationLimiter.AcquireAsync(memberId, 1, ct);
+
     internal bool TryAcquire(Guid memberId, int hostnameCount)
     {
         if (hostnameCount is < 1 or > HostnamesPerMinute) return false;
@@ -22,5 +33,9 @@ internal sealed class WebsiteIconEnsureLimiter : IDisposable
         return lease.IsAcquired;
     }
 
-    public void Dispose() => limiter.Dispose();
+    public void Dispose()
+    {
+        reservationLimiter.Dispose();
+        limiter.Dispose();
+    }
 }

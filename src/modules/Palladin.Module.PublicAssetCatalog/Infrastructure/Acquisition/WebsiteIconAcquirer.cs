@@ -18,6 +18,7 @@ namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 internal interface IWebsiteIconAcquirer
 {
     Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct);
+    Task ReleaseDispatchAsync(Guid assetId, CancellationToken ct);
 }
 
 /// <summary>Best-effort public favicon acquisition with DNS pinning and redirect revalidation.</summary>
@@ -124,7 +125,7 @@ internal sealed class WebsiteIconAcquirer(
         {
             if (transientFailure)
             {
-                await ResetAggregateForRetryAsync(asset, ct);
+                await ResetAggregateForRetryAsync(asset.Id, ct);
             }
             else
             {
@@ -184,9 +185,11 @@ internal sealed class WebsiteIconAcquirer(
         await db.CommitAsync(ct);
     }
 
-    private async Task ResetAggregateForRetryAsync(PublicAsset asset, CancellationToken ct)
+    public Task ReleaseDispatchAsync(Guid assetId, CancellationToken ct) =>
+        ResetAggregateForRetryAsync(assetId, ct);
+
+    private async Task ResetAggregateForRetryAsync(Guid assetId, CancellationToken ct)
     {
-        var assetId = asset.Id;
         db.Clear();
         await using var transaction = await db.BeginTransactionAsync(ct);
         var pending = (await db.LockAssetsForAcquisitionDispatchAsync([assetId], ct))

@@ -49,9 +49,10 @@ the aggregate is marked deleted and releases its hostname aliases before ensure 
 acquisition reservations. `PublicAsset.Status` is an optimistic concurrency token, so upload completion
 cannot overwrite that transition. A service upload that loses
 a hostname reservation race is translated to HTTP 409 instead of leaking a database uniqueness error.
-Acquisition reservations persist their last scheduling time. Ensure re-enqueues an orphaned pending
-reservation only after a 30-second cooldown, so a lost broker publication self-heals without turning
-bounded client readiness checks into duplicate message fan-out.
+Acquisition reservations persist a dispatch marker. Ensure serializes publication with a row lock
+and sets the marker only after the broker accepts the command. A marked Pending reservation is never
+re-enqueued merely because time elapsed; a transient acquisition failure re-locks the row, clears the
+committed marker, and permits a later explicit ensure to retry without duplicating queued work.
 The reserved revision key is written with S3 `If-None-Match: *`,
 and every delivery probes that key before contacting the mutable upstream. A retry after an
 object-store/database partial commit downloads and decodes the bounded existing object, then completes

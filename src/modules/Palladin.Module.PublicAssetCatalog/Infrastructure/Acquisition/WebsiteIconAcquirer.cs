@@ -177,8 +177,17 @@ internal sealed class WebsiteIconAcquirer(
 
     private async Task ResetAggregateForRetryAsync(PublicAsset asset, CancellationToken ct)
     {
-        asset.ResetWebsiteIconAcquisitionDispatch();
-        await db.CommitAsync(ct);
+        var assetId = asset.Id;
+        db.Clear();
+        await using var transaction = await db.BeginTransactionAsync(ct);
+        // A command can be delivered before the dispatch transaction commits.
+        // Re-lock and reload the row so this reset observes (and clears) the
+        // committed marker instead of updating the stale pre-dispatch snapshot.
+        var pending = (await db.LockAssetsForAcquisitionDispatchAsync([assetId], ct))
+            .SingleOrDefault(x => x.Status == PublicAssetStatus.Pending);
+        if (pending is null) return;
+        pending.ResetWebsiteIconAcquisitionDispatch();
+        await db.CommitAsync(transaction, ct);
     }
 
     private sealed record IconCandidate(Uri Uri, int Score);

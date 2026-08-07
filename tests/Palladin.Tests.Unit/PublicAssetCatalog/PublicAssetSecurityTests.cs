@@ -10,6 +10,7 @@ using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using NSubstitute;
+using MassTransit;
 
 namespace Palladin.Tests.Unit.PublicAssetCatalog;
 
@@ -89,6 +90,38 @@ public sealed class PublicAssetSecurityTests
         limiter.TryAcquire(member, 1).ShouldBeTrue();
         limiter.TryAcquire(member, 1).ShouldBeFalse();
         limiter.TryAcquire(Guid.NewGuid(), 500).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_Concurrent_Ensures_Reserve_Hostnames_Then_They_Are_Serialized_Per_Member()
+    {
+        using var limiter = new WebsiteIconEnsureLimiter();
+        var memberId = Guid.NewGuid();
+        using var first = await limiter.AcquireReservationLeaseAsync(memberId, TestContext.Current.CancellationToken);
+
+        var secondTask = limiter.AcquireReservationLeaseAsync(memberId, TestContext.Current.CancellationToken).AsTask();
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        secondTask.IsCompleted.ShouldBeFalse();
+
+        first.Dispose();
+        using var second = await secondTask;
+        second.IsAcquired.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_Acquisition_Exhausts_Broker_Retries_Then_Its_Dispatch_Is_Released()
+    {
+        var assetId = Guid.NewGuid();
+        var acquirer = Substitute.For<IWebsiteIconAcquirer>();
+        var fault = Substitute.For<Fault<AcquireWebsiteIconV2Command>>();
+        fault.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
+        var context = Substitute.For<ConsumeContext<Fault<AcquireWebsiteIconV2Command>>>();
+        context.Message.Returns(fault);
+        context.CancellationToken.Returns(TestContext.Current.CancellationToken);
+
+        await new AcquireWebsiteIconV2FaultConsumer(acquirer).Consume(context);
+
+        await acquirer.Received(1).ReleaseDispatchAsync(assetId, TestContext.Current.CancellationToken);
     }
 
     [Fact]

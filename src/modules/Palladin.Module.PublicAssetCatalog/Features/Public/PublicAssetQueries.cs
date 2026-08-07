@@ -182,39 +182,7 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
         }
         if (!committed) throw new PublicAssetHostnameConflictException();
         var assetIds = assets.Select(x => x.Id).Distinct().ToArray();
-        db.Clear();
-        await using (var transaction = await db.BeginTransactionAsync(ct))
-        {
-            // Serialize dispatch per asset and acknowledge it only in the same
-            // transaction that holds the row lock. A queued command is never
-            // republished merely because it has waited longer than a timer;
-            // a failed publish rolls the marker back so a later ensure can try.
-            var locked = await db.LockAssetsForAcquisitionDispatchAsync(assetIds, ct);
-            var dispatch = locked
-                .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds))
-                .ToArray();
-            // Publish in bounded waves. A broker failure for one asset must not
-            // roll back markers for commands that were already accepted, as
-            // that would duplicate those commands on the next ensure call.
-            foreach (var wave in dispatch.Chunk(25))
-            {
-                var published = await Task.WhenAll(wave.Select(async asset =>
-                {
-                    try
-                    {
-                        await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
-                        return asset;
-                    }
-                    catch (Exception) when (!ct.IsCancellationRequested)
-                    {
-                        return null;
-                    }
-                }));
-                foreach (var asset in published.OfType<PublicAsset>())
-                    asset.TryMarkWebsiteIconAcquisitionDispatched(clock.GetCurrentInstant());
-            }
-            await db.CommitAsync(transaction, ct);
-        }
+        await DispatchAcquisitionWavesAsync(assetIds, liveUploadAssetIds);
         db.Clear();
         assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions)
             .Where(x => assetIds.Contains(x.Id)).ToListAsync(ct);
@@ -222,6 +190,40 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
         await Send.OkAsync(new(hosts.Select(h => map.TryGetValue(h, out var asset)
             ? new EnsuredWebsiteIconContract(h, PublicAssetContracts.MapWebsiteIconStatus(asset), PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage))
             : new EnsuredWebsiteIconContract(h, "pending", null)).ToArray()), ct);
+    }
+
+    private async Task DispatchAcquisitionWavesAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
+    {
+        foreach (var waveIds in assetIds.Chunk(25))
+            await DispatchAcquisitionWaveAsync(waveIds, liveUploadAssetIds);
+    }
+
+    private async Task DispatchAcquisitionWaveAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
+    {
+        db.Clear();
+        await using var transaction = await db.BeginTransactionAsync(CancellationToken.None);
+        var dispatch = (await db.LockAssetsForAcquisitionDispatchAsync(assetIds, CancellationToken.None))
+            .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds))
+            .ToArray();
+        var published = await Task.WhenAll(dispatch.Select(TryPublishAcquisitionAsync));
+        foreach (var asset in published.OfType<PublicAsset>())
+            asset.TryMarkWebsiteIconAcquisitionDispatched(clock.GetCurrentInstant());
+        await db.CommitAsync(transaction, CancellationToken.None);
+    }
+
+    private async Task<PublicAsset?> TryPublishAcquisitionAsync(PublicAsset asset)
+    {
+        try
+        {
+            await publisher.Publish(
+                new AcquireWebsiteIconV2Command(asset.Id, asset.Name),
+                CancellationToken.None);
+            return asset;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }
 [PublicAPI]

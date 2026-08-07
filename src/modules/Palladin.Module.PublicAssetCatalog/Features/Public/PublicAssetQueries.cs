@@ -113,6 +113,13 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
     public override async Task HandleAsync(EnsureWebsiteIconsRequest req, CancellationToken ct)
     {
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
+        var memberId = User.GetUserId()!.Value;
+        using var reservationLease = await limiter.AcquireReservationLeaseAsync(memberId, ct);
+        if (!reservationLease.IsAcquired)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            return;
+        }
         List<PublicAsset> assets = [];
         HashSet<Guid> liveUploadAssetIds = [];
         var limiterCharged = false;
@@ -147,7 +154,7 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
             var missingHostnames = hosts.Where(x => !known.ContainsKey(x)).ToArray();
             if (missingHostnames.Length > 0 && !limiterCharged)
             {
-                if (!limiter.TryAcquire(User.GetUserId()!.Value, missingHostnames.Length))
+                if (!limiter.TryAcquire(memberId, missingHostnames.Length))
                 {
                     await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
                     return;

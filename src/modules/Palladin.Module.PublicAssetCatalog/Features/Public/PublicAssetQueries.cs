@@ -36,7 +36,8 @@ internal static class PublicAssetContracts
     }
     internal static string WebsiteIconStorageKey(Guid assetId) => $"published/website-icon/{assetId:N}/1.png";
     internal static bool IsWebsiteAcquisitionReservation(PublicAsset asset, IReadOnlySet<Guid> liveUploadAssetIds) =>
-        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending && !liveUploadAssetIds.Contains(asset.Id);
+        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending
+        && asset.AcquisitionScheduledAt is null && !liveUploadAssetIds.Contains(asset.Id);
     internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
         asset.Status == PublicAssetStatus.Ready ? Map(asset, storage) : null;
     internal static string MapWebsiteIconStatus(PublicAsset asset) => asset.Status switch
@@ -101,7 +102,6 @@ internal sealed class SearchPublicAssetsEndpoint(PublicAssetCatalogDomainReadCon
 [PublicAPI]
 internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteContext db, IPublicAssetStorage storage, IPublishEndpoint publisher, IGuidProvider ids, WebsiteIconEnsureLimiter limiter, IClock clock) : Endpoint<EnsureWebsiteIconsRequest, EnsureWebsiteIconsResponse>
 {
-    private static readonly Duration AcquisitionRetryAfter = Duration.FromSeconds(30);
     public override void Configure()
     {
         Post("api/public-assets/website-icons/ensure");
@@ -115,7 +115,6 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
         List<PublicAsset> assets = [];
         HashSet<Guid> liveUploadAssetIds = [];
-        HashSet<Guid> scheduledAssetIds = [];
         var limiterCharged = false;
         var committed = false;
         for (var attempt = 0; attempt < 5; attempt++)
@@ -161,11 +160,6 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 db.Add(asset);
                 assets.Add(asset);
             }
-            scheduledAssetIds = assets
-                .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds)
-                    && x.TryScheduleWebsiteIconAcquisition(now, AcquisitionRetryAfter))
-                .Select(x => x.Id)
-                .ToHashSet();
             try
             {
                 await db.CommitAsync(ct);
@@ -178,20 +172,53 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 // Clear the rolled-back graph and rebuild the complete batch;
                 // this preserves idempotency without dropping unrelated hosts.
                 db.Clear();
-                scheduledAssetIds.Clear();
             }
             catch (DbUpdateConcurrencyException)
             {
                 // Another ensure scheduled the same orphaned reservation.
                 // Rebuild the batch so only that winner publishes the command.
                 db.Clear();
-                scheduledAssetIds.Clear();
             }
         }
         if (!committed) throw new PublicAssetHostnameConflictException();
+        var assetIds = assets.Select(x => x.Id).Distinct().ToArray();
+        db.Clear();
+        await using (var transaction = await db.BeginTransactionAsync(ct))
+        {
+            // Serialize dispatch per asset and acknowledge it only in the same
+            // transaction that holds the row lock. A queued command is never
+            // republished merely because it has waited longer than a timer;
+            // a failed publish rolls the marker back so a later ensure can try.
+            var locked = await db.LockAssetsForAcquisitionDispatchAsync(assetIds, ct);
+            var dispatch = locked
+                .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds))
+                .ToArray();
+            // Publish in bounded waves. A broker failure for one asset must not
+            // roll back markers for commands that were already accepted, as
+            // that would duplicate those commands on the next ensure call.
+            foreach (var wave in dispatch.Chunk(25))
+            {
+                var published = await Task.WhenAll(wave.Select(async asset =>
+                {
+                    try
+                    {
+                        await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
+                        return asset;
+                    }
+                    catch (Exception) when (!ct.IsCancellationRequested)
+                    {
+                        return null;
+                    }
+                }));
+                foreach (var asset in published.OfType<PublicAsset>())
+                    asset.TryMarkWebsiteIconAcquisitionDispatched(clock.GetCurrentInstant());
+            }
+            await db.CommitAsync(transaction, ct);
+        }
+        db.Clear();
+        assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions)
+            .Where(x => assetIds.Contains(x.Id)).ToListAsync(ct);
         var map = PublicAssetContracts.BuildHostnameMap(assets);
-        foreach (var asset in map.Values.Where(x => scheduledAssetIds.Contains(x.Id)).DistinctBy(x => x.Id))
-            await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
         await Send.OkAsync(new(hosts.Select(h => map.TryGetValue(h, out var asset)
             ? new EnsuredWebsiteIconContract(h, PublicAssetContracts.MapWebsiteIconStatus(asset), PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage))
             : new EnsuredWebsiteIconContract(h, "pending", null)).ToArray()), ct);

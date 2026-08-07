@@ -59,17 +59,20 @@ internal sealed class WebsiteIconAcquirer(
         var origin = new Uri($"https://{hostname}/");
         var fallbackHostname = ParentHostname(hostname);
         var candidates = new List<IconCandidate>();
+        var transientFailure = false;
         var page = await TryDownloadCandidateAsync(origin, ct);
-        if (page is not null)
+        transientFailure |= page.TransientFailure;
+        if (page.Bytes is not null)
         {
-            var html = Encoding.UTF8.GetString(page);
+            var html = Encoding.UTF8.GetString(page.Bytes);
             candidates.AddRange(DiscoverHtmlIconCandidates(origin, html));
             var manifest = DiscoverManifestUri(origin, html);
             if (manifest is not null)
             {
-                var manifestBytes = await TryDownloadCandidateAsync(manifest, ct);
-                if (manifestBytes is not null)
-                    candidates.AddRange(DiscoverManifestIconCandidates(manifest, manifestBytes));
+                var manifestDownload = await TryDownloadCandidateAsync(manifest, ct);
+                transientFailure |= manifestDownload.TransientFailure;
+                if (manifestDownload.Bytes is not null)
+                    candidates.AddRange(DiscoverManifestIconCandidates(manifest, manifestDownload.Bytes));
             }
         }
         candidates.AddRange(ConventionalCandidates(origin, 2_000));
@@ -101,11 +104,12 @@ internal sealed class WebsiteIconAcquirer(
         foreach (var wave in rankedCandidates.Chunk(4))
         {
             var downloaded = await Task.WhenAll(wave.Select(async candidate =>
-                (candidate, bytes: await TryDownloadCandidateAsync(candidate.Uri, ct))));
+                (candidate, download: await TryDownloadCandidateAsync(candidate.Uri, ct))));
             foreach (var result in downloaded.OrderByDescending(x => x.candidate.Score))
             {
-                if (result.bytes is null) continue;
-                await using var source = new MemoryStream(result.bytes, writable: false);
+                transientFailure |= result.download.TransientFailure;
+                if (result.download.Bytes is null) continue;
+                await using var source = new MemoryStream(result.download.Bytes, writable: false);
                 try { image = await Image.LoadAsync(source, ct); break; }
                 catch (UnknownImageFormatException) { }
             }
@@ -113,7 +117,10 @@ internal sealed class WebsiteIconAcquirer(
         }
         if (image is null)
         {
-            await FailAggregateAsync(asset, ct);
+            if (transientFailure)
+                await ResetAggregateForRetryAsync(asset, ct);
+            else
+                await FailAggregateAsync(asset, ct);
             return;
         }
         using (image)
@@ -168,7 +175,14 @@ internal sealed class WebsiteIconAcquirer(
         await db.CommitAsync(ct);
     }
 
+    private async Task ResetAggregateForRetryAsync(PublicAsset asset, CancellationToken ct)
+    {
+        asset.ResetWebsiteIconAcquisitionDispatch();
+        await db.CommitAsync(ct);
+    }
+
     private sealed record IconCandidate(Uri Uri, int Score);
+    private readonly record struct CandidateDownload(byte[]? Bytes, bool TransientFailure);
 
     private static IEnumerable<IconCandidate> ConventionalCandidates(Uri origin, int score)
     {
@@ -285,8 +299,16 @@ internal sealed class WebsiteIconAcquirer(
         return string.Join('.', labels.Skip(labels.Length - registrableLabelCount));
     }
 
-    private static Task<byte[]?> DownloadAsync(Uri initial, CancellationToken ct) =>
-        RunBoundedAsync(token => DownloadCoreAsync(initial, token), TimeSpan.FromSeconds(5), ct);
+    private static async Task<byte[]?> DownloadAsync(Uri initial, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        try { return await DownloadCoreAsync(initial, timeout.Token); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new WebsiteIconTransientDownloadException();
+        }
+    }
 
     internal static async Task<T?> RunBoundedAsync<T>(Func<CancellationToken, Task<T?>> operation, TimeSpan limit, CancellationToken ct)
     {
@@ -327,6 +349,8 @@ internal sealed class WebsiteIconAcquirer(
                 current = response.Headers.Location.IsAbsoluteUri ? response.Headers.Location : new Uri(current, response.Headers.Location);
                 continue;
             }
+            if (IsTransientStatusCode(response.StatusCode))
+                throw new WebsiteIconTransientDownloadException();
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > MaximumDownloadBytes) return null;
             await using var stream = await response.Content.ReadAsStreamAsync(operationToken);
             await using var output = new MemoryStream();
@@ -342,13 +366,20 @@ internal sealed class WebsiteIconAcquirer(
         return null;
     }
 
-    private static async Task<byte[]?> TryDownloadCandidateAsync(Uri uri, CancellationToken ct)
+    internal static bool IsTransientStatusCode(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+        || (int)statusCode >= 500;
+
+    private static async Task<CandidateDownload> TryDownloadCandidateAsync(Uri uri, CancellationToken ct)
     {
-        try { return await DownloadAsync(uri, ct); }
-        catch (HttpRequestException) { return null; }
-        catch (SocketException) { return null; }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
+        try { return new(await DownloadAsync(uri, ct), false); }
+        catch (WebsiteIconTransientDownloadException) { return new(null, true); }
+        catch (HttpRequestException) { return new(null, true); }
+        catch (SocketException) { return new(null, true); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new(null, true); }
     }
+
+    private sealed class WebsiteIconTransientDownloadException : Exception;
 }
 
 internal static class PublicNetworkPolicy

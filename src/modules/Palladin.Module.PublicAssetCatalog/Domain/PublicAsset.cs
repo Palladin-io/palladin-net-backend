@@ -40,14 +40,20 @@ internal sealed class PublicAsset
             throw new InvalidOperationException("Only a pending website-icon acquisition can fail.");
         Status = PublicAssetStatus.Failed;
     }
-    internal bool TryScheduleWebsiteIconAcquisition(Instant now, Duration retryAfter)
+    internal bool TryMarkWebsiteIconAcquisitionDispatched(Instant now)
     {
         if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
             return false;
-        if (AcquisitionScheduledAt is { } scheduledAt && now - scheduledAt < retryAfter)
+        if (AcquisitionScheduledAt is not null)
             return false;
         AcquisitionScheduledAt = now;
         return true;
+    }
+    internal void ResetWebsiteIconAcquisitionDispatch()
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+            throw new InvalidOperationException("Only a pending website-icon acquisition can be retried.");
+        AcquisitionScheduledAt = null;
     }
     internal void Publish(string digest, string mediaType, long byteLength, int width, int height, string storageKey, Instant now)
     {

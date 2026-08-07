@@ -42,14 +42,15 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_A_Pending_Acquisition_Is_Orphaned_Then_Ensure_Reschedules_It_Once_Per_Cooldown()
+    public void When_A_Pending_Acquisition_Is_Dispatched_Then_It_Is_Not_Republished_While_Queued()
     {
         var asset = PublicAsset.Create(Guid.NewGuid(), "example.com", [("example.com", PublicAssetAliasKind.Hostname)]);
         var now = Instant.FromUnixTimeSeconds(100);
 
-        asset.TryScheduleWebsiteIconAcquisition(now, Duration.FromSeconds(30)).ShouldBeTrue();
-        asset.TryScheduleWebsiteIconAcquisition(now + Duration.FromSeconds(29), Duration.FromSeconds(30)).ShouldBeFalse();
-        asset.TryScheduleWebsiteIconAcquisition(now + Duration.FromSeconds(30), Duration.FromSeconds(30)).ShouldBeTrue();
+        asset.TryMarkWebsiteIconAcquisitionDispatched(now).ShouldBeTrue();
+        asset.TryMarkWebsiteIconAcquisitionDispatched(now + Duration.FromDays(1)).ShouldBeFalse();
+        asset.ResetWebsiteIconAcquisitionDispatch();
+        asset.TryMarkWebsiteIconAcquisitionDispatched(now + Duration.FromDays(1)).ShouldBeTrue();
     }
 
     [Fact]
@@ -104,6 +105,18 @@ public sealed class PublicAssetSecurityTests
         result.ShouldBeNull();
         elapsed.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
     }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.TooManyRequests, true)]
+    [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.NotFound, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    public void When_A_Candidate_Response_Is_Transient_Then_The_Host_Remains_Retryable(
+        HttpStatusCode statusCode,
+        bool expected) =>
+        WebsiteIconAcquirer.IsTransientStatusCode(statusCode).ShouldBe(expected);
 
     [Theory]
     [InlineData("appleid.apple.com", "apple.com")]

@@ -22,7 +22,7 @@ namespace Palladin.Module.PublicAssetCatalog.Features;
 [PublicAPI] public sealed record SearchPublicAssetsRequest(string Type, string Q, int? Limit);
 [PublicAPI] public sealed record SearchPublicAssetsResponse(IReadOnlyList<PublicAssetContract> Items);
 [PublicAPI] public sealed record EnsureWebsiteIconsRequest(IReadOnlyList<string> Hostnames);
-[PublicAPI] public sealed record EnsuredWebsiteIconContract(string Hostname, PublicAssetContract? Asset);
+[PublicAPI] public sealed record EnsuredWebsiteIconContract(string Hostname, string Status, PublicAssetContract? Asset);
 [PublicAPI] public sealed record EnsureWebsiteIconsResponse(IReadOnlyList<EnsuredWebsiteIconContract> Items);
 [PublicAPI] public sealed record GetPublicAssetRequest(Guid AssetId, int? V);
 [PublicAPI] public sealed record GetPublicAssetsByIdsRequest(IReadOnlyList<Guid> AssetIds);
@@ -35,14 +35,18 @@ internal static class PublicAssetContracts
         return new(asset.Id, asset.Type == PublicAssetType.AgentIcon ? "agentIcon" : "websiteIcon", asset.Name, storage.GetDeliveryUrl(revision.StorageKey), revision.Revision, asset.Aliases.Select(x => x.Value).ToArray());
     }
     internal static string WebsiteIconStorageKey(Guid assetId) => $"published/website-icon/{assetId:N}/1.png";
-    internal static PublicAssetContract MapReservedWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
-        new(asset.Id, "websiteIcon", asset.Name, storage.GetDeliveryUrl(WebsiteIconStorageKey(asset.Id)), 1, asset.Aliases.Select(x => x.Value).ToArray());
     internal static bool IsWebsiteAcquisitionReservation(PublicAsset asset, IReadOnlySet<Guid> liveUploadAssetIds) =>
-        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending && !liveUploadAssetIds.Contains(asset.Id);
-    internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IReadOnlySet<Guid> liveUploadAssetIds, IPublicAssetStorage storage) =>
-        asset.Status == PublicAssetStatus.Ready
-            ? Map(asset, storage)
-            : IsWebsiteAcquisitionReservation(asset, liveUploadAssetIds) ? MapReservedWebsiteIcon(asset, storage) : null;
+        asset.Type == PublicAssetType.WebsiteIcon && asset.Status == PublicAssetStatus.Pending
+        && asset.AcquisitionScheduledAt is null && !liveUploadAssetIds.Contains(asset.Id);
+    internal static PublicAssetContract? MapEnsuredWebsiteIcon(PublicAsset asset, IPublicAssetStorage storage) =>
+        asset.Status == PublicAssetStatus.Ready ? Map(asset, storage) : null;
+    internal static string MapWebsiteIconStatus(PublicAsset asset) => asset.Status switch
+    {
+        PublicAssetStatus.Pending => "pending",
+        PublicAssetStatus.Ready => "ready",
+        PublicAssetStatus.Failed => "failed",
+        _ => throw new InvalidOperationException("Deleted assets cannot be returned from website icon ensure."),
+    };
     internal static bool TryHostname(string input, out string hostname)
     {
         hostname = input.Trim().TrimEnd('.').ToLowerInvariant();
@@ -109,13 +113,16 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
     public override async Task HandleAsync(EnsureWebsiteIconsRequest req, CancellationToken ct)
     {
         var hosts = req.Hostnames.Select(x => { PublicAssetContracts.TryHostname(x, out var h); return h; }).Distinct().ToArray();
-        if (!limiter.TryAcquire(User.GetUserId()!.Value, hosts.Length))
+        var memberId = User.GetUserId()!.Value;
+        using var reservationLease = await limiter.AcquireReservationLeaseAsync(memberId, ct);
+        if (!reservationLease.IsAcquired)
         {
             await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
             return;
         }
         List<PublicAsset> assets = [];
         HashSet<Guid> liveUploadAssetIds = [];
+        var limiterCharged = false;
         var committed = false;
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -144,7 +151,17 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 continue;
             }
             var known = PublicAssetContracts.BuildHostnameMap(assets);
-            foreach (var hostname in hosts.Where(x => !known.ContainsKey(x)))
+            var missingHostnames = hosts.Where(x => !known.ContainsKey(x)).ToArray();
+            if (missingHostnames.Length > 0 && !limiterCharged)
+            {
+                if (!limiter.TryAcquire(memberId, missingHostnames.Length))
+                {
+                    await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+                    return;
+                }
+                limiterCharged = true;
+            }
+            foreach (var hostname in missingHostnames)
             {
                 var asset = PublicAsset.Create(ids.Generate(), hostname, [(hostname, PublicAssetAliasKind.Hostname)]);
                 db.Add(asset);
@@ -163,14 +180,61 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
                 // this preserves idempotency without dropping unrelated hosts.
                 db.Clear();
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another ensure scheduled the same orphaned reservation.
+                // Rebuild the batch so only that winner publishes the command.
+                db.Clear();
+            }
         }
         if (!committed) throw new PublicAssetHostnameConflictException();
+        var assetIds = assets.Select(x => x.Id).Distinct().ToArray();
+        await DispatchAcquisitionWavesAsync(assetIds, liveUploadAssetIds);
+        db.Clear();
+        assets = await db.Assets.Include(x => x.Aliases).Include(x => x.Revisions)
+            .Where(x => assetIds.Contains(x.Id)).ToListAsync(ct);
         var map = PublicAssetContracts.BuildHostnameMap(assets);
-        foreach (var asset in map.Values.Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds)).DistinctBy(x => x.Id))
-            await publisher.Publish(new AcquireWebsiteIconV2Command(asset.Id, asset.Name), ct);
-        await Send.OkAsync(new(hosts.Select(h => new EnsuredWebsiteIconContract(h, map.TryGetValue(h, out var asset)
-            ? PublicAssetContracts.MapEnsuredWebsiteIcon(asset, liveUploadAssetIds, storage)
-            : null)).ToArray()), ct);
+        await Send.OkAsync(new(hosts.Select(h => map.TryGetValue(h, out var asset)
+            ? new EnsuredWebsiteIconContract(h, PublicAssetContracts.MapWebsiteIconStatus(asset), PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage))
+            : new EnsuredWebsiteIconContract(h, "pending", null)).ToArray()), ct);
+    }
+
+    private async Task DispatchAcquisitionWavesAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
+    {
+        foreach (var waveIds in assetIds.Chunk(25))
+        {
+            await DispatchAcquisitionWaveAsync(waveIds, liveUploadAssetIds);
+        }
+    }
+
+    private async Task DispatchAcquisitionWaveAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
+    {
+        db.Clear();
+        await using var transaction = await db.BeginTransactionAsync(CancellationToken.None);
+        var dispatch = (await db.LockAssetsForAcquisitionDispatchAsync(assetIds, CancellationToken.None))
+            .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds))
+            .ToArray();
+        var published = await Task.WhenAll(dispatch.Select(TryPublishAcquisitionAsync));
+        foreach (var asset in published.OfType<PublicAsset>())
+        {
+            asset.TryMarkWebsiteIconAcquisitionDispatched(clock.GetCurrentInstant());
+        }
+        await db.CommitAsync(transaction, CancellationToken.None);
+    }
+
+    private async Task<PublicAsset?> TryPublishAcquisitionAsync(PublicAsset asset)
+    {
+        try
+        {
+            await publisher.Publish(
+                new AcquireWebsiteIconV2Command(asset.Id, asset.Name),
+                CancellationToken.None);
+            return asset;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }
 [PublicAPI]

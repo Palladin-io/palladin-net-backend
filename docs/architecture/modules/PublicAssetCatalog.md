@@ -11,9 +11,9 @@ per environment. No storage key or provider URL is persisted by another module.
 - `PublicAssetAlias`: normalized hostname/name/tag lookup keys.
 - `PublicAssetUploadSession`: uploader-bound, expiring staging upload with expected MIME, length and digest.
 
-Search and lookup return only `Ready` assets. Website-icon ensure reserves a logical asset and its
-immutable delivery URL before acquisition completes. Completion identifies and decodes the bounded
-raster, re-encodes it as PNG, and publishes exactly once under the reserved revision key.
+Search and lookup return only `Ready` assets. Website-icon ensure returns a per-host
+`pending`/`ready`/`failed` status and includes `asset` only for `ready`. Completion identifies and decodes
+the bounded raster, re-encodes it as PNG, and publishes exactly once under the reserved revision key.
 
 ## HTTP API
 
@@ -25,7 +25,7 @@ raster, re-encodes it as PNG, and publishes exactly once under the reserved revi
 - `POST /api/public-assets/uploads/{uploadSessionId}/complete`
 
 Public read endpoints are anonymous and return metadata plus a render-ready delivery URL. Ensure requires
-an email-verified Member with `VaultManage` and is rate-limited both to 30 requests and 500 submitted hostnames per Member per minute
+an email-verified Member with `VaultManage` and is rate-limited both to 30 requests and 500 newly reserved hostnames per Member per minute
 because it may schedule outbound acquisition. Production
 sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environments configure the direct
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
@@ -38,22 +38,29 @@ non-production cutover; no production messages or catalog data exist to migrate.
 migration deterministically removes duplicate pre-production hostname assets before creating the index.
 The broker provides backpressure and retains accepted work across API restarts;
 consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
-index prevents duplicate website assets.
+index prevents duplicate website assets. Expected acquisition exhaustion moves the asset to `Failed`;
+failed assets retain their hostname alias, return `status: failed` with `asset: null`, and are not re-enqueued by readiness checks.
 Anonymous catalog search exposes only ready website icons published through an explicit service upload.
 Website hostnames learned from an authenticated Member `ensure` request are acquisition-only records and
 never become anonymously enumerable through search, even after their image is ready.
-Pending assets that own a service upload session are never treated as acquisition reservations: ensure
-returns no icon while that upload session is live. Once every session for a still-pending asset expires,
+Pending assets never produce a delivery URL. A pending asset that owns a live service upload session is
+not treated as an acquisition reservation. Once every session for a still-pending upload expires,
 the aggregate is marked deleted and releases its hostname aliases before ensure creates clean per-hostname
 acquisition reservations. `PublicAsset.Status` is an optimistic concurrency token, so upload completion
 cannot overwrite that transition. A service upload that loses
 a hostname reservation race is translated to HTTP 409 instead of leaking a database uniqueness error.
+Acquisition reservations persist a dispatch marker. Ensure serializes publication with a row lock
+and sets the marker only after the broker accepts the command. A marked Pending reservation is never
+re-enqueued merely because time elapsed; a transient acquisition failure re-locks the row, clears the
+committed marker, and permits a later explicit ensure to retry without duplicating queued work. A fault
+consumer clears the same marker after broker retries are exhausted. Reservation creation is serialized
+per Member before hostname permits are charged, so concurrent requests cannot charge the same hostname twice.
 The reserved revision key is written with S3 `If-None-Match: *`,
 and every delivery probes that key before contacting the mutable upstream. A retry after an
 object-store/database partial commit downloads and decodes the bounded existing object, then completes
 the aggregate from those authoritative first-writer bytes even if upstream is unavailable, so duplicate
-deliveries can finish the database transition without overwriting different bytes. Clients persist the
-returned `id`, `revision`, and `url` inside encrypted Vault presentation data. Vault list/detail reads
-never call ensure, resolve, by-id, or get-by-id for Entry icons. A newly reserved URL may briefly precede
-the object; clients retry only the allowlisted bucket/CDN image GET with bounded exponential backoff and
-a cache-busting query, then fall back to a local glyph. No readiness polling reaches the API.
+deliveries can finish the database transition without overwriting different bytes. During explicit
+create/edit/import flows, clients may perform bounded batch readiness checks against ensure and persist
+only returned `Ready` asset `id`, `revision`, and `url` values inside encrypted Vault presentation data.
+Vault list/detail reads never call ensure, resolve, by-id, or get-by-id for Entry icons, and bucket/CDN
+image failures fall back immediately to a local glyph without cache-busting retries.

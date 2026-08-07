@@ -2,7 +2,7 @@ using NodaTime;
 
 namespace Palladin.Module.PublicAssetCatalog.Domain;
 
-internal enum PublicAssetStatus { Pending = 1, Ready = 2, Deleted = 3 }
+internal enum PublicAssetStatus { Pending = 1, Ready = 2, Deleted = 3, Failed = 4 }
 internal enum PublicAssetType { WebsiteIcon = 1, AgentIcon = 2 }
 internal enum PublicAssetAliasKind { Hostname = 1, Name = 2, Slug = 3, Tag = 4 }
 
@@ -15,6 +15,7 @@ internal sealed class PublicAsset
     public Guid? OwnerId { get; private set; }
     public PublicAssetStatus Status { get; private set; }
     public int? CurrentRevision { get; private set; }
+    public Instant? AcquisitionScheduledAt { get; private set; }
     public List<PublicAssetAlias> Aliases { get; private set; } = [];
     public List<PublicAssetRevision> Revisions { get; private set; } = [];
     private PublicAsset() { }
@@ -32,6 +33,33 @@ internal sealed class PublicAsset
             throw new InvalidOperationException("Only a pending website-icon upload can be abandoned.");
         Aliases.Clear();
         Status = PublicAssetStatus.Deleted;
+    }
+    internal void FailWebsiteIconAcquisition()
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+            throw new InvalidOperationException("Only a pending website-icon acquisition can fail.");
+        Status = PublicAssetStatus.Failed;
+    }
+    internal bool TryMarkWebsiteIconAcquisitionDispatched(Instant now)
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+        {
+            return false;
+        }
+        if (AcquisitionScheduledAt is not null)
+        {
+            return false;
+        }
+        AcquisitionScheduledAt = now;
+        return true;
+    }
+    internal void ResetWebsiteIconAcquisitionDispatch()
+    {
+        if (Type != PublicAssetType.WebsiteIcon || Status != PublicAssetStatus.Pending)
+        {
+            throw new InvalidOperationException("Only a pending website-icon acquisition can be retried.");
+        }
+        AcquisitionScheduledAt = null;
     }
     internal void Publish(string digest, string mediaType, long byteLength, int width, int height, string storageKey, Instant now)
     {

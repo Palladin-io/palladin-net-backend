@@ -10,6 +10,7 @@ using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using NSubstitute;
+using MassTransit;
 
 namespace Palladin.Tests.Unit.PublicAssetCatalog;
 
@@ -29,15 +30,28 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_A_Service_Upload_Is_Pending_Then_Ensure_Does_Not_Return_An_Acquisition_Url()
+    public void When_A_Website_Icon_Is_Not_Ready_Then_Ensure_Does_Not_Return_An_Url()
     {
         var asset = PublicAsset.Create(Guid.NewGuid(), "Arbitrary display name", [("example.com", PublicAssetAliasKind.Hostname)]);
         var storage = Substitute.For<IPublicAssetStorage>();
 
-        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage)
-            .ShouldBeNull();
-        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid>(), storage)
-            .ShouldNotBeNull();
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage).ShouldBeNull();
+        PublicAssetContracts.MapWebsiteIconStatus(asset).ShouldBe("pending");
+        asset.FailWebsiteIconAcquisition();
+        PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage).ShouldBeNull();
+        PublicAssetContracts.MapWebsiteIconStatus(asset).ShouldBe("failed");
+    }
+
+    [Fact]
+    public void When_A_Pending_Acquisition_Is_Dispatched_Then_It_Is_Not_Republished_While_Queued()
+    {
+        var asset = PublicAsset.Create(Guid.NewGuid(), "example.com", [("example.com", PublicAssetAliasKind.Hostname)]);
+        var now = Instant.FromUnixTimeSeconds(100);
+
+        asset.TryMarkWebsiteIconAcquisitionDispatched(now).ShouldBeTrue();
+        asset.TryMarkWebsiteIconAcquisitionDispatched(now + Duration.FromDays(1)).ShouldBeFalse();
+        asset.ResetWebsiteIconAcquisitionDispatch();
+        asset.TryMarkWebsiteIconAcquisitionDispatched(now + Duration.FromDays(1)).ShouldBeTrue();
     }
 
     [Fact]
@@ -48,9 +62,10 @@ public sealed class PublicAssetSecurityTests
         var storage = Substitute.For<IPublicAssetStorage>();
         storage.GetDeliveryUrl("published/digest/1.png").Returns("https://assets.palladin.io/published/digest/1.png");
 
-        var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, new HashSet<Guid> { asset.Id }, storage);
+        var result = PublicAssetContracts.MapEnsuredWebsiteIcon(asset, storage);
 
         result.ShouldNotBeNull().Url.ShouldBe("https://assets.palladin.io/published/digest/1.png");
+        PublicAssetContracts.MapWebsiteIconStatus(asset).ShouldBe("ready");
     }
 
     [Fact]
@@ -66,7 +81,7 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
-    public void When_Ensure_Submits_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
+    public void When_Ensure_Reserves_New_Hostnames_Then_The_Member_Is_Charged_Per_Hostname()
     {
         using var limiter = new WebsiteIconEnsureLimiter();
         var member = Guid.NewGuid();
@@ -75,6 +90,38 @@ public sealed class PublicAssetSecurityTests
         limiter.TryAcquire(member, 1).ShouldBeTrue();
         limiter.TryAcquire(member, 1).ShouldBeFalse();
         limiter.TryAcquire(Guid.NewGuid(), 500).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_Concurrent_Ensures_Reserve_Hostnames_Then_They_Are_Serialized_Per_Member()
+    {
+        using var limiter = new WebsiteIconEnsureLimiter();
+        var memberId = Guid.NewGuid();
+        using var first = await limiter.AcquireReservationLeaseAsync(memberId, TestContext.Current.CancellationToken);
+
+        var secondTask = limiter.AcquireReservationLeaseAsync(memberId, TestContext.Current.CancellationToken).AsTask();
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        secondTask.IsCompleted.ShouldBeFalse();
+
+        first.Dispose();
+        using var second = await secondTask;
+        second.IsAcquired.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_Acquisition_Exhausts_Broker_Retries_Then_Its_Dispatch_Is_Released()
+    {
+        var assetId = Guid.NewGuid();
+        var acquirer = Substitute.For<IWebsiteIconAcquirer>();
+        var fault = Substitute.For<Fault<AcquireWebsiteIconV2Command>>();
+        fault.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
+        var context = Substitute.For<ConsumeContext<Fault<AcquireWebsiteIconV2Command>>>();
+        context.Message.Returns(fault);
+        context.CancellationToken.Returns(TestContext.Current.CancellationToken);
+
+        await new AcquireWebsiteIconV2FaultConsumer(acquirer).Consume(context);
+
+        await acquirer.Received(1).ReleaseDispatchAsync(assetId, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -91,6 +138,18 @@ public sealed class PublicAssetSecurityTests
         result.ShouldBeNull();
         elapsed.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
     }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout, true)]
+    [InlineData(HttpStatusCode.TooManyRequests, true)]
+    [InlineData(HttpStatusCode.InternalServerError, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.NotFound, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    public void When_A_Candidate_Response_Is_Transient_Then_The_Host_Remains_Retryable(
+        HttpStatusCode statusCode,
+        bool expected) =>
+        WebsiteIconAcquirer.IsTransientStatusCode(statusCode).ShouldBe(expected);
 
     [Theory]
     [InlineData("appleid.apple.com", "apple.com")]

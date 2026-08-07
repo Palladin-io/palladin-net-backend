@@ -3,22 +3,22 @@ namespace Palladin.Tests.Unit.Architecture;
 
 public sealed class MigrationHistoryArchitectureTests
 {
-    private static readonly string[] ModuleNames =
-    [
-        "Agents",
-        "Audit",
-        "Identity",
-        "Notification",
-        "Search",
-        "Vault",
-    ];
+    private static readonly Dictionary<string, string> ModuleGroupPaths = new()
+    {
+        ["Agents"] = "Agents",
+        ["Audit"] = Path.Combine("OpenHost", "Audit"),
+        ["Identity"] = "Identity",
+        ["Notification"] = Path.Combine("OpenHost", "Notification"),
+        ["Search"] = Path.Combine("OpenHost", "Search"),
+        ["Vault"] = "Vault",
+    };
 
     [Fact]
     public void EveryActiveContext_ShouldHaveExactlyOneInitialMigration()
     {
         var root = FindRepositoryRoot();
 
-        foreach (var moduleName in ModuleNames)
+        foreach (var moduleName in ModuleGroupPaths.Keys)
         {
             var migrations = Directory.EnumerateFiles(GetMigrationsDirectory(root, moduleName), "*.cs")
                 .Where(path => !path.EndsWith(".Designer.cs", StringComparison.Ordinal)
@@ -35,9 +35,9 @@ public sealed class MigrationHistoryArchitectureTests
     public void PersistenceModelAndMigrations_ShouldNeverDeclareDatabaseValidationOrTriggers()
     {
         var root = FindRepositoryRoot();
-        var violations = ModuleNames
+        var violations = ModuleGroupPaths.Keys
             .SelectMany(moduleName => Directory.EnumerateFiles(
-                Path.Combine(root, "src", "modules", $"Palladin.Module.{moduleName}", "Infrastructure", "Persistence"),
+                GetPersistenceDirectory(root, moduleName),
                 "*.cs",
                 SearchOption.AllDirectories))
             .SelectMany(path => new[]
@@ -61,7 +61,17 @@ public sealed class MigrationHistoryArchitectureTests
     }
 
     private static string GetMigrationsDirectory(string root, string moduleName) =>
-        Path.Combine(root, "src", "modules", $"Palladin.Module.{moduleName}", "Infrastructure", "Persistence", "Migrations");
+        Path.Combine(GetPersistenceDirectory(root, moduleName), "Migrations");
+
+    private static string GetPersistenceDirectory(string root, string moduleName) =>
+        Path.Combine(
+            root,
+            "src",
+            "modules",
+            ModuleGroupPaths[moduleName],
+            $"Palladin.Module.{moduleName}",
+            "Infrastructure",
+            "Persistence");
 
     private static string FindRepositoryRoot()
     {

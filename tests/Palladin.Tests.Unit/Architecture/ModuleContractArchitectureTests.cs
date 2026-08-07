@@ -3,6 +3,35 @@ namespace Palladin.Tests.Unit.Architecture;
 
 public sealed class ModuleContractArchitectureTests
 {
+    private static readonly (string Name, string GroupPath)[] ModuleGroups =
+    [
+        ("Agents", "Agents"),
+        ("Audit", Path.Combine("OpenHost", "Audit")),
+        ("Identity", "Identity"),
+        ("Notification", Path.Combine("OpenHost", "Notification")),
+        ("PublicAssetCatalog", Path.Combine("OpenHost", "PublicAssetCatalog")),
+        ("Search", Path.Combine("OpenHost", "Search")),
+        ("Vault", "Vault"),
+    ];
+
+    [Fact]
+    public void ModuleGroups_ShouldKeepImplementationAndContractsAsSiblingProjects()
+    {
+        var root = FindRepositoryRoot();
+
+        foreach (var (name, groupPath) in ModuleGroups)
+        {
+            var groupDirectory = Path.Combine(root, "src", "modules", groupPath);
+            var implementationDirectory = Path.Combine(groupDirectory, $"Palladin.Module.{name}");
+            var contractsDirectory = Path.Combine(groupDirectory, $"Palladin.Module.{name}.Contracts");
+
+            File.Exists(Path.Combine(groupDirectory, "README.md")).ShouldBeTrue();
+            File.Exists(Path.Combine(implementationDirectory, $"Palladin.Module.{name}.csproj")).ShouldBeTrue();
+            File.Exists(Path.Combine(contractsDirectory, $"Palladin.Module.{name}.Contracts.csproj")).ShouldBeTrue();
+            Directory.Exists(Path.Combine(implementationDirectory, "Contracts")).ShouldBeFalse();
+        }
+    }
+
     [Fact]
     public void IntegrationMessages_ShouldLiveInTheirSemanticContractDirectory()
     {
@@ -25,24 +54,24 @@ public sealed class ModuleContractArchitectureTests
             {
                 var errors = new List<string>();
                 if (item.Source.Contains("IIntegrationEvent", StringComparison.Ordinal)
-                    && !item.RelativePath.Contains("/Contracts/Events/", StringComparison.Ordinal))
+                    && !item.RelativePath.Contains(".Contracts/Events/", StringComparison.Ordinal))
                 {
                     errors.Add($"{item.RelativePath}: IIntegrationEvent outside Contracts/Events");
                 }
 
                 if (item.Source.Contains("IIntegrationCommand", StringComparison.Ordinal)
-                    && !item.RelativePath.Contains("/Contracts/Commands/", StringComparison.Ordinal))
+                    && !item.RelativePath.Contains(".Contracts/Commands/", StringComparison.Ordinal))
                 {
                     errors.Add($"{item.RelativePath}: IIntegrationCommand outside Contracts/Commands");
                 }
 
-                if (item.RelativePath.Contains("/Contracts/Events/", StringComparison.Ordinal)
+                if (item.RelativePath.Contains(".Contracts/Events/", StringComparison.Ordinal)
                     && item.Source.Contains("IIntegrationCommand", StringComparison.Ordinal))
                 {
                     errors.Add($"{item.RelativePath}: command marker in Contracts/Events");
                 }
 
-                if (item.RelativePath.Contains("/Contracts/Commands/", StringComparison.Ordinal)
+                if (item.RelativePath.Contains(".Contracts/Commands/", StringComparison.Ordinal)
                     && item.Source.Contains("IIntegrationEvent", StringComparison.Ordinal))
                 {
                     errors.Add($"{item.RelativePath}: event marker in Contracts/Commands");

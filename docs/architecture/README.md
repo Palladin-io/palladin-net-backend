@@ -1,6 +1,6 @@
 # Architecture Reference
 
-This directory is the architecture reference for the Palladin .NET backend. It complements `CLAUDE.MD` (conventions and rules) with two things `CLAUDE.MD` does not carry: the **catalog of shared building blocks** and a **per-module map**.
+This directory is the cross-cutting architecture reference for the Palladin .NET backend. It complements `CLAUDE.MD` (conventions and rules) with shared building blocks and protocol-level decisions. Module-specific architecture is colocated with each domain module in `src/modules/{ModuleName}/README.md` or each OpenHost module in `src/modules/OpenHost/{ModuleName}/README.md`.
 
 ## Pre-production database reset
 
@@ -16,7 +16,7 @@ The backend is a modular monolith. Everything cross-cutting — base entity/even
 
 ## Before working on a module
 
-**Before implementing a feature in a module, read its architecture doc first.** Each module doc lists the aggregates, feature endpoints, the integration events it publishes and consumes, its DbContexts, its Hangfire jobs, its shared `[PublicAPI]` contracts, and its invariants. Skipping this is how cross-module events get missed and invariants get violated.
+**Before implementing a feature in a module, read that module group's README first.** It lists the aggregates, feature endpoints, the integration events it publishes and consumes, its DbContexts, its Hangfire jobs, its shared `[PublicAPI]` contracts, and its invariants. Skipping this is how cross-module events get missed and invariants get violated.
 
 ## Index
 
@@ -24,11 +24,12 @@ The backend is a modular monolith. Everything cross-cutting — base entity/even
 |-----|----------|
 | [vault-protocol-2-canonical-wire.md](vault-protocol-2-canonical-wire.md) | Canonical envelope, X25519 wrapper, public trust-anchor, and zero-knowledge delivery contract |
 | [building-blocks.md](building-blocks.md) | Full catalog of `Palladin.Core.*` shared building blocks, missing abstractions to add, and dead code to remove |
-| [modules/Identity.md](modules/Identity.md) | Auth, sessions, organization & user lifecycle |
-| [modules/Vault.md](modules/Vault.md) | Vaults, entries, grants, agent credential delivery |
-| [modules/Agents.md](modules/Agents.md) | Agent enrollment, API keys, agent authentication |
-| [modules/Audit.md](modules/Audit.md) | Append-only audit trail, CSV export |
-| [modules/Notification.md](modules/Notification.md) | Inbox, SignalR real-time, Firebase push, preferences |
-| [modules/Search.md](modules/Search.md) | Event-fed read-side OpenHost: global search + onboarding progress, with access scoping |
+| [Identity README](../../src/modules/Identity/README.md) | Auth, sessions, organization & user lifecycle |
+| [Vault README](../../src/modules/Vault/README.md) | Vaults, entries, grants, agent credential delivery |
+| [Agents README](../../src/modules/Agents/README.md) | Agent enrollment, API keys, agent authentication |
+| [Audit README](../../src/modules/OpenHost/Audit/README.md) | Append-only audit trail, CSV export |
+| [Notification README](../../src/modules/OpenHost/Notification/README.md) | Inbox, SignalR real-time, Firebase push, preferences |
+| [Search README](../../src/modules/OpenHost/Search/README.md) | Command-fed administrative search OpenHost |
+| [PublicAssetCatalog README](../../src/modules/OpenHost/PublicAssetCatalog/README.md) | Shared non-secret public assets and website icons |
 
-> Note: `CLAUDE.MD` and older docs mention a Billing module. There is no Billing module under `src/modules/` today. The six live modules own any cross-module contract assemblies in their nested `Contracts/` directories.
+> Note: `CLAUDE.MD` and older docs mention a Billing module. There is no Billing module under `src/modules/` today. Each active module group owns sibling implementation and contracts projects.

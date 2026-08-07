@@ -18,13 +18,13 @@
         <ProjectReference Include="..\..\src\core\Palladin.Core.Analytics\Palladin.Core.Analytics.csproj" />
         <ProjectReference Include="..\..\src\core\Palladin.Core.Json\Palladin.Core.Json.csproj" />
         <ProjectReference Include="..\..\src\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.Agents\Palladin.Module.Agents.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.Audit\Palladin.Module.Audit.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.Identity\Palladin.Module.Identity.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.Notification\Palladin.Module.Notification.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.Search\Palladin.Module.Search.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.Vault\Palladin.Module.Vault.csproj" />
-        <ProjectReference Include="..\..\src\modules\Palladin.Module.PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.csproj" />
+        <ProjectReference Include="..\..\src\modules\Agents\Palladin.Module.Agents\Palladin.Module.Agents.csproj" />
+        <ProjectReference Include="..\..\src\modules\OpenHost\Audit\Palladin.Module.Audit\Palladin.Module.Audit.csproj" />
+        <ProjectReference Include="..\..\src\modules\Identity\Palladin.Module.Identity\Palladin.Module.Identity.csproj" />
+        <ProjectReference Include="..\..\src\modules\OpenHost\Notification\Palladin.Module.Notification\Palladin.Module.Notification.csproj" />
+        <ProjectReference Include="..\..\src\modules\OpenHost\Search\Palladin.Module.Search\Palladin.Module.Search.csproj" />
+        <ProjectReference Include="..\..\src\modules\Vault\Palladin.Module.Vault\Palladin.Module.Vault.csproj" />
+        <ProjectReference Include="..\..\src\modules\OpenHost\PublicAssetCatalog\Palladin.Module.PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.csproj" />
     </ItemGroup>
 
     <ItemGroup>

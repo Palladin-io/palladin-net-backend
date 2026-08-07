@@ -195,7 +195,9 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
     private async Task DispatchAcquisitionWavesAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
     {
         foreach (var waveIds in assetIds.Chunk(25))
+        {
             await DispatchAcquisitionWaveAsync(waveIds, liveUploadAssetIds);
+        }
     }
 
     private async Task DispatchAcquisitionWaveAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
@@ -207,7 +209,9 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
             .ToArray();
         var published = await Task.WhenAll(dispatch.Select(TryPublishAcquisitionAsync));
         foreach (var asset in published.OfType<PublicAsset>())
+        {
             asset.TryMarkWebsiteIconAcquisitionDispatched(clock.GetCurrentInstant());
+        }
         await db.CommitAsync(transaction, CancellationToken.None);
     }
 

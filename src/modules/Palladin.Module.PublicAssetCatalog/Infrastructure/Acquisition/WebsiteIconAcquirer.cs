@@ -72,7 +72,9 @@ internal sealed class WebsiteIconAcquirer(
                 var manifestDownload = await TryDownloadCandidateAsync(manifest, ct);
                 transientFailure |= manifestDownload.TransientFailure;
                 if (manifestDownload.Bytes is not null)
+                {
                     candidates.AddRange(DiscoverManifestIconCandidates(manifest, manifestDownload.Bytes));
+                }
             }
         }
         candidates.AddRange(ConventionalCandidates(origin, 2_000));
@@ -108,7 +110,10 @@ internal sealed class WebsiteIconAcquirer(
             foreach (var result in downloaded.OrderByDescending(x => x.candidate.Score))
             {
                 transientFailure |= result.download.TransientFailure;
-                if (result.download.Bytes is null) continue;
+                if (result.download.Bytes is null)
+                {
+                    continue;
+                }
                 await using var source = new MemoryStream(result.download.Bytes, writable: false);
                 try { image = await Image.LoadAsync(source, ct); break; }
                 catch (UnknownImageFormatException) { }
@@ -118,9 +123,13 @@ internal sealed class WebsiteIconAcquirer(
         if (image is null)
         {
             if (transientFailure)
+            {
                 await ResetAggregateForRetryAsync(asset, ct);
+            }
             else
+            {
                 await FailAggregateAsync(asset, ct);
+            }
             return;
         }
         using (image)
@@ -182,7 +191,10 @@ internal sealed class WebsiteIconAcquirer(
         await using var transaction = await db.BeginTransactionAsync(ct);
         var pending = (await db.LockAssetsForAcquisitionDispatchAsync([assetId], ct))
             .SingleOrDefault(x => x.Status == PublicAssetStatus.Pending);
-        if (pending is null) return;
+        if (pending is null)
+        {
+            return;
+        }
         pending.ResetWebsiteIconAcquisitionDispatch();
         await db.CommitAsync(transaction, ct);
     }
@@ -356,7 +368,9 @@ internal sealed class WebsiteIconAcquirer(
                 continue;
             }
             if (IsTransientStatusCode(response.StatusCode))
+            {
                 throw new WebsiteIconTransientDownloadException();
+            }
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > MaximumDownloadBytes) return null;
             await using var stream = await response.Content.ReadAsStreamAsync(operationToken);
             await using var output = new MemoryStream();

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FastEndpoints" Version="7.2.0" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\core\Palladin.Core.Security\Palladin.Core.Security.csproj" />
+        <ProjectReference Include="..\..\..\..\core\Palladin.Core.Events\Palladin.Core.Events.csproj" />
+        <ProjectReference Include="..\..\..\..\core\Palladin.Core.MassTransit\Palladin.Core.MassTransit.csproj" />
+        <ProjectReference Include="..\..\..\..\core\Palladin.Core.Persistence\Palladin.Core.Persistence.csproj" />
+        <ProjectReference Include="..\..\..\..\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
+        <ProjectReference Include="..\Palladin.Module.Search.Contracts\Palladin.Module.Search.Contracts.csproj" />
+    </ItemGroup>
+
+</Project>

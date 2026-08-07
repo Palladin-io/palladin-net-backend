@@ -32,13 +32,13 @@
         <ProjectReference Include="..\core\Palladin.Core.Persistence\Palladin.Core.Persistence.csproj" />
         <ProjectReference Include="..\core\Palladin.Core.Transport\Palladin.Core.Transport.csproj" />
         <ProjectReference Include="..\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.Agents\Palladin.Module.Agents.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.Audit\Palladin.Module.Audit.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.Identity\Palladin.Module.Identity.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.Notification\Palladin.Module.Notification.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.Vault\Palladin.Module.Vault.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.Search\Palladin.Module.Search.csproj" />
-        <ProjectReference Include="..\modules\Palladin.Module.PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.csproj" />
+        <ProjectReference Include="..\modules\Agents\Palladin.Module.Agents\Palladin.Module.Agents.csproj" />
+        <ProjectReference Include="..\modules\OpenHost\Audit\Palladin.Module.Audit\Palladin.Module.Audit.csproj" />
+        <ProjectReference Include="..\modules\Identity\Palladin.Module.Identity\Palladin.Module.Identity.csproj" />
+        <ProjectReference Include="..\modules\OpenHost\Notification\Palladin.Module.Notification\Palladin.Module.Notification.csproj" />
+        <ProjectReference Include="..\modules\Vault\Palladin.Module.Vault\Palladin.Module.Vault.csproj" />
+        <ProjectReference Include="..\modules\OpenHost\Search\Palladin.Module.Search\Palladin.Module.Search.csproj" />
+        <ProjectReference Include="..\modules\OpenHost\PublicAssetCatalog\Palladin.Module.PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.csproj" />
     </ItemGroup>
 
     <ItemGroup>

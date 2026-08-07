@@ -3,7 +3,7 @@
 # valid dev secret and connection strings so `dotnet ef migrations add` builds the context.
 export ASPNETCORE_ENVIRONMENT=Development
 dotnet ef migrations add "$1" \
-    --project src/modules/Palladin.Module.Audit/Palladin.Module.Audit.csproj \
+    --project src/modules/OpenHost/Audit/Palladin.Module.Audit/Palladin.Module.Audit.csproj \
     --startup-project src/Palladin.Api/Palladin.Api.csproj \
     --context AuditDbWriteContext \
     --output-dir Infrastructure/Persistence/Migrations

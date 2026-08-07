@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\core\Palladin.Core.Events\Palladin.Core.Events.csproj" />
+  </ItemGroup>
+</Project>

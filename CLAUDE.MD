@@ -66,24 +66,26 @@ The approved pre-production database reset uses one `Initial` EF Core migration 
 ### Project layout
 - `src/Palladin.Api/` — Entry point (`Program.cs`), health checks, middleware, shared bootstrap
 - `src/core/` — Cross-cutting utilities (Analytics, Ai, MassTransit, Hangfire, Persistence, NodaTime, Security, Events, Cdn, etc.)
-- `src/modules/` — Business domain modules (Identity, Vault, Agents, Audit, Notification, PublicAssetCatalog). Billing is planned, not yet present in `src/modules/`
+- `src/modules/{ModuleName}/` — Domain module group containing the implementation project, contracts project and module README. Active domain groups: Identity, Vault and Agents.
+- `src/modules/OpenHost/{ModuleName}/` — Shared Open Host Service group with the same internal layout. Active OpenHost groups: Audit, Notification, Search and PublicAssetCatalog. Billing is planned, not yet present in `src/modules/`.
 - `tests/Palladin.Api.Tests/` — Main integration test suite
 - `tests/Palladin.Tests.Architecture/` — Module boundary compliance tests
 
-### Module internal structure
+### Module group structure
 ```
-ModuleName/
-├── Contracts/       # Nested contract assembly: Commands, Events and stable shared ValueObjects
-├── Domain/          # Models, value objects, events, exceptions
-├── Features/        # Vertical slices grouped by actor (`User`, `Agentic`, `System`) with cross-slice helpers in `Shared`
-├── Infrastructure/  # Persistence (DbContext, Configurations, Migrations), MassTransit routing, external services, *Options
-├── Agents/          # AI integration (Semantic Kernel plugins)
-├── Shared/          # Cross-feature DTOs and value objects
-├── Triggers/        # Integration event consumers — at module root, NOT under Infrastructure
-└── ModuleName.cs    # Module registration (AddModuleNameModule extension method)
+{ModuleRoot}/
+├── README.md                                      # Module architecture and ownership map
+├── Palladin.Module.{ModuleName}/                  # Implementation assembly
+│   ├── Domain/                                    # Models, value objects, events, exceptions
+│   ├── Features/                                  # Vertical slices grouped by actor (`User`, `Agentic`, `System`)
+│   ├── Infrastructure/                            # Persistence, messaging, external services and options
+│   ├── Shared/                                    # Cross-feature DTOs and value objects
+│   ├── Triggers/                                  # Integration event consumers
+│   └── {ModuleName}Module.cs                      # Module registration
+└── Palladin.Module.{ModuleName}.Contracts/        # Commands, Events and stable shared ValueObjects
 ```
 
-Contract assemblies live under their owning module (`ModuleName/Contracts/Palladin.Module.ModuleName.Contracts.csproj`), never as sibling pseudo-modules. They keep the dependency graph acyclic while making bounded-context ownership explicit. Each contract assembly has the following semantic namespaces:
+The implementation and contracts projects are sibling directories inside their owning module group. `{ModuleRoot}` is `src/modules/{ModuleName}` for a domain module or `src/modules/OpenHost/{ModuleName}` for an OpenHost module. A contracts project lives at `{ModuleRoot}/Palladin.Module.{ModuleName}.Contracts/Palladin.Module.{ModuleName}.Contracts.csproj`; it must never be nested inside the implementation project's content root or placed as an unowned top-level pseudo-module. This keeps IDE project trees unambiguous while preserving an acyclic dependency graph and explicit bounded-context ownership. Each contract assembly has the following semantic namespaces:
 
 - `Contracts.Commands` — integration commands handled by the owning module; another module may request the owner to perform the operation. Every such command implements `IIntegrationCommand`, never `IIntegrationEvent`.
 - `Contracts.Events` — integration events published by the owning module; every type implementing `IIntegrationEvent` belongs here, even when its first consumer is inside the same module. `Domain/Events` is reserved for truly internal domain events that are not integration contracts.
@@ -130,15 +132,15 @@ services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.Position));
 Convention: `Position = "Modules:{Module}:{Section}"` (e.g. `Modules:Vault:Persistence`, `Modules:Agents:Signature`, `Modules:Notification:Firebase`). Consume via injected `IOptions<JwtOptions>` — never read `IConfiguration` by string path in a feature.
 
 ### Cross-module communication
-Modules communicate exclusively through **MassTransit integration events** (RabbitMQ). Domain events stay within module boundaries. The per-module published/consumed event catalog lives in `docs/architecture/modules/`.
+Modules communicate exclusively through **MassTransit integration events** (RabbitMQ). Domain events stay within module boundaries. Each module's published/consumed event catalog lives in its `{ModuleRoot}/README.md`.
 
 Use one unified `Upserted` event carrying an `EntityChange { Created, Updated }` classifier instead of separate `Created` and `Updated` events. Subscribers branch on the classifier and use `UpdatedAt` for idempotency.
 
 **Strong isolation — no cross-module read query interfaces.** A module must never expose (or consume) a live read-query interface into another module's data. A read concern that spans modules gets **its own module** built as an **OpenHost** (Open Host Service): a denormalized read-model with its own access scoping.
 
-**OpenHost feeding is command-driven, NOT event-subscription.** The host module consumes **only its own integration commands** (`IndexXCommand` / `RemoveXCommand` / `UpdateUserScope`, defined in its nested `Contracts` assembly). It **never** subscribes to other modules' events. Each **owning module**, in its **own** `On{Event}` trigger, translates its domain event into the host's command and publishes it (dependency direction: owner → `Host.Contracts`; host → nothing). Reference implementation: the **Notification** module (`BroadcastNotificationCommand`, `NotificationScope`, `UpdateUserScope`; Vault/Agents `On{X}Broadcast` triggers publish it) — mirror it. Access via **scopes** (`{Type, ItemId}` + optional `RequiredPermission`), not per-relation tables / ifology. Prefer one **polymorphic item** (Type + Metadata jsonb) over per-type entities (Open-Closed). Store cross-module state (e.g. `is_onboarded`, onboarding steps) as materialized state fed by commands — never compute it cross-module.
+**OpenHost feeding is command-driven, NOT event-subscription.** The host module consumes **only its own integration commands** (`IndexXCommand` / `RemoveXCommand` / `UpdateUserScope`, defined in its `Contracts` assembly). It **never** subscribes to other modules' events. Each **owning module**, in its **own** `On{Event}` trigger, translates its domain event into the host's command and publishes it (dependency direction: owner → `Host.Contracts`; host → nothing). Reference implementation: the **Notification** module (`BroadcastNotificationCommand`, `NotificationScope`, `UpdateUserScope`; Vault/Agents `On{X}Broadcast` triggers publish it) — mirror it. Access via **scopes** (`{Type, ItemId}` + optional `RequiredPermission`), not per-relation tables / ifology. Prefer one **polymorphic item** (Type + Metadata jsonb) over per-type entities (Open-Closed). Store cross-module state (e.g. `is_onboarded`, onboarding steps) as materialized state fed by commands — never compute it cross-module.
 
-See `docs/architecture/modules/Search.md` and `docs/architecture/modules/Notification.md` for complete repository-local examples.
+See `src/modules/OpenHost/Search/README.md` and `src/modules/OpenHost/Notification/README.md` for complete repository-local examples.
 
 ### References between modules
 - `Core.*` projects hold shared code (utilities, base contracts, cross-cutting concerns)
@@ -164,7 +166,7 @@ See `docs/architecture/modules/Search.md` and `docs/architecture/modules/Notific
 
 ## Architecture Reference Docs
 
-Detailed architecture lives in `docs/architecture/`. Keep it open while working.
+Cross-cutting architecture lives in `docs/architecture/`; each module's detailed architecture lives in `{ModuleRoot}/README.md`. Keep the relevant references open while working.
 
 **Reuse rule:** everything cross-cutting (base entity/event types, persistence base classes, cursor pagination, JWT claim access, GUID generation, analytics, CDN, error formatting) lives once in `src/core/` as a `Palladin.Core.*` project. Reuse those building blocks — never re-implement them inside a module. The full catalog is in **`docs/architecture/building-blocks.md`** (it also lists missing abstractions to promote and dead code to remove).
 
@@ -172,11 +174,13 @@ Detailed architecture lives in `docs/architecture/`. Keep it open while working.
 
 | Module | Doc |
 |--------|-----|
-| Identity | `docs/architecture/modules/Identity.md` |
-| Vault | `docs/architecture/modules/Vault.md` |
-| Agents | `docs/architecture/modules/Agents.md` |
-| Audit | `docs/architecture/modules/Audit.md` |
-| Notification | `docs/architecture/modules/Notification.md` |
+| Identity | `src/modules/Identity/README.md` |
+| Vault | `src/modules/Vault/README.md` |
+| Agents | `src/modules/Agents/README.md` |
+| Audit | `src/modules/OpenHost/Audit/README.md` |
+| Notification | `src/modules/OpenHost/Notification/README.md` |
+| Search | `src/modules/OpenHost/Search/README.md` |
+| PublicAssetCatalog | `src/modules/OpenHost/PublicAssetCatalog/README.md` |
 
 Start at `docs/architecture/README.md`.
 
@@ -458,11 +462,11 @@ Official Codex review is a bounded release gate, not an iterative design loop.
 
 Repository-local review skills live under `.agents/`. Public CI must not depend on maintainer subscription credentials or execute untrusted pull-request code with elevated permissions.
 
-`AGENTS.md` is always loaded into context, so keep it **lean**. Only guidance you need on *every* iteration belongs here (conventions, the shared-building-block reuse rule, the load-edit-commit rule, the analytics-via-triggers rule). Deep, reference-level detail — the building-block catalog, per-module aggregates/events/invariants — lives in `docs/architecture/` and is **pointed to** from here, not duplicated.
+`AGENTS.md` is always loaded into context, so keep it **lean**. Only guidance you need on *every* iteration belongs here (conventions, the shared-building-block reuse rule, the load-edit-commit rule, the analytics-via-triggers rule). Deep, reference-level detail lives in `docs/architecture/` for cross-cutting concerns and in each module group's `README.md` for aggregates, events and invariants; it is **pointed to** from here, not duplicated.
 
-- Extend this file and the `docs/architecture/` docs **autonomously** as you discover stable conventions — do not wait to be asked.
-- New deep detail → add it to `docs/architecture/` and link it; do not inflate `AGENTS.md`.
+- Extend this file, module READMEs and `docs/architecture/` docs **autonomously** as you discover stable conventions — do not wait to be asked.
+- New module-specific detail → add it to that module group's `README.md`; new cross-cutting detail → add it to `docs/architecture/`. Link it instead of inflating `AGENTS.md`.
 - Keep application documentation and instruction files in English. Skill workflow narration and PR review/fix output may be Polish, matching the repository's PR language convention. If you find a stale or contradictory rule, fix it and note the change in your PR.
 - `AGENTS.md` and `CLAUDE.MD` are intentionally maintained as complete, byte-for-byte identical copies by product-owner decision. Every instruction change must update both files in the same commit and verify them with `cmp`.
 
-**PR reviewers must check whether a code change requires updating `AGENTS.md` or a `docs/architecture/` doc** — a new module, a new shared building block in `src/core/`, a changed convention, or a new/changed integration event. **Documentation drift is a review finding**, treated like any other defect.
+**PR reviewers must check whether a code change requires updating `AGENTS.md`, a module `README.md`, or a `docs/architecture/` doc** — a new module, a new shared building block in `src/core/`, a changed convention, or a new/changed integration event. **Documentation drift is a review finding**, treated like any other defect.

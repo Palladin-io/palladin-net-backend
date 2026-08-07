@@ -44,7 +44,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Core.Bcp47", "src\
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "modules", "modules", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Identity", "src\modules\Palladin.Module.Identity\Palladin.Module.Identity.csproj", "{D4E5F6A7-B8C9-0123-4567-890ABCDEF012}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "OpenHost", "OpenHost", "{6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Identity", "src\modules\Identity\Palladin.Module.Identity\Palladin.Module.Identity.csproj", "{D4E5F6A7-B8C9-0123-4567-890ABCDEF012}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
@@ -56,35 +58,31 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Core.Security", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Tests.Unit", "tests\Palladin.Tests.Unit\Palladin.Tests.Unit.csproj", "{2331969F-F489-4D7D-B216-789B1CDC26DA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Vault", "src\modules\Palladin.Module.Vault\Palladin.Module.Vault.csproj", "{65D19C3C-6D2F-4264-94D3-EA9D9A6F507A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Vault", "src\modules\Vault\Palladin.Module.Vault\Palladin.Module.Vault.csproj", "{65D19C3C-6D2F-4264-94D3-EA9D9A6F507A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Agents", "src\modules\Palladin.Module.Agents\Palladin.Module.Agents.csproj", "{3C15E794-9135-482B-9785-944A7C18C429}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Agents", "src\modules\Agents\Palladin.Module.Agents\Palladin.Module.Agents.csproj", "{3C15E794-9135-482B-9785-944A7C18C429}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Notification", "src\modules\Palladin.Module.Notification\Palladin.Module.Notification.csproj", "{5A7080B3-37D2-47C0-BA8B-42CA49139796}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Notification", "src\modules\OpenHost\Notification\Palladin.Module.Notification\Palladin.Module.Notification.csproj", "{5A7080B3-37D2-47C0-BA8B-42CA49139796}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Audit", "src\modules\Palladin.Module.Audit\Palladin.Module.Audit.csproj", "{2D12C2C9-B067-4235-BDBA-2BE9C0111ABD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Audit", "src\modules\OpenHost\Audit\Palladin.Module.Audit\Palladin.Module.Audit.csproj", "{2D12C2C9-B067-4235-BDBA-2BE9C0111ABD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Notification.Contracts", "src\modules\Palladin.Module.Notification\Contracts\Palladin.Module.Notification.Contracts.csproj", "{11FB392C-0138-4138-93CA-D9C4D0A59BF0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Notification.Contracts", "src\modules\OpenHost\Notification\Palladin.Module.Notification.Contracts\Palladin.Module.Notification.Contracts.csproj", "{11FB392C-0138-4138-93CA-D9C4D0A59BF0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Search", "src\modules\Palladin.Module.Search\Palladin.Module.Search.csproj", "{0DD360D2-FFAC-4D68-88B7-89F4C257D7D8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Search", "src\modules\OpenHost\Search\Palladin.Module.Search\Palladin.Module.Search.csproj", "{0DD360D2-FFAC-4D68-88B7-89F4C257D7D8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Search.Contracts", "src\modules\Palladin.Module.Search\Contracts\Palladin.Module.Search.Contracts.csproj", "{50DDF68B-1919-46FD-8A71-CC4F08A18B26}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Search.Contracts", "src\modules\OpenHost\Search\Palladin.Module.Search.Contracts\Palladin.Module.Search.Contracts.csproj", "{50DDF68B-1919-46FD-8A71-CC4F08A18B26}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Audit.Contracts", "src\modules\Palladin.Module.Audit\Contracts\Palladin.Module.Audit.Contracts.csproj", "{42A2C706-6A86-48DA-88D7-8A3761A2806C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Audit.Contracts", "src\modules\OpenHost\Audit\Palladin.Module.Audit.Contracts\Palladin.Module.Audit.Contracts.csproj", "{42A2C706-6A86-48DA-88D7-8A3761A2806C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Vault.Contracts", "src\modules\Palladin.Module.Vault\Contracts\Palladin.Module.Vault.Contracts.csproj", "{AF881AF4-0D23-49FF-BFE1-FD4C772DE0A3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Vault.Contracts", "src\modules\Vault\Palladin.Module.Vault.Contracts\Palladin.Module.Vault.Contracts.csproj", "{AF881AF4-0D23-49FF-BFE1-FD4C772DE0A3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Agents.Contracts", "src\modules\Palladin.Module.Agents\Contracts\Palladin.Module.Agents.Contracts.csproj", "{D7B97E2C-6EE3-4A15-AF22-B1C18A8D0081}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Agents.Contracts", "src\modules\Agents\Palladin.Module.Agents.Contracts\Palladin.Module.Agents.Contracts.csproj", "{D7B97E2C-6EE3-4A15-AF22-B1C18A8D0081}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Identity.Contracts", "src\modules\Palladin.Module.Identity\Contracts\Palladin.Module.Identity.Contracts.csproj", "{D267741A-7EB4-4A69-8E09-31FF97DFE5B2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.Identity.Contracts", "src\modules\Identity\Palladin.Module.Identity.Contracts\Palladin.Module.Identity.Contracts.csproj", "{D267741A-7EB4-4A69-8E09-31FF97DFE5B2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.PublicAssetCatalog", "src\modules\Palladin.Module.PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.csproj", "{4F96DF72-5421-4AA9-83E5-626608C28A9B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.PublicAssetCatalog", "src\modules\OpenHost\PublicAssetCatalog\Palladin.Module.PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.csproj", "{4F96DF72-5421-4AA9-83E5-626608C28A9B}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "PublicAssetCatalog", "PublicAssetCatalog", "{2103A255-CDC9-B046-5137-5BC9ADECDA6A}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Contracts", "Contracts", "{CA9595F0-21A6-FCC5-9C21-4F42211C112C}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.PublicAssetCatalog.Contracts", "src\modules\Palladin.Module.PublicAssetCatalog\Contracts\Palladin.Module.PublicAssetCatalog.Contracts.csproj", "{FA2300CE-E89B-4C09-AA78-2710879805D5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.PublicAssetCatalog.Contracts", "src\modules\OpenHost\PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.Contracts\Palladin.Module.PublicAssetCatalog.Contracts.csproj", "{FA2300CE-E89B-4C09-AA78-2710879805D5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -566,6 +564,7 @@ Global
 		{104EF540-7CE8-4690-BAE1-E10C7420DE7F} = {8D626EA8-CB54-BC41-363A-217881BEBA6E}
 		{E563A0F0-FC0B-4C13-B4F6-8A750157BA6B} = {8D626EA8-CB54-BC41-363A-217881BEBA6E}
 		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 		{D4E5F6A7-B8C9-0123-4567-890ABCDEF012} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 		{15BDD494-C484-486E-9B6B-50A0E317C956} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{068FE146-8B5E-4796-8A71-C5BF727F82E3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
@@ -573,18 +572,16 @@ Global
 		{2331969F-F489-4D7D-B216-789B1CDC26DA} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{65D19C3C-6D2F-4264-94D3-EA9D9A6F507A} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 		{3C15E794-9135-482B-9785-944A7C18C429} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{5A7080B3-37D2-47C0-BA8B-42CA49139796} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{2D12C2C9-B067-4235-BDBA-2BE9C0111ABD} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{11FB392C-0138-4138-93CA-D9C4D0A59BF0} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{0DD360D2-FFAC-4D68-88B7-89F4C257D7D8} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{50DDF68B-1919-46FD-8A71-CC4F08A18B26} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{42A2C706-6A86-48DA-88D7-8A3761A2806C} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+		{5A7080B3-37D2-47C0-BA8B-42CA49139796} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{2D12C2C9-B067-4235-BDBA-2BE9C0111ABD} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{11FB392C-0138-4138-93CA-D9C4D0A59BF0} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{0DD360D2-FFAC-4D68-88B7-89F4C257D7D8} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{50DDF68B-1919-46FD-8A71-CC4F08A18B26} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{42A2C706-6A86-48DA-88D7-8A3761A2806C} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
 		{AF881AF4-0D23-49FF-BFE1-FD4C772DE0A3} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 		{D7B97E2C-6EE3-4A15-AF22-B1C18A8D0081} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 		{D267741A-7EB4-4A69-8E09-31FF97DFE5B2} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{4F96DF72-5421-4AA9-83E5-626608C28A9B} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{2103A255-CDC9-B046-5137-5BC9ADECDA6A} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-		{CA9595F0-21A6-FCC5-9C21-4F42211C112C} = {2103A255-CDC9-B046-5137-5BC9ADECDA6A}
-		{FA2300CE-E89B-4C09-AA78-2710879805D5} = {CA9595F0-21A6-FCC5-9C21-4F42211C112C}
+		{4F96DF72-5421-4AA9-83E5-626608C28A9B} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{FA2300CE-E89B-4C09-AA78-2710879805D5} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
 	EndGlobalSection
 EndGlobal

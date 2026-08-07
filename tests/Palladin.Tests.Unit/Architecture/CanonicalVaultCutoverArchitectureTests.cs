@@ -135,7 +135,7 @@ public sealed partial class CanonicalVaultCutoverArchitectureTests
         // Given
         var root = FindRepositoryRoot();
         var featureFiles = Directory.EnumerateFiles(
-            Path.Combine(root, "src", "modules", "Palladin.Module.Vault", "Features"),
+            Path.Combine(root, "src", "modules", "Vault", "Palladin.Module.Vault", "Features"),
             "*.cs",
             SearchOption.AllDirectories);
 
@@ -170,7 +170,7 @@ public sealed partial class CanonicalVaultCutoverArchitectureTests
     }
 
     private static IEnumerable<string> EnumerateVaultRuntimeFiles(string root) =>
-        Directory.EnumerateDirectories(Path.Combine(root, "src", "modules"), "Palladin.Module.Vault*")
+        Directory.EnumerateDirectories(Path.Combine(root, "src", "modules", "Vault"), "Palladin.Module.Vault*")
             .SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories));
 
     private static string FindRepositoryRoot()

@@ -49,7 +49,8 @@ Shared enums and exceptions referenced across module boundaries (see `CLAUDE.MD`
 
 | Building block | File | Notes |
 |---|---|---|
-| `EntryType` | `Palladin.Core.Types/EntryType.cs` | `Key`, `Credential` |
+| `EntryType` | `Palladin.Core.Types/EntryType.cs` | `Key`, `Credential`, `Script`, `CreditCard` |
+| `GrantDeliveryPolicy` | `Palladin.Core.Types/GrantDeliveryPolicy.cs` | `Standard`, `ExecOnly`, `InjectOnly`; authenticated structural delivery class, never inferred from plaintext Entry metadata |
 | `GrantStatus` | `Palladin.Core.Types/GrantStatus.cs` | `Pending/Active/Expired/Revoked/Consumed/Denied` |
 | `GrantType` | `Palladin.Core.Types/GrantType.cs` | `Granular`, `Full` |
 | `GrantMethods` | `Palladin.Core.Types/GrantMethods.cs` | `[Flags]` `Get/Exec/Inject` + `IsValidSet()` / `IsSingleMethod()` |

@@ -19,6 +19,7 @@ internal static class CredentialDenialReasons
     public const string QueryLimit = "query_limit";
     public const string MethodNotAllowed = "method_not_allowed";
     public const string ScriptExecOnly = "script_exec_only";
+    public const string CreditCardInjectOnly = "credit_card_inject_only";
 }
 
 internal sealed record CredentialDeliveryInput(
@@ -163,6 +164,12 @@ internal sealed class CredentialDeliveryService(
             && material.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.ScriptExecOnly);
+        }
+
+        if (input.Method != GrantMethods.Inject
+            && material.DeliveryPolicy == GrantDeliveryPolicy.InjectOnly)
+        {
+            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.CreditCardInjectOnly);
         }
 
         // BUG#2 fix: read denormalized names BEFORE the atomic increment / Consumed flip. A DB hiccup

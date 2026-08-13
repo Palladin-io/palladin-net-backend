@@ -238,6 +238,56 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         persisted.QueryCount.ShouldBe(expectedQueryCount);
     }
 
+    [Theory]
+    [InlineData(GrantMethods.Get, HttpStatusCode.Forbidden, 0)]
+    [InlineData(GrantMethods.Exec, HttpStatusCode.Forbidden, 0)]
+    [InlineData(GrantMethods.Inject, HttpStatusCode.OK, 1)]
+    public async Task When_GrantIsInjectOnly_Then_OnlyInjectCanDeliver(
+        GrantMethods requestedMethod,
+        HttpStatusCode expectedStatus,
+        int expectedQueryCount)
+    {
+        var (agentClient, agentId, vaultId, entryId, orgId, _) = await SetupAsync();
+        var grantId = Guid.NewGuid();
+        var methods = GrantMethodsExtensions.All;
+        var scope = Material(
+            orgId,
+            vaultId,
+            grantId,
+            entryId,
+            remainingUses: 5,
+            methods: methods,
+            fieldIds: ["cardNumber", "expiryMonth", "expiryYear"],
+            deliveryPolicy: GrantDeliveryPolicy.InjectOnly);
+        var grant = GranularGrant.CreateProactively(
+            grantId,
+            vaultId,
+            orgId,
+            agentId,
+            "pk",
+            entryId,
+            scope,
+            expiresAt: null,
+            queryLimit: 5,
+            expirySource: "uses",
+            methods,
+            createdBy: Guid.NewGuid(),
+            TestNames,
+            SystemClock.Instance.GetCurrentInstant(),
+            agentAccessEpoch: 1);
+        await apiFactory.Services.SeedGranularGrantAsync(grant);
+
+        var response = await agentClient.GetAsync(
+            $"api/agent/vaults/{vaultId}/credentials/{entryId}?method={requestedMethod}",
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(expectedStatus);
+        await using var scopeForAssertion = apiFactory.Services.CreateAsyncScope();
+        var readContext = scopeForAssertion.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.SingleAsync(x => x.Id == grantId);
+        persisted.QueryCount.ShouldBe(expectedQueryCount);
+    }
+
     [Fact]
     public async Task When_StandardGrantUsesScriptLikeCustomFieldId_Then_GetIsNotBlocked()
     {

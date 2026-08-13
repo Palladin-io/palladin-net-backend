@@ -83,14 +83,6 @@ internal sealed class CredentialDeliveryService(
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.Expired);
         }
 
-        // The grant whitelists how the CLI may use the credential through bitwise method flags
-        // flags chosen by the approving user). Checked before any material is read so a disallowed
-        // method never burns a use.
-        if (!input.AllowedMethods.HasFlag(input.Method))
-        {
-            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MethodNotAllowed);
-        }
-
         // Validate the complete tenant scope before reading grant material or incrementing a use.
         // Entry metadata is encrypted client-side and is never interpreted by this service.
         var activeEntry = await domainReadContext.Entries
@@ -170,6 +162,14 @@ internal sealed class CredentialDeliveryService(
             && material.DeliveryPolicy == GrantDeliveryPolicy.InjectOnly)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.CreditCardInjectOnly);
+        }
+
+        // DeliveryPolicy classifies the protected resource before the independent method
+        // whitelist. This preserves the policy-specific denial reason even for least-privilege
+        // grants that whitelist only their one valid method. Neither denial path consumes a use.
+        if (!input.AllowedMethods.HasFlag(input.Method))
+        {
+            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MethodNotAllowed);
         }
 
         // BUG#2 fix: read denormalized names BEFORE the atomic increment / Consumed flip. A DB hiccup

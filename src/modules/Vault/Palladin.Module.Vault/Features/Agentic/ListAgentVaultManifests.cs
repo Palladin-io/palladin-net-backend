@@ -91,14 +91,24 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
             return;
         }
 
+        var vaultIds = envelopes.Select(x => x.VaultId).ToArray();
+        var vaults = await domainReadContext.Vaults
+            .Where(x => x.OrganizationId == agent.OrganizationId && vaultIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
+
         var items = new List<AgentVaultManifestItem>(envelopes.Count);
         try
         {
             foreach (var envelope in envelopes)
             {
+                if (!vaults.TryGetValue(envelope.VaultId, out var vault))
+                {
+                    throw new DomainException("Vault manifest references a missing Vault.");
+                }
+
                 var envelopeContract = VaultEnvelopeContractMapper.ToContract(envelope);
                 var manifest = VaultEnvelopeContractMapper.ToManifestContract(envelope);
-                _ = VaultManifestCryptoValidator.Validate(envelopeContract, manifest, agent);
+                _ = VaultManifestCryptoValidator.ValidateCurrent(envelopeContract, manifest, agent, vault);
 
                 items.Add(new AgentVaultManifestItem(
                     envelopeContract,

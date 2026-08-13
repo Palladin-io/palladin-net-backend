@@ -102,6 +102,37 @@ internal static class VaultManifestCryptoValidator
                 manifestSignature));
     }
 
+    internal static ValidatedAgentDiscoveryProvisioning ValidateCurrent(
+        AgentVaultDiscoveryEnvelopeContract envelope,
+        VaultManifestContract manifest,
+        Agent agent,
+        Domain.Vault vault)
+    {
+        var provisioning = Validate(envelope, manifest, agent);
+        var validatedManifest = provisioning.Manifest;
+        if (validatedManifest.Scope != vault.Scope
+            || validatedManifest.VdkVersion != vault.CurrentVdkVersion
+            || validatedManifest.ManifestSigningKeyVersion != vault.CurrentManifestSigningKeyVersion
+            || validatedManifest.AgentMessageKeyVersion != vault.CurrentAgentMessageKeyVersion
+            || !CryptographicOperations.FixedTimeEquals(
+                validatedManifest.VaultSigningPublicKey,
+                vault.ManifestSigningPublicKey)
+            || !CryptographicOperations.FixedTimeEquals(
+                validatedManifest.VaultSigningKeyFingerprint,
+                vault.ManifestSigningKeyFingerprint)
+            || !CryptographicOperations.FixedTimeEquals(
+                validatedManifest.VaultAgentMessagePublicKey,
+                vault.AgentMessagePublicKey)
+            || !CryptographicOperations.FixedTimeEquals(
+                validatedManifest.VaultAgentMessageKeyFingerprint,
+                vault.AgentMessageKeyFingerprint))
+        {
+            throw new DomainException("Vault manifest does not match the current Vault trust anchors.");
+        }
+
+        return provisioning;
+    }
+
     internal static byte[] CanonicalizeUnsigned(VaultManifestContract manifest)
     {
         var output = new ArrayBufferWriter<byte>();

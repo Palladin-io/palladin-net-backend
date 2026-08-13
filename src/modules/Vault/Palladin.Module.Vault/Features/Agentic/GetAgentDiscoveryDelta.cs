@@ -65,14 +65,12 @@ internal sealed class GetAgentDiscoveryDeltaEndpoint(
             return;
         }
 
-        await using var accessLease = await AgentVaultSyncAuthorizer.AcquireAsync(User, req.VaultId, readContext, ct);
-        if (accessLease is null)
+        var access = await AgentVaultSyncAuthorizer.AcquireAsync(User, req.VaultId, readContext, ct);
+        if (access is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-
-        var access = accessLease.Access;
 
         var context = new VaultSyncCursorContext(
             VaultSyncPrincipalType.Agent,
@@ -111,8 +109,13 @@ internal sealed class GetAgentDiscoveryDeltaEndpoint(
 
         if (cursor.LastSafeScannedSequence == cursor.DeltaUpperBound)
         {
+            if (!await AgentVaultSyncAuthorizer.IsCurrentAsync(access, readContext, ct))
+            {
+                await VaultSyncProtocol.SendStateChangedAsync(this, ct);
+                return;
+            }
+
             await Send.OkAsync(CreateResponse(cursor, cursor.LastSafeScannedSequence, [], null), ct);
-            await accessLease.CompleteAsync(ct);
             return;
         }
 
@@ -207,8 +210,13 @@ internal sealed class GetAgentDiscoveryDeltaEndpoint(
 
         response = response with { Items = items };
 
+        if (!await AgentVaultSyncAuthorizer.IsCurrentAsync(access, readContext, ct))
+        {
+            await VaultSyncProtocol.SendStateChangedAsync(this, ct);
+            return;
+        }
+
         await Send.OkAsync(response, ct);
-        await accessLease.CompleteAsync(ct);
     }
 
     private static AgentDiscoveryDeltaResponse CreateResponse(

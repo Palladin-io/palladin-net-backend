@@ -57,7 +57,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_DiscoverySyncLeaseIsActive_Then_RevocationWaitsUntilCiphertextReadCompletes()
+    public async Task When_DiscoverySyncAuthorizationIsRead_Then_RevocationDoesNotWaitForResponseDelivery()
     {
         // Given
         var ct = TestContext.Current.CancellationToken;
@@ -85,12 +85,12 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
 
         await using var syncScope = apiFactory.Services.CreateAsyncScope();
         var readContext = syncScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
-        await using var accessLease = await AgentVaultSyncAuthorizer.AcquireAsync(
+        var authorization = await AgentVaultSyncAuthorizer.AcquireAsync(
             principal,
             vault.Id,
             readContext,
             ct);
-        accessLease.ShouldNotBeNull();
+        authorization.ShouldNotBeNull();
         var deactivation = DeactivateAgentAsync(new AgentDeactivatedEvent(
             agent.Id,
             organization.Id,
@@ -115,13 +115,13 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         var encryptedHead = await readContext.Entries.SingleAsync(
             x => x.OrganizationId == organization.Id && x.VaultId == vault.Id && x.Id == entryId,
             ct);
-        await accessLease.CompleteAsync(ct);
         await Task.WhenAll(deactivation, envelopeRevocation);
 
         // Then
-        deactivationCompletedBeforeCiphertextRead.ShouldBeFalse();
-        envelopeRevocationCompletedBeforeCiphertextRead.ShouldBeFalse();
+        deactivationCompletedBeforeCiphertextRead.ShouldBeTrue();
+        envelopeRevocationCompletedBeforeCiphertextRead.ShouldBeTrue();
         encryptedHead.AgentDiscoveryEncodedSuitePayload.ShouldNotBeEmpty();
+        (await AgentVaultSyncAuthorizer.IsCurrentAsync(authorization, readContext, ct)).ShouldBeFalse();
         await using var verifyScope = apiFactory.Services.CreateAsyncScope();
         var verifyContext = verifyScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
         var deniedLease = await AgentVaultSyncAuthorizer.AcquireAsync(principal, vault.Id, verifyContext, ct);

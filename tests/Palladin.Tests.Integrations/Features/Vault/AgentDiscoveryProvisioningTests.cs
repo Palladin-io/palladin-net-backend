@@ -99,6 +99,91 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
     }
 
     [Fact]
+    public async Task When_PersistedManifestIsCoherentlyResignedWithUntrustedKey_Then_ListAndSyncFailClosed()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var (_, apiKey) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        var requestSigning = AgentRequestSigning.Generate();
+        var agentKeys = new AgentKeys(AgentFaker.GeneratePublicKey(), requestSigning.PublicKeyBase64);
+        var sourceAgent = await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(
+                    organizationId: organization.Id,
+                    publicKey: agentKeys.X25519PublicKey,
+                    signingPublicKey: agentKeys.Ed25519PublicKey)
+                .RuleFor(x => x.Status, AgentStatus.Active));
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: sourceAgent.Id,
+            publicKey: agentKeys.X25519PublicKey,
+            signingPublicKey: agentKeys.Ed25519PublicKey);
+        var provisioning = CreateRequest(organization.Id, vault.Id, sourceAgent.Id, agentKeys, 1);
+        var memberClient = apiFactory.CreateAuthenticatedClient(user);
+        (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(provisioning))
+            .EnsureSuccessStatusCode();
+
+        using var substitutedSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
+        {
+            ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
+        });
+        var substitutedPublicKey = substitutedSigningKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
+        var substitutedFingerprint = VaultKeyFingerprint.Compute(
+            substitutedPublicKey,
+            VaultKeyKind.VaultSigningEd25519);
+        var substitutedManifest = provisioning.Manifest with
+        {
+            VaultSigningPublicKey = Encode(substitutedPublicKey),
+            VaultSigningKeyFingerprint = Encode(substitutedFingerprint),
+            Signature = string.Empty,
+        };
+        var substitutedSignature = SignatureAlgorithm.Ed25519.Sign(
+            substitutedSigningKey,
+            CreateSignatureInput(substitutedManifest));
+
+        await using (var mutationScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = mutationScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            await writeContext.AgentVaultDiscoveryEnvelopes
+                .Where(x => x.OrganizationId == organization.Id
+                            && x.VaultId == vault.Id
+                            && x.AgentId == sourceAgent.Id)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.VaultSigningPublicKey, substitutedPublicKey)
+                        .SetProperty(x => x.VaultSigningKeyFingerprint, substitutedFingerprint)
+                        .SetProperty(x => x.ManifestSignature, substitutedSignature),
+                    TestContext.Current.CancellationToken);
+        }
+
+        var agentClient = apiFactory.CreateSignedAgentClient(
+            sourceAgent.Id,
+            apiKey,
+            agentKeys.X25519PublicKey,
+            requestSigning);
+        agentClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+        agentClient.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "1");
+
+        // When
+        var listResponse = await agentClient.GetAsync(
+            "api/agent/vault-manifests",
+            TestContext.Current.CancellationToken);
+        var syncResponse = await agentClient.PostAsJsonAsync(
+            $"api/agent/vaults/{vault.Id}/discovery/sync/snapshot",
+            new GetAgentDiscoverySnapshotRequest { VaultId = vault.Id },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        listResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        syncResponse.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await listResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldNotContain(provisioning.Envelope.AgentWrappedVdk, Case.Sensitive);
+        (await syncResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldNotContain(provisioning.Envelope.AgentWrappedVdk, Case.Sensitive);
+    }
+
+    [Fact]
     public async Task When_ManifestIssuedAtExceedsMicrosecondPrecision_Then_RejectsWithoutPersistingEnvelope()
     {
         // Given

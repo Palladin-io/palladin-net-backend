@@ -57,14 +57,12 @@ internal sealed class GetAgentDiscoverySnapshotEndpoint(
             return;
         }
 
-        await using var accessLease = await AgentVaultSyncAuthorizer.AcquireAsync(User, req.VaultId, readContext, ct);
-        if (accessLease is null)
+        var access = await AgentVaultSyncAuthorizer.AcquireAsync(User, req.VaultId, readContext, ct);
+        if (access is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-
-        var access = accessLease.Access;
 
         var context = new VaultSyncCursorContext(
             VaultSyncPrincipalType.Agent,
@@ -155,7 +153,12 @@ internal sealed class GetAgentDiscoverySnapshotEndpoint(
             };
         }
 
+        if (!await AgentVaultSyncAuthorizer.IsCurrentAsync(access, readContext, ct))
+        {
+            await VaultSyncProtocol.SendStateChangedAsync(this, ct);
+            return;
+        }
+
         await Send.OkAsync(response, ct);
-        await accessLease.CompleteAsync(ct);
     }
 }

@@ -71,32 +71,11 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
              """);
     }
 
-    public IQueryable<Agent> LockAgentForShare(Guid organizationId, Guid agentId) =>
-        readContext.Agents.FromSqlInterpolated(
-            $"""
-             SELECT * FROM "Agents"
-             WHERE "OrganizationId" = {organizationId} AND "Id" = {agentId}
-             FOR SHARE
-             """);
-
     public IQueryable<Domain.Vault> LockVaultForShare(Guid organizationId, Guid vaultId) =>
         readContext.Vaults.FromSqlInterpolated(
             $"""
              SELECT * FROM "Vaults"
              WHERE "OrganizationId" = {organizationId} AND "Id" = {vaultId}
-             FOR SHARE
-             """);
-
-    public IQueryable<AgentVaultDiscoveryEnvelope> LockAgentDiscoveryEnvelopeForShare(
-        Guid organizationId,
-        Guid vaultId,
-        Guid agentId) =>
-        readContext.AgentVaultDiscoveryEnvelopes.FromSqlInterpolated(
-            $"""
-             SELECT * FROM "AgentVaultDiscoveryEnvelope"
-             WHERE "OrganizationId" = {organizationId}
-               AND "VaultId" = {vaultId}
-               AND "AgentId" = {agentId}
              FOR SHARE
              """);
 

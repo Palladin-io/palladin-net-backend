@@ -24,7 +24,6 @@ internal sealed record AgentVaultSyncAuthorizationStamp(
     uint VaultAgentMessageKeyVersion,
     ulong VaultDiscoverySequence,
     ulong VaultMinRetainedDiscoverySequence,
-    Instant VaultUpdatedAt,
     ulong ManifestRevision,
     Instant EnvelopeProvisionedAt,
     string ManifestSignature);
@@ -130,7 +129,6 @@ internal static class AgentVaultSyncAuthorizer
                     vault.CurrentAgentMessageKeyVersion.Value,
                     vault.DiscoverySequence.Value,
                     vault.MinRetainedDiscoverySequence.Value,
-                    vault.UpdatedAt,
                     envelope.ManifestRevision.Value,
                     envelope.ProvisionedAt,
                     Convert.ToBase64String(envelope.ManifestSignature)));

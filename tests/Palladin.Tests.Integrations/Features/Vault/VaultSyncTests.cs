@@ -129,6 +129,49 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_MemberOnlyVaultStateChanges_Then_DiscoveryAuthorizationRemainsCurrent()
+    {
+        // Given
+        var ct = TestContext.Current.CancellationToken;
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var agentId = Guid.NewGuid();
+        var provisioning = AgentDiscoveryProvisioningContractFaker.Create(organization.Id, vault.Id, agentId);
+        var agent = await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: agentId,
+            publicKey: provisioning.X25519PublicKey,
+            signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
+        await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("agent_id", agent.Id.ToString()),
+            new Claim("agent_organization_id", organization.Id.ToString()),
+            new Claim("agent_access_epoch", agent.AccessEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ], "agent-test"));
+        await using var syncScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = syncScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
+        var authorization = await AgentVaultSyncAuthorizer.AcquireAsync(
+            principal,
+            vault.Id,
+            readContext,
+            ct);
+        authorization.ShouldNotBeNull();
+
+        // When
+        await apiFactory.Services.SeedSyncEntryAsync(
+            organization.Id,
+            vault.Id,
+            user.Id,
+            includeDiscovery: false);
+
+        // Then
+        await using var verifyScope = apiFactory.Services.CreateAsyncScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
+        (await AgentVaultSyncAuthorizer.IsCurrentAsync(authorization, verifyContext, ct)).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task When_ProvisionedActiveAgentSyncsDiscovery_Then_PrivateEntriesStayHiddenAndRemovalIsATombstone()
     {
         // Given

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using System.Security.Cryptography;
 using Palladin.Core.Types;
+using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -50,7 +50,6 @@ internal static class AgentVaultSyncAuthorizer
             // ciphertext delivery rather than racing between authorization and response.
             var agent = await readContext.LockAgentForShare(organizationId.Value, agentId.Value)
                 .Where(x => x.Status == AgentStatus.Active && x.AccessEpoch == accessEpoch)
-                .Select(x => new { x.Id, x.OrganizationId, x.RecipientKeyVersion, x.AccessEpoch })
                 .SingleOrDefaultAsync(ct);
             if (agent is null)
             {
@@ -84,43 +83,21 @@ internal static class AgentVaultSyncAuthorizer
                 return null;
             }
 
-            var activationId = await readContext.AgentPairingActivations
-                .Where(x => x.OrganizationId == agent.OrganizationId
-                            && x.AgentId == agent.Id
-                            && x.AgentAccessEpoch == agent.AccessEpoch
-                            && x.ConfirmedAt != null)
-                .OrderByDescending(x => x.ConfirmedAt)
-                .ThenByDescending(x => x.Id)
-                .Select(x => (Guid?)x.Id)
-                .FirstOrDefaultAsync(ct);
-            var candidate = activationId is null
-                ? null
-                : await readContext.AgentPairingActivationCandidates.SingleOrDefaultAsync(x =>
-                    x.ActivationId == activationId
-                    && x.OrganizationId == agent.OrganizationId
-                    && x.AgentId == agent.Id
-                    && x.VaultId == vault.Id
-                    && x.ManifestRevision == envelope.ManifestRevision, ct);
-            if (candidate is null)
-            {
-                await transaction.DisposeAsync();
-                return null;
-            }
-
+            // The authenticated Agent and its current provisioned envelope are the authorization
+            // boundary. The runtime pins the first valid signed manifest and rejects later key or
+            // revision regressions; a separate manual pairing ceremony is not required for sync.
+            var envelopeContract = VaultEnvelopeContractMapper.ToContract(envelope);
             var manifest = VaultEnvelopeContractMapper.ToManifestContract(envelope);
-            var signedDigest = SHA256.HashData(VaultManifestCryptoValidator.CanonicalizeSigned(manifest));
-            if (!CryptographicOperations.FixedTimeEquals(
-                    candidate.VaultSigningKeyFingerprint,
-                    envelope.VaultSigningKeyFingerprint)
-                || !CryptographicOperations.FixedTimeEquals(candidate.SignedManifestDigest, signedDigest))
-            {
-                await transaction.DisposeAsync();
-                return null;
-            }
+            _ = VaultManifestCryptoValidator.Validate(envelopeContract, manifest, agent);
 
             return new AuthorizedAgentVaultLease(
                 new AuthorizedAgentVault(agent.Id, agent.OrganizationId, vault),
                 transaction);
+        }
+        catch (DomainException)
+        {
+            await transaction.DisposeAsync();
+            return null;
         }
         catch
         {

@@ -108,10 +108,10 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         // When
         var deactivationCompletedBeforeCiphertextRead = await Task.WhenAny(
             deactivation,
-            Task.Delay(100, ct)) == deactivation;
+            Task.Delay(TimeSpan.FromSeconds(2), ct)) == deactivation;
         var envelopeRevocationCompletedBeforeCiphertextRead = await Task.WhenAny(
             envelopeRevocation,
-            Task.Delay(100, ct)) == envelopeRevocation;
+            Task.Delay(TimeSpan.FromSeconds(2), ct)) == envelopeRevocation;
         var encryptedHead = await readContext.Entries.SingleAsync(
             x => x.OrganizationId == organization.Id && x.VaultId == vault.Id && x.Id == entryId,
             ct);

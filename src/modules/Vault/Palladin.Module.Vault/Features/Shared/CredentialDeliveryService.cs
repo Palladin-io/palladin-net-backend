@@ -19,6 +19,7 @@ internal static class CredentialDenialReasons
     public const string QueryLimit = "query_limit";
     public const string MethodNotAllowed = "method_not_allowed";
     public const string ScriptExecOnly = "script_exec_only";
+    public const string CreditCardInjectOnly = "credit_card_inject_only";
 }
 
 internal sealed record CredentialDeliveryInput(
@@ -80,14 +81,6 @@ internal sealed class CredentialDeliveryService(
         if (input.ExpiresAt is not null && input.ExpiresAt.Value <= input.Now)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.Expired);
-        }
-
-        // The grant whitelists how the CLI may use the credential through bitwise method flags
-        // flags chosen by the approving user). Checked before any material is read so a disallowed
-        // method never burns a use.
-        if (!input.AllowedMethods.HasFlag(input.Method))
-        {
-            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MethodNotAllowed);
         }
 
         // Validate the complete tenant scope before reading grant material or incrementing a use.
@@ -163,6 +156,20 @@ internal sealed class CredentialDeliveryService(
             && material.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.ScriptExecOnly);
+        }
+
+        if (input.Method != GrantMethods.Inject
+            && material.DeliveryPolicy == GrantDeliveryPolicy.InjectOnly)
+        {
+            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.CreditCardInjectOnly);
+        }
+
+        // DeliveryPolicy classifies the protected resource before the independent method
+        // whitelist. This preserves the policy-specific denial reason even for least-privilege
+        // grants that whitelist only their one valid method. Neither denial path consumes a use.
+        if (!input.AllowedMethods.HasFlag(input.Method))
+        {
+            return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MethodNotAllowed);
         }
 
         // BUG#2 fix: read denormalized names BEFORE the atomic increment / Consumed flip. A DB hiccup

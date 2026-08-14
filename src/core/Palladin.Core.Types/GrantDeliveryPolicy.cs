@@ -4,10 +4,13 @@ public enum GrantDeliveryPolicy : ushort
 {
     Standard = 0,
     ExecOnly = 1,
+    InjectOnly = 2,
 }
 
 public static class GrantDeliveryPolicyExtensions
 {
     public static bool IsValid(this GrantDeliveryPolicy policy) =>
-        policy is GrantDeliveryPolicy.Standard or GrantDeliveryPolicy.ExecOnly;
+        policy is GrantDeliveryPolicy.Standard
+            or GrantDeliveryPolicy.ExecOnly
+            or GrantDeliveryPolicy.InjectOnly;
 }

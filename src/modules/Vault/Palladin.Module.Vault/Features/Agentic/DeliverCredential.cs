@@ -164,6 +164,11 @@ internal sealed class DeliverCredentialEndpoint(
                 await Send.ForbiddenAsync(ct);
                 return;
 
+            case CredentialDeliveryResult.Denied { Reason: CredentialDenialReasons.CreditCardInjectOnly }:
+                await DenyAsync(req, agentId.Value, CredentialDenialReasons.CreditCardInjectOnly, now, ct);
+                await Send.ForbiddenAsync(ct);
+                return;
+
             case CredentialDeliveryResult.Denied { Reason: CredentialDenialReasons.MaterialUnavailable }:
                 await DenyAsync(req, agentId.Value, CredentialDenialReasons.MaterialUnavailable, now, ct);
                 await Send.NotFoundAsync(ct);

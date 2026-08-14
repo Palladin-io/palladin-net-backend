@@ -192,6 +192,51 @@ public sealed class GetOrRequestCredentialTests(ApiFactory apiFactory) : TestBas
         result.GrantId.ShouldNotBe(active.Id);
     }
 
+    [Fact]
+    public async Task InjectOnlyGrant_WithLeastPrivilegeMethods_ReturnsPolicySpecificDenial()
+    {
+        var setup = await ArrangeAsync();
+        var grantId = Guid.NewGuid();
+        var methods = GrantMethods.Inject;
+        var scope = GrantEnvelopeTestData.Scope(
+            setup.OrganizationId,
+            setup.VaultId,
+            grantId,
+            setup.EntryId,
+            methods: methods,
+            remainingUses: 5,
+            fieldIds: ["cardNumber", "expiryMonth", "expiryYear"],
+            deliveryPolicy: GrantDeliveryPolicy.InjectOnly);
+        var grant = GranularGrant.CreateProactively(
+            grantId,
+            setup.VaultId,
+            setup.OrganizationId,
+            setup.AgentId,
+            "pk",
+            setup.EntryId,
+            scope,
+            expiresAt: null,
+            queryLimit: 5,
+            expirySource: "uses",
+            methods,
+            createdBy: Guid.NewGuid(),
+            new GrantNames("agent", "entry", "vault", "actor"),
+            apiFactory.FakeClock.GetCurrentInstant(),
+            agentAccessEpoch: 1);
+        await apiFactory.Services.SeedGranularGrantAsync(grant);
+
+        var (response, result) = await setup.Client.POSTAsync<
+            GetOrRequestCredentialEndpoint,
+            GetOrRequestCredentialRequest,
+            GetOrRequestCredentialResponse>(NewRequest(setup));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        result!.Access.ShouldBe("credit-card-inject-only");
+        await using var scopeForAssertion = apiFactory.Services.CreateAsyncScope();
+        var db = scopeForAssertion.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.SingleAsync(x => x.Id == grantId)).QueryCount.ShouldBe(0);
+    }
+
     private async Task<Setup> ArrangeAsync()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();

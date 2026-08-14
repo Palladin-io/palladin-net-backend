@@ -101,6 +101,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
     private const string AccessBlocked = "blocked";
     private const string AccessMethodNotAllowed = "method-not-allowed";
     private const string AccessScriptExecOnly = "script-exec-only";
+    private const string AccessCreditCardInjectOnly = "credit-card-inject-only";
 
     public override void Configure()
     {
@@ -275,6 +276,14 @@ internal sealed class GetOrRequestCredentialEndpoint(
             case CredentialDeliveryResult.Denied { Reason: CredentialDenialReasons.ScriptExecOnly }:
                 await DenyAsync(req, agentId, CredentialDenialReasons.ScriptExecOnly, now, ct);
                 await SendAccessAsync(403, new GetOrRequestCredentialResponse(AccessScriptExecOnly), ct);
+                return;
+
+            // Credit-card material is inject-only: neither get nor exec may return its grant
+            // envelope. The authenticated delivery policy is enforced without inspecting the
+            // encrypted entry type or field identifiers.
+            case CredentialDeliveryResult.Denied { Reason: CredentialDenialReasons.CreditCardInjectOnly }:
+                await DenyAsync(req, agentId, CredentialDenialReasons.CreditCardInjectOnly, now, ct);
+                await SendAccessAsync(403, new GetOrRequestCredentialResponse(AccessCreditCardInjectOnly), ct);
                 return;
 
             // Distinct from the Expired *status* case (this is Active-but-stale — cron has not flipped yet).

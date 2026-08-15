@@ -250,7 +250,9 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnName("login_url");
 
                     b.Property<int>("MapVersion")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
+                        .HasDefaultValueSql("nextval('form_discovery_map_revision_seq')")
                         .HasColumnName("map_version");
 
                     b.Property<string>("Provider")
@@ -272,10 +274,13 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Domain", "Provider", "MapVersion")
+                    b.HasIndex("Domain", "Provider", "Fingerprint")
                         .IsUnique();
 
                     b.HasIndex("Domain", "Provider", "Status", "MapVersion");
+
+                    b.HasIndex("MapVersion")
+                        .IsUnique();
 
                     b.ToTable("form_discovery_maps", (string)null);
                 });

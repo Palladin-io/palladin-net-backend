@@ -27,7 +27,7 @@ internal sealed class FormDiscoveryMap
 
     internal static FormDiscoveryMap CreateCandidate(
         Guid id, Guid agentId, string domain, string loginUrl,
-        string provider, string fingerprint, string definitionJson, int mapVersion, Instant now) => new()
+        string provider, string fingerprint, string definitionJson, Instant now) => new()
         {
             Id = id,
             SubmittedByAgentId = agentId,
@@ -35,7 +35,6 @@ internal sealed class FormDiscoveryMap
             LoginUrl = loginUrl,
             Provider = provider,
             Fingerprint = fingerprint,
-            MapVersion = mapVersion,
             DefinitionJson = definitionJson,
             Status = FormDiscoveryMapStatus.Candidate,
             CreatedAt = now,

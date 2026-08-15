@@ -39,55 +39,34 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             ]));
 
     [Fact]
-    public async Task When_TwoGlobalCandidatesRace_Then_MapVersionsRemainMonotonic()
+    public async Task When_TwoGlobalCandidatesCommitConcurrently_Then_DatabaseAssignsDistinctRevisions()
     {
         // Given
-        var domain = $"race-{Guid.NewGuid():N}.example.com";
+        var firstDomain = $"race-first-{Guid.NewGuid():N}.example.com";
+        var secondDomain = $"race-second-{Guid.NewGuid():N}.example.com";
         const string provider = "example";
         await using var firstScope = apiFactory.Services.CreateAsyncScope();
         await using var secondScope = apiFactory.Services.CreateAsyncScope();
         var firstContext = firstScope.ServiceProvider.GetRequiredService<AgentsDomainWriteContext>();
         var secondContext = secondScope.ServiceProvider.GetRequiredService<AgentsDomainWriteContext>();
-        await using var firstTransaction = await firstContext.BeginTransactionAsync(
-            TestContext.Current.CancellationToken);
-        var firstVersion = await firstContext.LockAndLoadNextFormDiscoveryMapVersionAsync(
-            domain,
-            provider,
-            TestContext.Current.CancellationToken);
-        await using var secondTransaction = await secondContext.BeginTransactionAsync(
-            TestContext.Current.CancellationToken);
+        var first = CreateCandidate(Contract, firstDomain, provider);
+        var second = CreateCandidate(Contract, secondDomain, provider);
+        firstContext.Add(first);
+        secondContext.Add(second);
 
         // When
-        var secondVersionTask = secondContext.LockAndLoadNextFormDiscoveryMapVersionAsync(
-            domain,
-            provider,
-            TestContext.Current.CancellationToken);
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        secondVersionTask.IsCompleted.ShouldBeFalse();
-
-        firstContext.Add(CreateCandidate(Contract, domain, provider, firstVersion));
-        await firstContext.CommitAsync(firstTransaction, TestContext.Current.CancellationToken);
-        var secondVersion = await secondVersionTask.WaitAsync(
-            TimeSpan.FromSeconds(5),
-            TestContext.Current.CancellationToken);
-        secondContext.Add(CreateCandidate(Contract, domain, provider, secondVersion));
-        await secondContext.CommitAsync(secondTransaction, TestContext.Current.CancellationToken);
+        await Task.WhenAll(
+            firstContext.CommitAsync(TestContext.Current.CancellationToken),
+            secondContext.CommitAsync(TestContext.Current.CancellationToken));
 
         // Then
-        firstVersion.ShouldBe(1);
-        secondVersion.ShouldBe(2);
-        await using var assertScope = apiFactory.Services.CreateAsyncScope();
-        var readContext = assertScope.ServiceProvider.GetRequiredService<AgentsDomainReadContext>();
-        var versions = await readContext.FormDiscoveryMaps
-            .Where(map => map.Domain == domain && map.Provider == provider)
-            .OrderBy(map => map.MapVersion)
-            .Select(map => map.MapVersion)
-            .ToArrayAsync(TestContext.Current.CancellationToken);
-        versions.ShouldBe([1, 2]);
+        first.MapVersion.ShouldBeGreaterThan(0);
+        second.MapVersion.ShouldBeGreaterThan(0);
+        second.MapVersion.ShouldNotBe(first.MapVersion);
     }
 
     [Fact]
-    public async Task When_AgentRepeatsGlobalCandidate_Then_SubmitIsIdempotentAndPreservesProvenance()
+    public async Task When_AgentSubmitsSameGlobalCandidateConcurrently_Then_SubmitIsIdempotentAndPreservesProvenance()
     {
         // Given
         var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -116,12 +95,13 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
         var client = apiFactory.CreateSignedAgentClient(agent.Id, plaintext, publicKey, signing);
 
         // When
-        var (response, result) = await client
-            .POSTAsync<SubmitFormDiscoveryMapEndpoint, SubmitFormDiscoveryMapRequest, SubmitFormDiscoveryMapResponse>(
-                request);
-        var (duplicateResponse, duplicateResult) = await client
-            .POSTAsync<SubmitFormDiscoveryMapEndpoint, SubmitFormDiscoveryMapRequest, SubmitFormDiscoveryMapResponse>(
-                request);
+        var submissions = await Task.WhenAll(
+            client.POSTAsync<SubmitFormDiscoveryMapEndpoint, SubmitFormDiscoveryMapRequest, SubmitFormDiscoveryMapResponse>(
+                request),
+            client.POSTAsync<SubmitFormDiscoveryMapEndpoint, SubmitFormDiscoveryMapRequest, SubmitFormDiscoveryMapResponse>(
+                request));
+        var (response, result) = submissions[0];
+        var (duplicateResponse, duplicateResult) = submissions[1];
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -135,6 +115,12 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
         var stored = await readContext.FormDiscoveryMaps.SingleAsync(
             map => map.Id == result.MapId,
             TestContext.Current.CancellationToken);
+        var matchingCount = await readContext.FormDiscoveryMaps.CountAsync(
+            map => map.Domain == domain
+                && map.Provider == "custom-browser-42"
+                && map.Fingerprint == request.Fingerprint,
+            TestContext.Current.CancellationToken);
+        matchingCount.ShouldBe(1);
         stored.SubmittedByAgentId.ShouldBe(agent.Id);
         stored.Domain.ShouldBe(domain);
         stored.LoginUrl.ShouldBe(validated.LoginUrl);
@@ -148,13 +134,13 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
         // Given
         var domain = $"global-{Guid.NewGuid():N}.example.net";
         var now = SystemClock.Instance.GetCurrentInstant();
-        var verified = CreateCandidate(Contract, domain, "playwright", 1, now: now);
+        var verified = CreateCandidate(Contract, domain, "playwright", now: now);
         verified.MarkVerified(now.Plus(Duration.FromSeconds(1)));
         var candidate = CreateCandidate(
             Contract,
             domain,
             "playwright",
-            2,
+            new string('c', 64),
             now: now.Plus(Duration.FromSeconds(2)));
         await using var seedScope = apiFactory.Services.CreateAsyncScope();
         var writeContext = seedScope.ServiceProvider.GetRequiredService<AgentsDomainWriteContext>();
@@ -181,13 +167,12 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
         // Given
         var now = SystemClock.Instance.GetCurrentInstant();
         var domain = $"fallback-{Guid.NewGuid():N}.example.net";
-        var safe = CreateCandidate(Contract, domain, "playwright", 1, now: now);
+        var safe = CreateCandidate(Contract, domain, "playwright", now: now);
         safe.MarkVerified(now.Plus(Duration.FromSeconds(1)));
         var mismatched = CreateCandidate(
             Contract,
             domain,
             "playwright",
-            2,
             new string('a', 64),
             now: now.Plus(Duration.FromSeconds(2)));
         mismatched.MarkVerified(now.Plus(Duration.FromSeconds(3)));
@@ -199,13 +184,14 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             "playwright",
             new string('b', 64),
             "{not-json",
-            3,
             now.Plus(Duration.FromSeconds(4)));
         malformed.MarkVerified(now.Plus(Duration.FromSeconds(5)));
         await using var seedScope = apiFactory.Services.CreateAsyncScope();
         var writeContext = seedScope.ServiceProvider.GetRequiredService<AgentsDomainWriteContext>();
         writeContext.Add(safe);
+        await writeContext.CommitAsync(TestContext.Current.CancellationToken);
         writeContext.Add(mismatched);
+        await writeContext.CommitAsync(TestContext.Current.CancellationToken);
         writeContext.Add(malformed);
         await writeContext.CommitAsync(TestContext.Current.CancellationToken);
 
@@ -485,7 +471,6 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
         FormDiscoveryMapContract contract,
         string domain,
         string provider,
-        int version,
         string? fingerprint = null,
         Guid? agentId = null,
         Instant? now = null)
@@ -499,7 +484,6 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             validated.Provider,
             fingerprint ?? contract.ComputeFingerprint(validated),
             validated.DefinitionJson,
-            version,
             now ?? SystemClock.Instance.GetCurrentInstant());
     }
 

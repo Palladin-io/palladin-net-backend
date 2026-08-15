@@ -18,12 +18,16 @@ internal sealed class FormDiscoveryMapConfiguration : IEntityTypeConfiguration<F
         builder.Property(x => x.LoginUrl).HasColumnName("login_url").IsRequired();
         builder.Property(x => x.Provider).HasColumnName("provider").IsRequired();
         builder.Property(x => x.Fingerprint).HasColumnName("fingerprint").HasMaxLength(64).IsRequired();
-        builder.Property(x => x.MapVersion).HasColumnName("map_version");
+        builder.Property(x => x.MapVersion)
+            .HasColumnName("map_version")
+            .ValueGeneratedOnAdd()
+            .HasDefaultValueSql("nextval('form_discovery_map_revision_seq')");
         builder.Property(x => x.DefinitionJson).HasColumnName("definition_json").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         builder.HasIndex(x => new { x.Domain, x.Provider, x.Status, x.MapVersion });
-        builder.HasIndex(x => new { x.Domain, x.Provider, x.MapVersion }).IsUnique();
+        builder.HasIndex(x => new { x.Domain, x.Provider, x.Fingerprint }).IsUnique();
+        builder.HasIndex(x => x.MapVersion).IsUnique();
     }
 }

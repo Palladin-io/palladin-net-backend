@@ -21,10 +21,38 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
             migrationBuilder.Sql(
                 """
+                UPDATE form_discovery_maps
+                SET fingerprint = LOWER(fingerprint);
+
+                DO $migration$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM form_discovery_maps
+                        GROUP BY domain, provider, fingerprint
+                        HAVING COUNT(DISTINCT login_url) > 1
+                            OR COUNT(DISTINCT definition_json::jsonb) > 1
+                    ) THEN
+                        RAISE EXCEPTION 'duplicate form-map fingerprint has conflicting content';
+                    END IF;
+                END
+                $migration$;
+
+                WITH duplicate_maps AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY domain, provider, fingerprint
+                               ORDER BY created_at, id) AS duplicate_rank
+                    FROM form_discovery_maps
+                )
+                DELETE FROM form_discovery_maps AS maps
+                USING duplicate_maps
+                WHERE maps.id = duplicate_maps.id
+                  AND duplicate_maps.duplicate_rank > 1;
+
                 WITH ranked_maps AS (
                     SELECT id,
                            (ROW_NUMBER() OVER (
-                               PARTITION BY domain, provider
                                ORDER BY map_version, created_at, id))::integer AS global_version
                     FROM form_discovery_maps
                 )
@@ -33,6 +61,17 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     status = 0
                 FROM ranked_maps
                 WHERE maps.id = ranked_maps.id;
+
+                CREATE SEQUENCE form_discovery_map_revision_seq AS integer;
+                SELECT setval(
+                    'form_discovery_map_revision_seq',
+                    COALESCE((SELECT MAX(map_version) FROM form_discovery_maps), 0) + 1,
+                    false);
+                ALTER SEQUENCE form_discovery_map_revision_seq
+                    OWNED BY form_discovery_maps.map_version;
+                ALTER TABLE form_discovery_maps
+                    ALTER COLUMN map_version
+                    SET DEFAULT nextval('form_discovery_map_revision_seq');
                 """);
 
             migrationBuilder.Sql(
@@ -80,27 +119,44 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                 oldMaxLength: 65536);
 
             migrationBuilder.CreateIndex(
-                name: "IX_form_discovery_maps_domain_provider_map_version",
+                name: "IX_form_discovery_maps_domain_provider_fingerprint",
                 table: "form_discovery_maps",
-                columns: new[] { "domain", "provider", "map_version" },
+                columns: new[] { "domain", "provider", "fingerprint" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_form_discovery_maps_domain_provider_status_map_version",
                 table: "form_discovery_maps",
                 columns: new[] { "domain", "provider", "status", "map_version" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_form_discovery_maps_map_version",
+                table: "form_discovery_maps",
+                column: "map_version",
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "IX_form_discovery_maps_domain_provider_map_version",
+                name: "IX_form_discovery_maps_domain_provider_fingerprint",
                 table: "form_discovery_maps");
 
             migrationBuilder.DropIndex(
                 name: "IX_form_discovery_maps_domain_provider_status_map_version",
                 table: "form_discovery_maps");
+
+            migrationBuilder.DropIndex(
+                name: "IX_form_discovery_maps_map_version",
+                table: "form_discovery_maps");
+
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE form_discovery_maps
+                    ALTER COLUMN map_version DROP DEFAULT;
+                DROP SEQUENCE IF EXISTS form_discovery_map_revision_seq;
+                """);
 
             migrationBuilder.AlterColumn<string>(
                 name: "provider",

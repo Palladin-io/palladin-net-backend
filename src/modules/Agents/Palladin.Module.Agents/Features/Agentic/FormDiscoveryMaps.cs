@@ -3,6 +3,7 @@ using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Npgsql;
 using Palladin.Core.Guid;
 using Palladin.Module.Agents.Domain;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
@@ -77,30 +78,19 @@ internal sealed class SubmitFormDiscoveryMapEndpoint(
             return;
         }
 
-        var now = clock.GetCurrentInstant();
-        await using var transaction = await writeContext.BeginTransactionAsync(ct);
-        var mapVersion = await writeContext.LockAndLoadNextFormDiscoveryMapVersionAsync(
-            validated.Domain,
-            validated.Provider,
-            ct);
         var normalizedFingerprint = req.Fingerprint.ToLowerInvariant();
         var existing = await writeContext.FormDiscoveryMaps
             .Where(map => map.Domain == validated.Domain
                 && map.Provider == validated.Provider
                 && map.Fingerprint == normalizedFingerprint)
-            .OrderByDescending(map => map.MapVersion)
             .FirstOrDefaultAsync(ct);
         if (existing is not null)
         {
-            await writeContext.CommitAsync(transaction, ct);
-            await Send.OkAsync(new SubmitFormDiscoveryMapResponse(
-                existing.Id,
-                existing.MapVersion,
-                existing.Status.ToString().ToLowerInvariant(),
-                existing.CreatedAt), ct);
+            await SendExistingAsync(existing, ct);
             return;
         }
 
+        var now = clock.GetCurrentInstant();
         var map = FormDiscoveryMap.CreateCandidate(
             guidProvider.Generate(),
             agentId.Value,
@@ -109,12 +99,37 @@ internal sealed class SubmitFormDiscoveryMapEndpoint(
             validated.Provider,
             normalizedFingerprint,
             validated.DefinitionJson,
-            mapVersion,
             now);
         writeContext.Add(map);
-        await writeContext.CommitAsync(transaction, ct);
+        try
+        {
+            await writeContext.CommitAsync(ct);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+        {
+            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "IX_form_discovery_maps_domain_provider_fingerprint",
+        })
+        {
+            writeContext.Clear();
+            existing = await writeContext.FormDiscoveryMaps.SingleAsync(
+                candidate => candidate.Domain == validated.Domain
+                    && candidate.Provider == validated.Provider
+                    && candidate.Fingerprint == normalizedFingerprint,
+                ct);
+            await SendExistingAsync(existing, ct);
+            return;
+        }
+
         await Send.OkAsync(new SubmitFormDiscoveryMapResponse(map.Id, map.MapVersion, "candidate", now), ct);
     }
+
+    private Task SendExistingAsync(FormDiscoveryMap map, CancellationToken ct) =>
+        Send.OkAsync(new SubmitFormDiscoveryMapResponse(
+            map.Id,
+            map.MapVersion,
+            map.Status.ToString().ToLowerInvariant(),
+            map.CreatedAt), ct);
 }
 
 [PublicAPI]

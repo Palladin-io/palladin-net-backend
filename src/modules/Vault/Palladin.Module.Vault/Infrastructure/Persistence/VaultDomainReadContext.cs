@@ -26,6 +26,8 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
     public IQueryable<Grant> Grants => Query<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Query<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Query<GrantEntryEnvelope>();
+    public IQueryable<FullGrantPreparation> FullGrantPreparations => Query<FullGrantPreparation>();
+    public IQueryable<FullGrantPreparationEntry> FullGrantPreparationEntries => Query<FullGrantPreparationEntry>();
     public IQueryable<EncryptedReasonEnvelope> EncryptedReasonEnvelopes => Query<EncryptedReasonEnvelope>();
     public IQueryable<Agent> Agents => Query<Agent>();
     public IQueryable<User> Users => Query<User>();
@@ -71,32 +73,11 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
              """);
     }
 
-    public IQueryable<Agent> LockAgentForShare(Guid organizationId, Guid agentId) =>
-        readContext.Agents.FromSqlInterpolated(
-            $"""
-             SELECT * FROM "Agents"
-             WHERE "OrganizationId" = {organizationId} AND "Id" = {agentId}
-             FOR SHARE
-             """);
-
     public IQueryable<Domain.Vault> LockVaultForShare(Guid organizationId, Guid vaultId) =>
         readContext.Vaults.FromSqlInterpolated(
             $"""
              SELECT * FROM "Vaults"
              WHERE "OrganizationId" = {organizationId} AND "Id" = {vaultId}
-             FOR SHARE
-             """);
-
-    public IQueryable<AgentVaultDiscoveryEnvelope> LockAgentDiscoveryEnvelopeForShare(
-        Guid organizationId,
-        Guid vaultId,
-        Guid agentId) =>
-        readContext.AgentVaultDiscoveryEnvelopes.FromSqlInterpolated(
-            $"""
-             SELECT * FROM "AgentVaultDiscoveryEnvelope"
-             WHERE "OrganizationId" = {organizationId}
-               AND "VaultId" = {vaultId}
-               AND "AgentId" = {agentId}
              FOR SHARE
              """);
 

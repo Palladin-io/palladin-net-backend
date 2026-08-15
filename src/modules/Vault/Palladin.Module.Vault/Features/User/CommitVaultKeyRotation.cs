@@ -186,7 +186,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         var trustAnchors = globalItems
             .Where(x => x.Kind == VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor)
             .ToDictionary(x => (VaultPublicKeyKindContract)x.SubjectVersion,
-                x => VaultKeyRotationPayloadCodec.Decode<VaultPublicKeyContract>(x.Payload));
+                x => VaultPreparedPayloadCodec.Decode<VaultPublicKeyContract>(x.Payload));
         var agentMessagePublicKey = rotation.Scope.HasFlag(VaultKeyRotationScope.AgentMessage)
             ? VaultEnvelopeContractMapper.ToDomain(
                 trustAnchors[VaultPublicKeyKindContract.AgentMessageX25519],
@@ -402,7 +402,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 }
 
                 var envelope = VaultEnvelopeContractMapper.ToDomain(
-                    VaultKeyRotationPayloadCodec.Decode<MemberVaultKeyEnvelopeContract>(item.Payload));
+                    VaultPreparedPayloadCodec.Decode<MemberVaultKeyEnvelopeContract>(item.Payload));
                 if (!directory.TryGetValue(memberId, out var recipient) || !recipient.Matches(envelope))
                 {
                     isComplete = false;
@@ -635,14 +635,14 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 var rewrappedKeys = items
                     .Where(x => x.Kind == VaultKeyRotationPreparedItemKind.EntryKey && x.SubjectId == entry.Id)
                     .Select(x => VaultEnvelopeContractMapper.ToDomain(
-                        VaultKeyRotationPayloadCodec.Decode<VaultEntryKeyContract>(x.Payload)))
+                        VaultPreparedPayloadCodec.Decode<VaultEntryKeyContract>(x.Payload)))
                     .ToArray();
                 var discoveryItem = items.SingleOrDefault(x =>
                     x.Kind == VaultKeyRotationPreparedItemKind.EntryDiscovery && x.SubjectId == entry.Id);
                 var discovery = discoveryItem is null
                     ? null
                     : VaultEnvelopeContractMapper.ToDomain(
-                        VaultKeyRotationPayloadCodec.Decode<AgentDiscoveryEnvelopeContract>(discoveryItem.Payload));
+                        VaultPreparedPayloadCodec.Decode<AgentDiscoveryEnvelopeContract>(discoveryItem.Payload));
                 entry.CommitKeyRotation(
                     rewrappedKeys,
                     discovery,
@@ -698,7 +698,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 organizationId, vaultId, rotationId,
                 VaultKeyRotationPreparedItemKind.MemberVaultKey, memberIds.ToArray(), cancellationToken);
             var memberKeys = items.Select(x => VaultEnvelopeContractMapper.ToDomain(
-                VaultKeyRotationPayloadCodec.Decode<MemberVaultKeyEnvelopeContract>(x.Payload))).ToArray();
+                VaultPreparedPayloadCodec.Decode<MemberVaultKeyEnvelopeContract>(x.Payload))).ToArray();
             var vault = await domainWriteContext.Vaults.SingleAsync(
                 x => x.OrganizationId == organizationId && x.Id == vaultId, cancellationToken);
             vault.AddRotatedMemberKeyPage(targetGeneration, targetVaultKeyVersion, memberKeys);
@@ -746,7 +746,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             var items = await LoadPreparedItemsAsync(
                 organizationId, vaultId, rotationId,
                 VaultKeyRotationPreparedItemKind.AgentDiscoveryEnvelope, agentIds, cancellationToken);
-            var targets = items.Select(x => VaultKeyRotationPayloadCodec.Decode<RotationAgentDiscoveryContract>(x.Payload))
+            var targets = items.Select(x => VaultPreparedPayloadCodec.Decode<RotationAgentDiscoveryContract>(x.Payload))
                 .Select(x =>
                 {
                     var agent = agentById[x.AgentId];
@@ -982,10 +982,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         (VaultKeyMaterialKind)item.SubjectVersion switch
         {
             VaultKeyMaterialKind.DiscoveryKey => VaultEnvelopeContractMapper.ToDomain(
-                VaultKeyRotationPayloadCodec.Decode<VaultDiscoveryKeyEnvelopeContract>(item.Payload)),
+                VaultPreparedPayloadCodec.Decode<VaultDiscoveryKeyEnvelopeContract>(item.Payload)),
             VaultKeyMaterialKind.AgentMessagePrivateKey or VaultKeyMaterialKind.ManifestSigningPrivateKey =>
                 VaultEnvelopeContractMapper.ToDomain(
-                    VaultKeyRotationPayloadCodec.Decode<VaultPrivateKeyEnvelopeContract>(item.Payload)),
+                    VaultPreparedPayloadCodec.Decode<VaultPrivateKeyEnvelopeContract>(item.Payload)),
             _ => throw new DomainException("Unknown prepared Vault key material kind."),
         };
 
@@ -993,7 +993,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         IReadOnlyCollection<VaultKeyRotationPreparedItem> items,
         VaultKeyRotationPreparedItemKind kind,
         Guid subjectId) =>
-        VaultKeyRotationPayloadCodec.Decode<T>(items.Single(x => x.Kind == kind && x.SubjectId == subjectId).Payload);
+        VaultPreparedPayloadCodec.Decode<T>(items.Single(x => x.Kind == kind && x.SubjectId == subjectId).Payload);
 
     private sealed record RotationCoverage(bool IsComplete, VaultKeyRotationIncompleteResponse Response);
     private sealed record MemberCoverage(

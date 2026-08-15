@@ -176,7 +176,7 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         root.GetProperty("vaultId").GetGuid().ShouldBe(vaultId);
         root.GetProperty("agentId").GetGuid().ShouldBe(agentId);
         root.GetProperty("grantId").GetGuid().ShouldNotBe(Guid.Empty);
-        root.GetProperty("approvedMethods").GetString().ShouldBe("get");
+        root.GetProperty("approvedMethods").GetUInt16().ShouldBe((ushort)GrantMethods.Get);
         envelope.GetProperty("descriptor").GetProperty("memberKeyGeneration").GetUInt32().ShouldBe(1u);
         envelope.GetProperty("descriptor").GetProperty("binding").GetProperty("recipientKeyVersion")
             .GetUInt32().ShouldBe(1u);

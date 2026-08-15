@@ -1,9 +1,6 @@
 using System.Net;
 using Palladin.Core.Security;
 using Palladin.Core.Types;
-using Palladin.Module.Agents.Contracts.Events;
-using Palladin.Module.Agents.Infrastructure.Persistence;
-using Palladin.Module.Agents.Triggers;
 using Palladin.Module.Notification.Contracts.Commands;
 using Palladin.Module.Notification.Contracts.ValueObjects;
 using Palladin.Module.Notification.Features;
@@ -18,7 +15,6 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
-using NSubstitute;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Notification;
@@ -370,24 +366,22 @@ public sealed class NotificationInboxEndpointsTests(ApiFactory apiFactory) : Tes
         // When
         var response = await client.PostAsync($"api/agents/{agent.Id}/deactivate", null);
         response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        BroadcastNotificationCommand? captured = null;
-        var publisher = Substitute.For<IPublishEndpoint>();
-        publisher.When(p => p.Publish(Arg.Any<BroadcastNotificationCommand>(), Arg.Any<CancellationToken>()))
-            .Do(call => captured = call.Arg<BroadcastNotificationCommand>());
-        await using (var scope = apiFactory.Services.CreateAsyncScope())
+
+        ListNotificationsResponse? after = null;
+        for (var attempt = 0; attempt < 100; attempt++)
         {
-            var trigger = new OnAgentDeactivated(
-                scope.ServiceProvider.GetRequiredService<AgentsDomainReadContext>(), publisher);
-            await trigger.Consume(apiFactory.MockConsumeContext(
-                new AgentDeactivatedEvent(agent.Id, org.Id, user.Id, "Operator", agent.Name ?? "Agent", 1, Now())));
+            (_, after) = await client
+                .GETAsync<ListNotificationsEndpoint, ListNotificationsRequest, ListNotificationsResponse>(
+                    new ListNotificationsRequest());
+            if (after!.Items.All(i => i.Type != NotificationType.AgentPending))
+            {
+                break;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
         }
-        captured.ShouldNotBeNull();
-        await apiFactory.ConsumeAsync<BroadcastNotificationConsumer, BroadcastNotificationCommand>(captured);
 
         // Then
-        var (_, after) = await client
-            .GETAsync<ListNotificationsEndpoint, ListNotificationsRequest, ListNotificationsResponse>(
-                new ListNotificationsRequest());
         after!.Items.ShouldNotContain(i => i.Type == NotificationType.AgentPending);
 
         var (_, summaryAfter) = await client.GETAsync<GetNotificationSummaryEndpoint, NotificationSummaryResponse>();

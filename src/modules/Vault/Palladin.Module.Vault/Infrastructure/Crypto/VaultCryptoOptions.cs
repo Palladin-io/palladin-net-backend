@@ -12,5 +12,9 @@ internal sealed class VaultCryptoOptions
     public int MaxNonceBytes { get; init; } = 64;
     public int MaxAgentWrappedDekBytes { get; init; } = 4096;
     public int MaxGrantEntriesPerGrant { get; init; } = 500;
+    public int MaxFullGrantPreparationBatchEntries { get; init; } = 100;
+    public int MaxFullGrantMaterialPageSize { get; init; } = 100;
+    public int FullGrantPreparationTtlMinutes { get; init; } = 15;
+    public int FullGrantPreparationCleanupBatchSize { get; init; } = 100;
     public int MaxEntryBlobBytes { get; init; } = 65536;
 }

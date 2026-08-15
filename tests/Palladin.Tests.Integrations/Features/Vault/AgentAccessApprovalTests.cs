@@ -261,7 +261,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task Approval_StoresRevisionBoundEnvelopeAndDeletesReason()
+    public async Task Approval_StoresRevisionBoundEnvelopeAndRetainsEncryptedReason()
     {
         var setup = await ArrangeAsync();
         var request = Request(setup);
@@ -290,8 +290,15 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             .Include(g => g.GrantEntryScopes).ThenInclude(s => s.Envelope)
             .SingleAsync(g => g.Id == pending.GrantId);
         grant.Status.ShouldBe(GrantStatus.Active);
-        grant.EncryptedReason.ShouldBeNull();
+        grant.EncryptedReason.ShouldNotBeNull();
+        grant.EncryptedReason!.GrantRequestId.ShouldBe(pending.GrantId);
         grant.GrantEntryScopes.Single().Envelope!.EntryRevision.ShouldBe(1UL);
+
+        var detailResponse = await setup.UserClient.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{pending.GrantId}");
+        var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+        detailResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        detailJson.RootElement.GetProperty("encryptedReason").ValueKind.ShouldBe(JsonValueKind.Object);
     }
 
     [Fact]
@@ -418,7 +425,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task ProactiveApprovalInPlace_DeletesEncryptedReason()
+    public async Task ProactiveApprovalInPlace_RetainsEncryptedReason()
     {
         var setup = await ArrangeAsync();
         var (_, pending) = await setup.AgentClient
@@ -446,7 +453,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await db.EncryptedReasonEnvelopes.AnyAsync(x => x.GrantRequestId == pending.GrantId)).ShouldBeFalse();
+        (await db.EncryptedReasonEnvelopes.AnyAsync(x => x.GrantRequestId == pending.GrantId)).ShouldBeTrue();
     }
 
     private static RequestAccessRequest Request(Setup setup, GrantMethods methods = GrantMethods.Get) =>

@@ -3,7 +3,7 @@ using Palladin.Core.Json;
 
 namespace Palladin.Module.Vault.Infrastructure.Crypto;
 
-internal static class VaultKeyRotationPayloadCodec
+internal static class VaultPreparedPayloadCodec
 {
     private static readonly JsonSerializerOptions Options = new(
         PalladinJsonSerializationSettings.DefaultOptions
@@ -13,5 +13,5 @@ internal static class VaultKeyRotationPayloadCodec
 
     internal static T Decode<T>(byte[] payload) =>
         JsonSerializer.Deserialize<T>(payload, Options)
-        ?? throw new JsonException("Prepared Vault rotation payload is empty.");
+        ?? throw new JsonException("Prepared Vault payload is empty.");
 }

@@ -99,6 +99,91 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
     }
 
     [Fact]
+    public async Task When_PersistedManifestIsCoherentlyResignedWithUntrustedKey_Then_ListAndSyncFailClosed()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var (_, apiKey) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        var requestSigning = AgentRequestSigning.Generate();
+        var agentKeys = new AgentKeys(AgentFaker.GeneratePublicKey(), requestSigning.PublicKeyBase64);
+        var sourceAgent = await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(
+                    organizationId: organization.Id,
+                    publicKey: agentKeys.X25519PublicKey,
+                    signingPublicKey: agentKeys.Ed25519PublicKey)
+                .RuleFor(x => x.Status, AgentStatus.Active));
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: sourceAgent.Id,
+            publicKey: agentKeys.X25519PublicKey,
+            signingPublicKey: agentKeys.Ed25519PublicKey);
+        var provisioning = CreateRequest(organization.Id, vault.Id, sourceAgent.Id, agentKeys, 1);
+        var memberClient = apiFactory.CreateAuthenticatedClient(user);
+        (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(provisioning))
+            .EnsureSuccessStatusCode();
+
+        using var substitutedSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
+        {
+            ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
+        });
+        var substitutedPublicKey = substitutedSigningKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
+        var substitutedFingerprint = VaultKeyFingerprint.Compute(
+            substitutedPublicKey,
+            VaultKeyKind.VaultSigningEd25519);
+        var substitutedManifest = provisioning.Manifest with
+        {
+            VaultSigningPublicKey = Encode(substitutedPublicKey),
+            VaultSigningKeyFingerprint = Encode(substitutedFingerprint),
+            Signature = string.Empty,
+        };
+        var substitutedSignature = SignatureAlgorithm.Ed25519.Sign(
+            substitutedSigningKey,
+            CreateSignatureInput(substitutedManifest));
+
+        await using (var mutationScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = mutationScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            await writeContext.AgentVaultDiscoveryEnvelopes
+                .Where(x => x.OrganizationId == organization.Id
+                            && x.VaultId == vault.Id
+                            && x.AgentId == sourceAgent.Id)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.VaultSigningPublicKey, substitutedPublicKey)
+                        .SetProperty(x => x.VaultSigningKeyFingerprint, substitutedFingerprint)
+                        .SetProperty(x => x.ManifestSignature, substitutedSignature),
+                    TestContext.Current.CancellationToken);
+        }
+
+        var agentClient = apiFactory.CreateSignedAgentClient(
+            sourceAgent.Id,
+            apiKey,
+            agentKeys.X25519PublicKey,
+            requestSigning);
+        agentClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+        agentClient.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "1");
+
+        // When
+        var listResponse = await agentClient.GetAsync(
+            "api/agent/vault-manifests",
+            TestContext.Current.CancellationToken);
+        var syncResponse = await agentClient.PostAsJsonAsync(
+            $"api/agent/vaults/{vault.Id}/discovery/sync/snapshot",
+            new GetAgentDiscoverySnapshotRequest { VaultId = vault.Id },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        listResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        syncResponse.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await listResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldNotContain(provisioning.Envelope.AgentWrappedVdk, Case.Sensitive);
+        (await syncResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldNotContain(provisioning.Envelope.AgentWrappedVdk, Case.Sensitive);
+    }
+
+    [Fact]
     public async Task When_ManifestIssuedAtExceedsMicrosecondPrecision_Then_RejectsWithoutPersistingEnvelope()
     {
         // Given
@@ -197,7 +282,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
     }
 
     [Fact]
-    public async Task When_AuthenticatedAgentRequestsCurrentProtocol_Then_ReturnsOnlyTheExactPairedManifest()
+    public async Task When_AuthenticatedActiveAgentRequestsCurrentProtocol_Then_ReturnsOnlyValidCurrentManifests()
     {
         // Given
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -227,14 +312,13 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
             agentKeys.X25519PublicKey,
             requestSigning);
         agentClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
-        await ConfirmPairingAsync(agentClient, memberClient, sourceAgent.Id);
-
         // When
         var (_, response) = await agentClient
             .GETAsync<ListAgentVaultManifestsEndpoint, ListAgentVaultManifestsResponse>();
 
         // Then
         response.ShouldNotBeNull();
+        response.AgentAccessEpoch.ShouldBe(sourceAgent.AccessEpoch);
         response.Items.Count.ShouldBe(1);
         response.Items[0].Envelope.VaultId.ShouldBe(vault.Id);
         response.Items[0].Envelope.AgentId.ShouldBe(sourceAgent.Id);
@@ -263,7 +347,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
     }
 
     [Fact]
-    public async Task When_PairingIsNotMemberConfirmed_Then_DoesNotReleaseManifestMaterial()
+    public async Task When_ActiveAgentHasProvisionedDiscovery_Then_ListsManifestWithoutSeparatePairing()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -293,24 +377,67 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
             signing);
         agentClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
 
-        var activationId = Guid.NewGuid();
-        var (activationResponse, activation) = await agentClient
-            .POSTAsync<CreateAgentPairingActivationEndpoint, CreateAgentPairingActivationRequest, AgentPairingActivationResponse>(
-                new CreateAgentPairingActivationRequest(activationId));
-        activationResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        activation.ShouldNotBeNull();
-        var rejectedConfirmation = await memberClient.PostAsJsonAsync(
-            $"api/agents/{sourceAgent.Id}/pairing/activations/{activationId}/confirm",
-            new ConfirmAgentPairingActivationRequest(
-                WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(SHA256.HashSizeInBytes))),
-            TestContext.Current.CancellationToken);
-        rejectedConfirmation.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-
         var (_, response) = await agentClient
             .GETAsync<ListAgentVaultManifestsEndpoint, ListAgentVaultManifestsResponse>();
 
         response.ShouldNotBeNull();
-        response.Items.ShouldBeEmpty();
+        response.AgentAccessEpoch.ShouldBe(sourceAgent.AccessEpoch);
+        response.Items.Count.ShouldBe(1);
+        response.Items[0].Envelope.AgentId.ShouldBe(sourceAgent.Id);
+        response.Items[0].Envelope.VaultId.ShouldBe(vault.Id);
+    }
+
+    [Fact]
+    public async Task When_NewVaultIsProvisionedForActiveAgent_Then_ListsItsManifestWithoutSeparatePairing()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var firstVault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var (_, apiKey) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        var signing = AgentRequestSigning.Generate();
+        var keys = new AgentKeys(AgentFaker.GeneratePublicKey(), signing.PublicKeyBase64);
+        var sourceAgent = await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(
+                    organizationId: organization.Id,
+                    publicKey: keys.X25519PublicKey,
+                    signingPublicKey: keys.Ed25519PublicKey)
+                .RuleFor(x => x.Status, AgentStatus.Active));
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: sourceAgent.Id,
+            publicKey: keys.X25519PublicKey,
+            signingPublicKey: keys.Ed25519PublicKey);
+        var memberClient = apiFactory.CreateAuthenticatedClient(user);
+        (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
+            CreateRequest(organization.Id, firstVault.Id, sourceAgent.Id, keys, 1)))
+            .EnsureSuccessStatusCode();
+        var newVault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+
+        var (_, pending) = await memberClient
+            .GETAsync<ListAgentDiscoveryProvisioningEndpoint, ListAgentDiscoveryProvisioningRequest, ListAgentDiscoveryProvisioningResponse>(
+                new ListAgentDiscoveryProvisioningRequest { VaultId = newVault.Id });
+        pending.ShouldNotBeNull();
+        pending.Items.Single(x => x.AgentId == sourceAgent.Id).Status.ShouldBe("pending");
+
+        (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
+            CreateRequest(organization.Id, newVault.Id, sourceAgent.Id, keys, 1)))
+            .EnsureSuccessStatusCode();
+        var agentClient = apiFactory.CreateSignedAgentClient(
+            sourceAgent.Id,
+            apiKey,
+            keys.X25519PublicKey,
+            signing);
+        agentClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+
+        // When
+        var (_, response) = await agentClient
+            .GETAsync<ListAgentVaultManifestsEndpoint, ListAgentVaultManifestsResponse>();
+
+        // Then
+        response.ShouldNotBeNull();
+        response.AgentAccessEpoch.ShouldBe(sourceAgent.AccessEpoch);
+        response.Items.Select(x => x.Envelope.VaultId).ShouldBe([firstVault.Id, newVault.Id], ignoreOrder: true);
     }
 
     [Fact]
@@ -759,33 +886,6 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
 
     private static AgentKeys CreateAgentKeys() =>
         new(AgentFaker.GeneratePublicKey(), AgentRequestSigning.Generate().PublicKeyBase64);
-
-    private static async Task ConfirmPairingAsync(
-        HttpClient agentClient,
-        HttpClient memberClient,
-        Guid agentId)
-    {
-        var activationId = Guid.NewGuid();
-        var (response, activation) = await agentClient
-            .POSTAsync<CreateAgentPairingActivationEndpoint, CreateAgentPairingActivationRequest, AgentPairingActivationResponse>(
-                new CreateAgentPairingActivationRequest(activationId));
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        activation.ShouldNotBeNull();
-        var confirmation = await memberClient.PostAsJsonAsync(
-            $"api/agents/{agentId}/pairing/activations/{activationId}/confirm",
-            new ConfirmAgentPairingActivationRequest(ComputePairingDigest(activation)),
-            TestContext.Current.CancellationToken);
-        confirmation.StatusCode.ShouldBe(
-            HttpStatusCode.NoContent,
-            await confirmation.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-        var idempotentRetry = await memberClient.PostAsJsonAsync(
-            $"api/agents/{agentId}/pairing/activations/{activationId}/confirm",
-            new ConfirmAgentPairingActivationRequest(ComputePairingDigest(activation)),
-            TestContext.Current.CancellationToken);
-        idempotentRetry.StatusCode.ShouldBe(
-            HttpStatusCode.NoContent,
-            await idempotentRetry.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-    }
 
     private static string ComputePairingDigest(AgentPairingActivationResponse activation) =>
         WebEncoders.Base64UrlEncode(AgentPairingTranscriptService.ComputeDigest(

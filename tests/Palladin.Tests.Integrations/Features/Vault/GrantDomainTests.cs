@@ -295,7 +295,7 @@ public sealed class GrantDomainTests
     }
 
     [Fact]
-    public void NarrowAndRefresh_AllowsFieldRemovalButRejectsBroadening()
+    public void RefreshScope_AllowsOwnerClientToReplaceAuthenticatedFieldSet()
     {
         var organizationId = Guid.NewGuid();
         var vaultId = Guid.NewGuid();
@@ -307,13 +307,14 @@ public sealed class GrantDomainTests
             organizationId, vaultId, grantId, entryId,
             entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2, fieldIds: ["password"]);
 
-        scope.NarrowAndRefresh(narrowed);
+        scope.RefreshScope(narrowed);
 
         scope.FieldIds.ShouldBe("password");
         var broadened = GrantEnvelopeTestData.Scope(
             organizationId, vaultId, grantId, entryId,
             entryRevision: 3, envelopeRevision: 3, grantKeyVersion: 3, fieldIds: ["password", "notes"]);
-        Should.Throw<DomainException>(() => scope.NarrowAndRefresh(broadened));
+        scope.RefreshScope(broadened);
+        scope.FieldIds.ShouldBe("notes\npassword");
     }
 
     [Fact]

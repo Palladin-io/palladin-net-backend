@@ -37,7 +37,7 @@ public sealed record DeliverCredentialResponse(
     Guid GrantId,
     Guid AgentId,
     Guid EntryId,
-    GrantMethods ApprovedMethods,
+    ushort ApprovedMethods,
     GrantEntryEnvelopeContract GrantEnvelope);
 
 [UsedImplicitly]
@@ -192,7 +192,7 @@ internal sealed class DeliverCredentialEndpoint(
                         grant.Id,
                         agentId.Value,
                         req.EntryId,
-                        grant.Methods,
+                        (ushort)grant.Methods,
                         GrantDeliveryContractMapper.ToContract(granted, grant.OrganizationId, req.VaultId,
                             grant.Id, agentId.Value, req.EntryId, grant.Methods)),
                     ct);

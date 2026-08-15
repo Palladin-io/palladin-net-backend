@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using System.Security.Cryptography;
+using NodaTime;
 using Palladin.Core.Types;
+using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -12,22 +12,25 @@ namespace Palladin.Module.Vault.Infrastructure.Sync;
 internal sealed record AuthorizedAgentVault(
     Guid AgentId,
     Guid OrganizationId,
-    Palladin.Module.Vault.Domain.Vault Vault);
+    Palladin.Module.Vault.Domain.Vault Vault,
+    AgentVaultSyncAuthorizationStamp AuthorizationStamp);
 
-internal sealed class AuthorizedAgentVaultLease(
-    AuthorizedAgentVault access,
-    IDbContextTransaction transaction) : IAsyncDisposable
-{
-    internal AuthorizedAgentVault Access { get; } = access;
-
-    internal Task CompleteAsync(CancellationToken ct) => transaction.CommitAsync(ct);
-
-    public ValueTask DisposeAsync() => transaction.DisposeAsync();
-}
+internal sealed record AgentVaultSyncAuthorizationStamp(
+    uint AgentAccessEpoch,
+    uint AgentRecipientKeyVersion,
+    Instant AgentUpdatedAt,
+    uint VaultVdkVersion,
+    uint VaultManifestSigningKeyVersion,
+    uint VaultAgentMessageKeyVersion,
+    ulong VaultDiscoverySequence,
+    ulong VaultMinRetainedDiscoverySequence,
+    ulong ManifestRevision,
+    Instant EnvelopeProvisionedAt,
+    string ManifestSignature);
 
 internal static class AgentVaultSyncAuthorizer
 {
-    internal static async Task<AuthorizedAgentVaultLease?> AcquireAsync(
+    internal static async Task<AuthorizedAgentVault?> AcquireAsync(
         System.Security.Claims.ClaimsPrincipal principal,
         Guid vaultId,
         VaultDomainReadContext readContext,
@@ -41,35 +44,61 @@ internal static class AgentVaultSyncAuthorizer
             return null;
         }
 
-        var transaction = await readContext.BeginTransactionAsync(ct);
+        return await AcquireAsync(
+            agentId.Value,
+            organizationId.Value,
+            accessEpoch.Value,
+            vaultId,
+            readContext,
+            ct);
+    }
+
+    internal static async Task<bool> IsCurrentAsync(
+        AuthorizedAgentVault authorization,
+        VaultDomainReadContext readContext,
+        CancellationToken ct)
+    {
+        var current = await AcquireAsync(
+            authorization.AgentId,
+            authorization.OrganizationId,
+            authorization.AuthorizationStamp.AgentAccessEpoch,
+            authorization.Vault.Id,
+            readContext,
+            ct);
+        return current is not null && current.AuthorizationStamp == authorization.AuthorizationStamp;
+    }
+
+    private static async Task<AuthorizedAgentVault?> AcquireAsync(
+        Guid agentId,
+        Guid organizationId,
+        uint accessEpoch,
+        Guid vaultId,
+        VaultDomainReadContext readContext,
+        CancellationToken ct)
+    {
         try
         {
-            // Lock every row that contributes to the access decision and retain the locks until
-            // the response has been written. A concurrent status/epoch change, key rotation,
-            // provisioning, revocation or deletion must therefore serialize before or after the
-            // ciphertext delivery rather than racing between authorization and response.
-            var agent = await readContext.LockAgentForShare(organizationId.Value, agentId.Value)
+            var agent = await readContext.Agents
+                .Where(x => x.OrganizationId == organizationId && x.Id == agentId)
                 .Where(x => x.Status == AgentStatus.Active && x.AccessEpoch == accessEpoch)
-                .Select(x => new { x.Id, x.OrganizationId, x.RecipientKeyVersion, x.AccessEpoch })
                 .SingleOrDefaultAsync(ct);
             if (agent is null)
             {
-                await transaction.DisposeAsync();
                 return null;
             }
 
-            var vault = await readContext.LockVaultForShare(agent.OrganizationId, vaultId)
+            var vault = await readContext.Vaults
+                .Where(x => x.OrganizationId == agent.OrganizationId && x.Id == vaultId)
                 .SingleOrDefaultAsync(ct);
             if (vault is null)
             {
-                await transaction.DisposeAsync();
                 return null;
             }
 
-            var envelope = await readContext.LockAgentDiscoveryEnvelopeForShare(
-                    agent.OrganizationId,
-                    vault.Id,
-                    agent.Id)
+            var envelope = await readContext.AgentVaultDiscoveryEnvelopes
+                .Where(x => x.OrganizationId == agent.OrganizationId
+                            && x.VaultId == vault.Id
+                            && x.AgentId == agent.Id)
                 .SingleOrDefaultAsync(ct);
             var recipientKeyVersion = new AgentRecipientKeyVersion(agent.RecipientKeyVersion);
             if (envelope is null
@@ -80,52 +109,33 @@ internal static class AgentVaultSyncAuthorizer
                 || envelope.ManifestSigningKeyVersion != vault.CurrentManifestSigningKeyVersion
                 || envelope.AgentMessageKeyVersion != vault.CurrentAgentMessageKeyVersion)
             {
-                await transaction.DisposeAsync();
                 return null;
             }
 
-            var activationId = await readContext.AgentPairingActivations
-                .Where(x => x.OrganizationId == agent.OrganizationId
-                            && x.AgentId == agent.Id
-                            && x.AgentAccessEpoch == agent.AccessEpoch
-                            && x.ConfirmedAt != null)
-                .OrderByDescending(x => x.ConfirmedAt)
-                .ThenByDescending(x => x.Id)
-                .Select(x => (Guid?)x.Id)
-                .FirstOrDefaultAsync(ct);
-            var candidate = activationId is null
-                ? null
-                : await readContext.AgentPairingActivationCandidates.SingleOrDefaultAsync(x =>
-                    x.ActivationId == activationId
-                    && x.OrganizationId == agent.OrganizationId
-                    && x.AgentId == agent.Id
-                    && x.VaultId == vault.Id
-                    && x.ManifestRevision == envelope.ManifestRevision, ct);
-            if (candidate is null)
-            {
-                await transaction.DisposeAsync();
-                return null;
-            }
-
+            var envelopeContract = VaultEnvelopeContractMapper.ToContract(envelope);
             var manifest = VaultEnvelopeContractMapper.ToManifestContract(envelope);
-            var signedDigest = SHA256.HashData(VaultManifestCryptoValidator.CanonicalizeSigned(manifest));
-            if (!CryptographicOperations.FixedTimeEquals(
-                    candidate.VaultSigningKeyFingerprint,
-                    envelope.VaultSigningKeyFingerprint)
-                || !CryptographicOperations.FixedTimeEquals(candidate.SignedManifestDigest, signedDigest))
-            {
-                await transaction.DisposeAsync();
-                return null;
-            }
+            _ = VaultManifestCryptoValidator.ValidateCurrent(envelopeContract, manifest, agent, vault);
 
-            return new AuthorizedAgentVaultLease(
-                new AuthorizedAgentVault(agent.Id, agent.OrganizationId, vault),
-                transaction);
+            return new AuthorizedAgentVault(
+                agent.Id,
+                agent.OrganizationId,
+                vault,
+                new AgentVaultSyncAuthorizationStamp(
+                    agent.AccessEpoch,
+                    agent.RecipientKeyVersion,
+                    agent.UpdatedAt,
+                    vault.CurrentVdkVersion.Value,
+                    vault.CurrentManifestSigningKeyVersion.Value,
+                    vault.CurrentAgentMessageKeyVersion.Value,
+                    vault.DiscoverySequence.Value,
+                    vault.MinRetainedDiscoverySequence.Value,
+                    envelope.ManifestRevision.Value,
+                    envelope.ProvisionedAt,
+                    Convert.ToBase64String(envelope.ManifestSignature)));
         }
-        catch
+        catch (DomainException)
         {
-            await transaction.DisposeAsync();
-            throw;
+            return null;
         }
     }
 }

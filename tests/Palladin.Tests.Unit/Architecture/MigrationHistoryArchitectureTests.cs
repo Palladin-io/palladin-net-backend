@@ -14,7 +14,7 @@ public sealed class MigrationHistoryArchitectureTests
     };
 
     [Fact]
-    public void EveryActiveContext_ShouldHaveExactlyOneInitialMigration()
+    public void EveryActiveContext_ShouldStartWithExactlyOneInitialMigration()
     {
         var root = FindRepositoryRoot();
 
@@ -24,11 +24,34 @@ public sealed class MigrationHistoryArchitectureTests
                 .Where(path => !path.EndsWith(".Designer.cs", StringComparison.Ordinal)
                                && !path.EndsWith("ModelSnapshot.cs", StringComparison.Ordinal))
                 .Select(Path.GetFileName)
+                .Order(StringComparer.Ordinal)
                 .ToList();
 
-            migrations.ShouldHaveSingleItem($"{moduleName} has one pre-production migration history")
-                .ShouldEndWith("_Initial.cs");
+            migrations.ShouldNotBeEmpty($"{moduleName} has a migration history");
+            migrations[0]!.EndsWith("_Initial.cs", StringComparison.Ordinal)
+                .ShouldBeTrue($"{moduleName} starts from the approved Initial squash");
+            migrations.Count(path => path!.EndsWith("_Initial.cs", StringComparison.Ordinal))
+                .ShouldBe(1, $"{moduleName} has exactly one Initial migration before incremental migrations");
         }
+    }
+
+    [Fact]
+    public void FormDiscoveryMaps_ShouldBeIntroducedByAnIncrementalAgentsMigration()
+    {
+        var root = FindRepositoryRoot();
+        File.ReadAllText(Directory.EnumerateFiles(GetMigrationsDirectory(root, "Agents"), "*_Initial.cs").Single())
+            .ShouldNotContain("form_discovery_maps");
+        var migrationFiles = Directory.EnumerateFiles(GetMigrationsDirectory(root, "Agents"), "*.cs")
+            .Where(path => !path.EndsWith(".Designer.cs", StringComparison.Ordinal)
+                           && !Path.GetFileName(path).EndsWith("_Initial.cs", StringComparison.Ordinal)
+                           && !path.EndsWith("ModelSnapshot.cs", StringComparison.Ordinal))
+            .ToList();
+
+        migrationFiles.ShouldContain(
+            path => File.ReadAllText(path).Contains(
+                "form_discovery_maps",
+                StringComparison.Ordinal),
+            "the approved Agents Initial migration is immutable after the pre-production squash");
     }
 
     [Fact]

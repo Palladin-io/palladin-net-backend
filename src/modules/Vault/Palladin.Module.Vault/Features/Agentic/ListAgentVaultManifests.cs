@@ -1,8 +1,8 @@
 using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
 using Palladin.Core.Types;
+using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -17,7 +17,9 @@ public sealed record AgentVaultManifestItem(
     VaultManifestContract Manifest);
 
 [PublicAPI]
-public sealed record ListAgentVaultManifestsResponse(IReadOnlyList<AgentVaultManifestItem> Items);
+public sealed record ListAgentVaultManifestsResponse(
+    uint AgentAccessEpoch,
+    IReadOnlyList<AgentVaultManifestItem> Items);
 
 [PublicAPI]
 internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext domainReadContext)
@@ -60,7 +62,6 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
                         && x.OrganizationId == organizationId
                         && x.Status == AgentStatus.Active
                         && x.AccessEpoch == accessEpoch)
-            .Select(x => new { x.Id, x.OrganizationId, x.RecipientKeyVersion, x.AccessEpoch })
             .SingleOrDefaultAsync(ct);
         if (agent is null)
         {
@@ -69,21 +70,6 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
         }
 
         var recipientKeyVersion = new AgentRecipientKeyVersion(agent.RecipientKeyVersion);
-        var activationId = await domainReadContext.AgentPairingActivations
-            .Where(x => x.OrganizationId == agent.OrganizationId
-                        && x.AgentId == agent.Id
-                        && x.AgentAccessEpoch == agent.AccessEpoch
-                        && x.ConfirmedAt != null)
-            .OrderByDescending(x => x.ConfirmedAt)
-            .ThenByDescending(x => x.Id)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(ct);
-        if (activationId is null)
-        {
-            await Send.OkAsync(new ListAgentVaultManifestsResponse([]), ct);
-            return;
-        }
-
         var envelopes = await domainReadContext.AgentVaultDiscoveryEnvelopes
             .Where(x => x.OrganizationId == agent.OrganizationId && x.AgentId == agent.Id)
             .Where(x => x.RevokedAt == null)
@@ -95,25 +81,7 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
                 && vault.CurrentVdkVersion == x.VdkVersion
                 && vault.CurrentManifestSigningKeyVersion == x.ManifestSigningKeyVersion
                 && vault.CurrentAgentMessageKeyVersion == x.AgentMessageKeyVersion))
-            .Join(
-                domainReadContext.AgentPairingActivationCandidates
-                    .Where(candidate => candidate.ActivationId == activationId),
-                envelope => new
-                {
-                    envelope.OrganizationId,
-                    envelope.AgentId,
-                    envelope.VaultId,
-                    envelope.ManifestRevision,
-                },
-                candidate => new
-                {
-                    candidate.OrganizationId,
-                    candidate.AgentId,
-                    candidate.VaultId,
-                    candidate.ManifestRevision,
-                },
-                (envelope, candidate) => new { Envelope = envelope, Candidate = candidate })
-            .OrderBy(x => x.Envelope.VaultId)
+            .OrderBy(x => x.VaultId)
             .Take(AgentPairingTranscriptService.MaximumCandidateVaults + 1)
             .ToListAsync(ct);
         if (envelopes.Count > AgentPairingTranscriptService.MaximumCandidateVaults)
@@ -123,28 +91,37 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
             return;
         }
 
-        var items = new List<AgentVaultManifestItem>(envelopes.Count);
-        foreach (var row in envelopes)
-        {
-            var manifest = VaultEnvelopeContractMapper.ToManifestContract(row.Envelope);
-            var signedDigest = SHA256.HashData(VaultManifestCryptoValidator.CanonicalizeSigned(manifest));
-            if (!CryptographicOperations.FixedTimeEquals(
-                    row.Candidate.VaultSigningKeyFingerprint,
-                    row.Envelope.VaultSigningKeyFingerprint)
-                || !CryptographicOperations.FixedTimeEquals(
-                    row.Candidate.SignedManifestDigest,
-                    signedDigest))
-            {
-                AddError("agent-pairing-manifest-binding-mismatch");
-                await Send.ErrorsAsync(409, ct);
-                return;
-            }
+        var vaultIds = envelopes.Select(x => x.VaultId).ToArray();
+        var vaults = await domainReadContext.Vaults
+            .Where(x => x.OrganizationId == agent.OrganizationId && vaultIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, ct);
 
-            items.Add(new AgentVaultManifestItem(
-                VaultEnvelopeContractMapper.ToContract(row.Envelope),
-                manifest));
+        var items = new List<AgentVaultManifestItem>(envelopes.Count);
+        try
+        {
+            foreach (var envelope in envelopes)
+            {
+                if (!vaults.TryGetValue(envelope.VaultId, out var vault))
+                {
+                    throw new DomainException("Vault manifest references a missing Vault.");
+                }
+
+                var envelopeContract = VaultEnvelopeContractMapper.ToContract(envelope);
+                var manifest = VaultEnvelopeContractMapper.ToManifestContract(envelope);
+                _ = VaultManifestCryptoValidator.ValidateCurrent(envelopeContract, manifest, agent, vault);
+
+                items.Add(new AgentVaultManifestItem(
+                    envelopeContract,
+                    manifest));
+            }
+        }
+        catch (DomainException)
+        {
+            AddError("agent-vault-manifest-invalid");
+            await Send.ErrorsAsync(409, ct);
+            return;
         }
 
-        await Send.OkAsync(new ListAgentVaultManifestsResponse(items), ct);
+        await Send.OkAsync(new ListAgentVaultManifestsResponse(agent.AccessEpoch, items), ct);
     }
 }

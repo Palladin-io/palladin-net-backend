@@ -24,6 +24,8 @@ internal sealed class VaultDbWriteContext(DbContextOptions<VaultDbWriteContext> 
     public DbSet<Grant> Grants => Set<Grant>();
     public DbSet<GrantEntryScope> GrantEntryScopes => Set<GrantEntryScope>();
     public DbSet<GrantEntryEnvelope> GrantEntryEnvelopes => Set<GrantEntryEnvelope>();
+    public DbSet<FullGrantPreparation> FullGrantPreparations => Set<FullGrantPreparation>();
+    public DbSet<FullGrantPreparationEntry> FullGrantPreparationEntries => Set<FullGrantPreparationEntry>();
     public DbSet<EncryptedReasonEnvelope> EncryptedReasonEnvelopes => Set<EncryptedReasonEnvelope>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<User> Users => Set<User>();

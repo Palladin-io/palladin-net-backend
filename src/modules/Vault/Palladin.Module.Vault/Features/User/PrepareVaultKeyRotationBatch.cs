@@ -402,7 +402,7 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
         Guid fencingToken,
         Instant now) => rotation.Prepare(
         VaultKeyRotationPreparedItem.Create(rotation, kind, subjectId, subjectVersion, sourceRevision,
-            VaultKeyRotationPayloadCodec.Encode(payload), now), memberId, fencingToken, now) ? 1 : 0;
+            VaultPreparedPayloadCodec.Encode(payload), now), memberId, fencingToken, now) ? 1 : 0;
 
     private sealed record PreparedItemIdentity(
         VaultKeyRotationPreparedItemKind Kind,

@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using FastEndpoints;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
@@ -11,7 +10,6 @@ using Palladin.Core.Types;
 using Palladin.Module.Agents.Contracts.Events;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
-using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Module.Vault.Infrastructure.Sync;
 using Palladin.Module.Vault.Shared;
@@ -59,7 +57,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_DiscoverySyncLeaseIsActive_Then_RevocationWaitsUntilCiphertextReadCompletes()
+    public async Task When_DiscoverySyncAuthorizationIsRead_Then_RevocationDoesNotWaitForResponseDelivery()
     {
         // Given
         var ct = TestContext.Current.CancellationToken;
@@ -73,7 +71,6 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
             publicKey: provisioning.X25519PublicKey,
             signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
-        await SeedConfirmedPairingAsync(organization.Id, agent.Id, user.Id);
         var entryId = await apiFactory.Services.SeedSyncEntryAsync(
             organization.Id,
             vault.Id,
@@ -88,12 +85,12 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
 
         await using var syncScope = apiFactory.Services.CreateAsyncScope();
         var readContext = syncScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
-        await using var accessLease = await AgentVaultSyncAuthorizer.AcquireAsync(
+        var authorization = await AgentVaultSyncAuthorizer.AcquireAsync(
             principal,
             vault.Id,
             readContext,
             ct);
-        accessLease.ShouldNotBeNull();
+        authorization.ShouldNotBeNull();
         var deactivation = DeactivateAgentAsync(new AgentDeactivatedEvent(
             agent.Id,
             organization.Id,
@@ -111,24 +108,67 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         // When
         var deactivationCompletedBeforeCiphertextRead = await Task.WhenAny(
             deactivation,
-            Task.Delay(100, ct)) == deactivation;
+            Task.Delay(TimeSpan.FromSeconds(2), ct)) == deactivation;
         var envelopeRevocationCompletedBeforeCiphertextRead = await Task.WhenAny(
             envelopeRevocation,
-            Task.Delay(100, ct)) == envelopeRevocation;
+            Task.Delay(TimeSpan.FromSeconds(2), ct)) == envelopeRevocation;
         var encryptedHead = await readContext.Entries.SingleAsync(
             x => x.OrganizationId == organization.Id && x.VaultId == vault.Id && x.Id == entryId,
             ct);
-        await accessLease.CompleteAsync(ct);
         await Task.WhenAll(deactivation, envelopeRevocation);
 
         // Then
-        deactivationCompletedBeforeCiphertextRead.ShouldBeFalse();
-        envelopeRevocationCompletedBeforeCiphertextRead.ShouldBeFalse();
+        deactivationCompletedBeforeCiphertextRead.ShouldBeTrue();
+        envelopeRevocationCompletedBeforeCiphertextRead.ShouldBeTrue();
         encryptedHead.AgentDiscoveryEncodedSuitePayload.ShouldNotBeEmpty();
+        (await AgentVaultSyncAuthorizer.IsCurrentAsync(authorization, readContext, ct)).ShouldBeFalse();
         await using var verifyScope = apiFactory.Services.CreateAsyncScope();
         var verifyContext = verifyScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
         var deniedLease = await AgentVaultSyncAuthorizer.AcquireAsync(principal, vault.Id, verifyContext, ct);
         deniedLease.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_MemberOnlyVaultStateChanges_Then_DiscoveryAuthorizationRemainsCurrent()
+    {
+        // Given
+        var ct = TestContext.Current.CancellationToken;
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var agentId = Guid.NewGuid();
+        var provisioning = AgentDiscoveryProvisioningContractFaker.Create(organization.Id, vault.Id, agentId);
+        var agent = await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: agentId,
+            publicKey: provisioning.X25519PublicKey,
+            signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
+        await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("agent_id", agent.Id.ToString()),
+            new Claim("agent_organization_id", organization.Id.ToString()),
+            new Claim("agent_access_epoch", agent.AccessEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ], "agent-test"));
+        await using var syncScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = syncScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
+        var authorization = await AgentVaultSyncAuthorizer.AcquireAsync(
+            principal,
+            vault.Id,
+            readContext,
+            ct);
+        authorization.ShouldNotBeNull();
+
+        // When
+        await apiFactory.Services.SeedSyncEntryAsync(
+            organization.Id,
+            vault.Id,
+            user.Id,
+            includeDiscovery: false);
+
+        // Then
+        await using var verifyScope = apiFactory.Services.CreateAsyncScope();
+        var verifyContext = verifyScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
+        (await AgentVaultSyncAuthorizer.IsCurrentAsync(authorization, verifyContext, ct)).ShouldBeTrue();
     }
 
     [Fact]
@@ -154,7 +194,6 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
             publicKey: provisioning.X25519PublicKey,
             signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
-        await SeedConfirmedPairingAsync(organization.Id, agentId, user.Id);
         var discoverableEntry = await apiFactory.Services.SeedSyncEntryAsync(
             organization.Id,
             vault.Id,
@@ -208,6 +247,63 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         delta.Items[0].EntryId.ShouldBe(discoverableEntry);
         delta.Items[0].Kind.ShouldBe("tombstone");
         delta.Items[0].AgentDiscovery.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_ProvisionedManifestIsTampered_Then_DiscoverySyncFailsClosedWithoutCiphertext()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var agentId = Guid.NewGuid();
+        var provisioning = AgentDiscoveryProvisioningContractFaker.Create(organization.Id, vault.Id, agentId);
+        var (_, apiKey) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(
+                    id: agentId,
+                    organizationId: organization.Id,
+                    publicKey: provisioning.X25519PublicKey,
+                    signingPublicKey: provisioning.RequestSigning.PublicKeyBase64)
+                .RuleFor(x => x.Status, AgentStatus.Active));
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: agentId,
+            publicKey: provisioning.X25519PublicKey,
+            signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
+        await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
+        await apiFactory.Services.SeedSyncEntryAsync(organization.Id, vault.Id, user.Id, seed: 0);
+        await using (var mutationScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = mutationScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            await writeContext.AgentVaultDiscoveryEnvelopes
+                .Where(x => x.OrganizationId == organization.Id
+                            && x.VaultId == vault.Id
+                            && x.AgentId == agentId)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        x => x.ManifestSignature,
+                        RandomNumberGenerator.GetBytes(64)),
+                    TestContext.Current.CancellationToken);
+        }
+
+        var agentClient = apiFactory.CreateSignedAgentClient(
+            agentId,
+            apiKey,
+            provisioning.X25519PublicKey,
+            provisioning.RequestSigning);
+        AddSyncHeaders(agentClient);
+
+        // When
+        var response = await agentClient.PostAsJsonAsync(
+            $"api/agent/vaults/{vault.Id}/discovery/sync/snapshot",
+            new GetAgentDiscoverySnapshotRequest { VaultId = vault.Id },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldNotContain("agentDiscovery", Case.Insensitive);
     }
 
     [Fact]
@@ -636,59 +732,6 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
                         && x.VaultId == vaultId
                         && entryIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.UpdatedAt, TestContext.Current.CancellationToken);
-    }
-
-    private async Task SeedConfirmedPairingAsync(Guid organizationId, Guid agentId, Guid memberId)
-    {
-        var activationId = Guid.NewGuid();
-        AgentPairingCandidateSet candidates;
-        await using (var readScope = apiFactory.Services.CreateAsyncScope())
-        {
-            var readContext = readScope.ServiceProvider.GetRequiredService<VaultDomainReadContext>();
-            var agent = await readContext.Agents
-                .Where(x => x.OrganizationId == organizationId && x.Id == agentId)
-                .Select(x => new { x.AccessEpoch })
-                .SingleAsync(TestContext.Current.CancellationToken);
-            candidates = (await AgentPairingTranscriptService.LoadAsync(
-                readContext,
-                organizationId,
-                agentId,
-                agent.AccessEpoch,
-                activationId,
-                TestContext.Current.CancellationToken)).ShouldNotBeNull();
-        }
-
-        await using var writeScope = apiFactory.Services.CreateAsyncScope();
-        var writeContext = writeScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-        var now = apiFactory.FakeClock.GetCurrentInstant();
-        var activation = AgentPairingActivation.Create(
-            activationId,
-            organizationId,
-            agentId,
-            candidates.AgentAccessEpoch,
-            candidates.AgentX25519Fingerprint,
-            candidates.AgentEd25519Fingerprint,
-            candidates.Digest,
-            candidates.Manifests.Count,
-            now,
-            Duration.FromMinutes(10));
-        activation.Confirm(memberId, candidates.Digest, now);
-        writeContext.Add(activation);
-        foreach (var manifest in candidates.Manifests)
-        {
-            writeContext.Add(AgentPairingActivationCandidate.Create(
-                activationId,
-                organizationId,
-                agentId,
-                manifest.VaultId,
-                new ManifestRevision(ulong.Parse(
-                    manifest.ManifestRevision,
-                    System.Globalization.CultureInfo.InvariantCulture)),
-                WebEncoders.Base64UrlDecode(manifest.VaultSigningKeyFingerprint),
-                SHA256.HashData(VaultManifestCryptoValidator.CanonicalizeSigned(manifest))));
-        }
-
-        await writeContext.CommitAsync(TestContext.Current.CancellationToken);
     }
 
     private async Task DeactivateAgentAsync(AgentDeactivatedEvent @event)

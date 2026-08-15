@@ -45,4 +45,10 @@ internal static class VaultSyncProtocol
             new VaultSyncErrorResponse("size-limit-exceeded"),
             413,
             cancellation: ct);
+
+    internal static Task SendStateChangedAsync(IEndpoint ep, CancellationToken ct) =>
+        ep.HttpContext.Response.SendAsync(
+            new VaultSyncErrorResponse("sync-state-changed"),
+            409,
+            cancellation: ct);
 }

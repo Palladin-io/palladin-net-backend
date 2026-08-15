@@ -209,6 +209,7 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
     [InlineData("http://example.org/login", "example.org")]
     [InlineData("https://example.org/login#credential", "example.org")]
     [InlineData("https://example.org/login?access_token=secret", "example.org")]
+    [InlineData("https://example.org/reset/one-time-token", "example.org")]
     public void When_LoginOriginIsNotExactHttpsHost_Then_MapIsUnsafe(string loginUrl, string domain)
     {
         using var definition = System.Text.Json.JsonDocument.Parse(SafeDefinition);

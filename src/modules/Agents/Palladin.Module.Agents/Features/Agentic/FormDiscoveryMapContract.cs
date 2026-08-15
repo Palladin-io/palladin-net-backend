@@ -20,6 +20,27 @@ internal static partial class FormDiscoveryMapContract
         "playwright",
     };
 
+    private static readonly HashSet<string> ApprovedLoginPaths = new(StringComparer.Ordinal)
+    {
+        "/",
+        "/accounts/login",
+        "/accounts/login/",
+        "/ap/signin",
+        "/auth/login",
+        "/client",
+        "/consumer/login/",
+        "/en/login",
+        "/i/flow/login",
+        "/login",
+        "/login/",
+        "/sign-in",
+        "/signin",
+        "/store-login",
+        "/users/sign_in",
+        "/v2/",
+        "/ws/eBayISAPI.dll",
+    };
+
     internal static bool TryNormalizeDomain(string? value, out string domain)
     {
         domain = value?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -185,6 +206,7 @@ internal static partial class FormDiscoveryMapContract
             || !string.Equals(uri.IdnHost, domain, StringComparison.Ordinal)
             || !string.IsNullOrEmpty(uri.UserInfo)
             || !string.IsNullOrEmpty(uri.Fragment)
+            || !ApprovedLoginPaths.Contains(uri.AbsolutePath)
             || (!string.IsNullOrEmpty(uri.Query) && uri.Query != "?SignIn"))
         {
             return false;

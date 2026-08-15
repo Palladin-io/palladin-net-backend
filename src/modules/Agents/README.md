@@ -45,8 +45,8 @@ repository deliberately contains no provider catalog or production seed data.
   before considering a verified System revision. Candidate/observed Organization maps never shadow a
   System map. Every returned revision is reparsed and must pass the full safety/fingerprint contract;
   an invalid newer row is skipped in favor of an older safe revision. Domain and login host must match
-  exactly after normalization and use HTTPS. Login URL query values are rejected; only the empty
-  legacy eBay `?SignIn` flag is accepted. Maps may reference only `credential.username` with a
+  exactly after normalization and use HTTPS. Login URLs use an explicit allowlist of static login
+  paths; query values are rejected and only the empty legacy eBay `?SignIn` flag is accepted. Maps may reference only `credential.username` with a
   username-compatible control and `credential.password` with `password`.
 - System catalog SQL is an operational deployment artifact owned by the private Palladin repository.
   It is idempotent, retains older revisions, rejects same-version fingerprint conflicts, and never

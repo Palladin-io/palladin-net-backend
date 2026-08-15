@@ -1,196 +1,153 @@
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using System.Security.Cryptography;
+using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Palladin.Module.Agents.Domain;
+using Palladin.Module.Agents.Infrastructure.DiscoveryMaps;
 
 namespace Palladin.Module.Agents.Features;
 
-internal static partial class FormDiscoveryMapContract
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryMapDefinition(
+    int Version,
+    FormDiscoveryFormDefinition? Form,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<FormDiscoveryCookieOverlay>? CookieOverlays = null);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryFormDefinition(
+    int Version,
+    IReadOnlyList<FormDiscoveryStepDefinition>? Steps);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryStepDefinition(
+    IReadOnlyList<FormDiscoveryFieldDefinition>? Fields,
+    FormDiscoverySubmitDefinition? Submit,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    FormDiscoveryWaitDefinition? WaitFor = null);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryFieldDefinition(
+    string? EntryFieldId,
+    string? Selector,
+    string? Control);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoverySubmitDefinition(
+    string? Action,
+    string? Selector);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryWaitDefinition(
+    string? Selector,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? TimeoutMs = null);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryCookieOverlay(
+    IReadOnlyList<string>? Selectors,
+    FormDiscoveryOverlayDismiss? Dismiss,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Disappears = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Frame = null);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+[PublicAPI]
+public sealed record FormDiscoveryOverlayDismiss(
+    string? Selector,
+    string? Action);
+
+internal sealed record ValidatedFormDiscoveryMap(
+    string Domain,
+    string LoginUrl,
+    string Provider,
+    FormDiscoveryMapDefinition Definition,
+    string DefinitionJson);
+
+internal sealed record PublishableFormDiscoveryMap(
+    FormDiscoveryMap Map,
+    FormDiscoveryMapDefinition Definition);
+
+internal sealed partial class FormDiscoveryMapContract
 {
-    internal const int MaximumDefinitionBytes = 65_536;
+    private readonly FormDiscoveryMapOptions _options;
+    private readonly JsonSerializerOptions _serializerOptions;
 
-    private static readonly HashSet<string> Providers = new(StringComparer.Ordinal)
+    public FormDiscoveryMapContract(IOptions<FormDiscoveryMapOptions> configured)
     {
-        "agent-browser",
-        "extension",
-        "generic",
-        "playwright",
-    };
-
-    private static readonly HashSet<string> ApprovedLoginPaths = new(StringComparer.Ordinal)
-    {
-        "/",
-        "/accounts/login",
-        "/accounts/login/",
-        "/ap/signin",
-        "/auth/login",
-        "/client",
-        "/consumer/login/",
-        "/en/login",
-        "/i/flow/login",
-        "/login",
-        "/login/",
-        "/sign-in",
-        "/signin",
-        "/store-login",
-        "/users/sign_in",
-        "/v2/",
-        "/ws/eBayISAPI.dll",
-    };
-
-    internal static bool TryNormalizeDomain(string? value, out string domain)
-    {
-        domain = value?.Trim().ToLowerInvariant() ?? string.Empty;
-        return DomainPattern().IsMatch(domain);
-    }
-
-    internal static bool TryNormalizeProvider(string? value, out string provider)
-    {
-        provider = value?.Trim().ToLowerInvariant() ?? string.Empty;
-        return Providers.Contains(provider);
-    }
-
-    internal static bool IsSafe(JsonElement root, string domain, string loginUrl)
-    {
-        if (!TryNormalizeDomain(domain, out var normalizedDomain)
-            || !ValidLoginUrl(loginUrl, normalizedDomain)
-            || Encoding.UTF8.GetByteCount(root.GetRawText()) > MaximumDefinitionBytes
-            || root.ValueKind != JsonValueKind.Object
-            || !Only(root, "version", "form", "cookieOverlays")
-            || !root.TryGetProperty("version", out var version)
-            || !VersionOne(version)
-            || !root.TryGetProperty("form", out var form)
-            || !ValidForm(form))
+        _options = configured.Value;
+        _serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
-            return false;
-        }
-
-        return !root.TryGetProperty("cookieOverlays", out var overlays) || ValidOverlays(overlays);
-    }
-
-    internal static bool FingerprintMatches(
-        JsonElement root,
-        string domain,
-        string loginUrl,
-        string fingerprint)
-    {
-        if (!IsSafe(root, domain, loginUrl)
-            || !root.TryGetProperty("form", out var form)
-            || !Uri.TryCreate(loginUrl, UriKind.Absolute, out var uri))
-        {
-            return false;
-        }
-
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
-        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        }))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("domain", domain);
-            writer.WriteString("loginUrl", uri.AbsolutePath);
-            writer.WritePropertyName("form");
-            WriteCanonicalForm(writer, form);
-            writer.WriteEndObject();
-        }
-
-        var actual = Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length))));
-        return string.Equals(actual, fingerprint, StringComparison.OrdinalIgnoreCase);
+            MaxDepth = _options.MaximumJsonDepth,
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        };
     }
 
-    private static void WriteCanonicalForm(Utf8JsonWriter writer, JsonElement form)
+    internal bool TryValidate(
+        string? domainValue,
+        string? loginUrlValue,
+        string? providerValue,
+        FormDiscoveryMapDefinition? definition,
+        out ValidatedFormDiscoveryMap validated)
     {
-        writer.WriteStartObject();
-        writer.WriteNumber("version", form.GetProperty("version").GetInt32());
-        writer.WriteStartArray("steps");
-        foreach (var step in form.GetProperty("steps").EnumerateArray())
+        validated = null!;
+        if (!TryNormalizeDomain(domainValue, out var domain)
+            || !TryNormalizeProvider(providerValue, out var provider)
+            || !TryNormalizeLoginUrl(loginUrlValue, domain, out var loginUrl)
+            || definition is null
+            || !ValidDefinition(definition))
         {
-            writer.WriteStartObject();
-            writer.WriteStartArray("fields");
-            foreach (var field in step.GetProperty("fields").EnumerateArray())
-            {
-                writer.WriteStartObject();
-                writer.WriteString("entryFieldId", field.GetProperty("entryFieldId").GetString());
-                writer.WriteString("selector", field.GetProperty("selector").GetString());
-                writer.WriteString("control", field.GetProperty("control").GetString());
-                writer.WriteEndObject();
-            }
-
-            writer.WriteEndArray();
-            var submit = step.GetProperty("submit");
-            writer.WriteStartObject("submit");
-            writer.WriteString("action", submit.GetProperty("action").GetString());
-            writer.WriteString("selector", submit.GetProperty("selector").GetString());
-            writer.WriteEndObject();
-            if (step.TryGetProperty("waitFor", out var waitFor))
-            {
-                writer.WriteStartObject("waitFor");
-                writer.WriteString("selector", waitFor.GetProperty("selector").GetString());
-                if (waitFor.TryGetProperty("timeoutMs", out var timeout))
-                {
-                    writer.WriteNumber("timeoutMs", timeout.GetInt32());
-                }
-
-                writer.WriteEndObject();
-            }
-
-            writer.WriteEndObject();
+            return false;
         }
 
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
-
-    internal static async Task<FormDiscoveryMap?> FindVerifiedAsync(
-        IQueryable<FormDiscoveryMap> maps,
-        Guid organizationId,
-        string domain,
-        string provider,
-        CancellationToken cancellationToken)
-    {
-        var candidates = maps
-            .Where(map => map.Domain == domain
-                && map.Provider == provider
-                && map.Status == FormDiscoveryMapStatus.Verified
-                && ((map.Scope == FormDiscoveryMapScope.Organization && map.OrganizationId == organizationId)
-                    || (map.Scope == FormDiscoveryMapScope.System && map.OrganizationId == null)))
-            .OrderByDescending(map => map.Scope)
-            .ThenByDescending(map => map.MapVersion)
-            .ThenByDescending(map => map.UpdatedAt);
-
-        await foreach (var map in candidates.AsAsyncEnumerable().WithCancellation(cancellationToken))
+        var normalizedDefinition = definition.CookieOverlays is { Count: 0 }
+            ? definition with { CookieOverlays = null }
+            : definition;
+        var definitionJson = JsonSerializer.Serialize(normalizedDefinition, _serializerOptions);
+        if (Encoding.UTF8.GetByteCount(definitionJson) > _options.MaximumDefinitionBytes)
         {
-            if (IsPublishable(map))
-            {
-                return map;
-            }
+            return false;
         }
 
-        return null;
+        validated = new ValidatedFormDiscoveryMap(
+            domain,
+            loginUrl,
+            provider,
+            normalizedDefinition,
+            definitionJson);
+        return true;
     }
 
-    private static bool IsPublishable(FormDiscoveryMap map)
+    internal bool TryDeserializeDefinition(string definitionJson, out FormDiscoveryMapDefinition definition)
     {
-        if (map.MapVersion < 1 || !FingerprintPattern().IsMatch(map.Fingerprint))
+        definition = null!;
+        if (Encoding.UTF8.GetByteCount(definitionJson) > _options.MaximumDefinitionBytes)
         {
             return false;
         }
 
         try
         {
-            using var document = JsonDocument.Parse(map.DefinitionJson, new JsonDocumentOptions
-            {
-                MaxDepth = 32,
-            });
-            return FingerprintMatches(
-                document.RootElement,
-                map.Domain,
-                map.LoginUrl,
-                map.Fingerprint);
+            definition = JsonSerializer.Deserialize<FormDiscoveryMapDefinition>(
+                definitionJson,
+                _serializerOptions)!;
+            return definition is not null && ValidDefinition(definition);
         }
         catch (JsonException)
         {
@@ -198,146 +155,215 @@ internal static partial class FormDiscoveryMapContract
         }
     }
 
-    private static bool ValidLoginUrl(string value, string domain)
+    internal bool FingerprintMatches(ValidatedFormDiscoveryMap map, string? fingerprint) =>
+        FingerprintPattern().IsMatch(fingerprint ?? string.Empty)
+        && string.Equals(
+            ComputeFingerprint(map),
+            fingerprint,
+            StringComparison.OrdinalIgnoreCase);
+
+    internal string ComputeFingerprint(ValidatedFormDiscoveryMap map)
     {
-        if (Encoding.UTF8.GetByteCount(value) > 2_048
-            || !Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            || uri.Scheme != Uri.UriSchemeHttps
-            || !string.Equals(uri.IdnHost, domain, StringComparison.Ordinal)
-            || !string.IsNullOrEmpty(uri.UserInfo)
-            || !string.IsNullOrEmpty(uri.Fragment)
-            || !ApprovedLoginPaths.Contains(uri.AbsolutePath)
-            || (!string.IsNullOrEmpty(uri.Query) && uri.Query != "?SignIn"))
+        var payload = new FormDiscoveryMapFingerprint(
+            map.Domain,
+            new Uri(map.LoginUrl).AbsolutePath,
+            map.Provider,
+            map.Definition);
+        return Convert.ToHexStringLower(
+            SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(payload, _serializerOptions)));
+    }
+
+    internal async Task<PublishableFormDiscoveryMap?> FindVerifiedAsync(
+        IQueryable<FormDiscoveryMap> maps,
+        string domain,
+        string provider,
+        CancellationToken cancellationToken)
+    {
+        var candidates = maps
+            .Where(map => map.Domain == domain
+                && map.Provider == provider
+                && map.Status == FormDiscoveryMapStatus.Verified)
+            .OrderByDescending(map => map.MapVersion)
+            .ThenByDescending(map => map.UpdatedAt)
+            .Take(_options.MaximumLookupRevisions);
+
+        await foreach (var map in candidates.AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            if (TryPublish(map, out var publication))
+            {
+                return publication;
+            }
+        }
+
+        return null;
+    }
+
+    internal bool TryNormalizeDomain(string? value, out string domain)
+    {
+        domain = string.Empty;
+        var candidate = value?.Trim();
+        if (string.IsNullOrWhiteSpace(candidate))
         {
             return false;
         }
 
-        return uri.IsDefaultPort || uri.Port == 443;
+        try
+        {
+            domain = new IdnMapping().GetAscii(candidate).ToLowerInvariant();
+            return DomainPattern().IsMatch(domain);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
-    private static bool ValidForm(JsonElement form)
+    internal bool TryNormalizeProvider(string? value, out string provider)
     {
-        if (form.ValueKind != JsonValueKind.Object
-            || !Only(form, "version", "steps")
-            || !form.TryGetProperty("version", out var version)
-            || !VersionOne(version)
-            || !form.TryGetProperty("steps", out var steps)
-            || steps.ValueKind != JsonValueKind.Array
-            || steps.GetArrayLength() is < 1 or > 8)
+        provider = value?.Trim().ToLowerInvariant() ?? string.Empty;
+        return provider.Length <= _options.MaximumProviderLength
+            && ProviderPattern().IsMatch(provider);
+    }
+
+    private bool TryNormalizeLoginUrl(string? value, string domain, out string loginUrl)
+    {
+        loginUrl = string.Empty;
+        if (string.IsNullOrWhiteSpace(value)
+            || value != value.Trim()
+            || Encoding.UTF8.GetByteCount(value) > _options.MaximumLoginUrlBytes
+            || !Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || !string.Equals(uri.IdnHost, domain, StringComparison.Ordinal)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment)
+            || !uri.IsDefaultPort)
+        {
+            return false;
+        }
+
+        loginUrl = uri.AbsoluteUri;
+        return Encoding.UTF8.GetByteCount(loginUrl) <= _options.MaximumLoginUrlBytes;
+    }
+
+    private bool TryPublish(FormDiscoveryMap map, out PublishableFormDiscoveryMap publication)
+    {
+        publication = null!;
+        if (map.MapVersion < 1
+            || !FingerprintPattern().IsMatch(map.Fingerprint)
+            || !TryDeserializeDefinition(map.DefinitionJson, out var definition)
+            || !TryValidate(map.Domain, map.LoginUrl, map.Provider, definition, out var validated)
+            || map.Domain != validated.Domain
+            || map.LoginUrl != validated.LoginUrl
+            || map.Provider != validated.Provider
+            || !FingerprintMatches(validated, map.Fingerprint))
+        {
+            return false;
+        }
+
+        publication = new PublishableFormDiscoveryMap(map, definition);
+        return true;
+    }
+
+    private bool ValidDefinition(FormDiscoveryMapDefinition definition) =>
+        definition.Version == 1
+        && definition.Form is not null
+        && ValidForm(definition.Form)
+        && (definition.CookieOverlays is null || ValidOverlays(definition.CookieOverlays));
+
+    private bool ValidForm(FormDiscoveryFormDefinition form)
+    {
+        if (form.Version != 1
+            || form.Steps is null
+            || form.Steps.Count is < 1
+            || form.Steps.Count > _options.MaximumSteps)
         {
             return false;
         }
 
         var fieldCount = 0;
-        var stepIndex = 0;
-        foreach (var step in steps.EnumerateArray())
+        for (var stepIndex = 0; stepIndex < form.Steps.Count; stepIndex++)
         {
-            if (!ValidStep(step, stepIndex, steps.GetArrayLength(), ref fieldCount))
+            if (!ValidStep(form.Steps[stepIndex], stepIndex, form.Steps.Count, ref fieldCount))
             {
                 return false;
             }
-
-            stepIndex++;
         }
 
         return true;
     }
 
-    private static bool ValidStep(JsonElement step, int stepIndex, int stepCount, ref int fieldCount)
+    private bool ValidStep(
+        FormDiscoveryStepDefinition? step,
+        int stepIndex,
+        int stepCount,
+        ref int fieldCount)
     {
-        if (step.ValueKind != JsonValueKind.Object
-            || !Only(step, "fields", "submit", "waitFor")
-            || !step.TryGetProperty("fields", out var fields)
-            || fields.ValueKind != JsonValueKind.Array
-            || fields.GetArrayLength() < 1
-            || !step.TryGetProperty("submit", out var submit)
-            || submit.ValueKind != JsonValueKind.Object
-            || !Only(submit, "action", "selector")
-            || !Selector(submit, "selector")
-            || !submit.TryGetProperty("action", out var action)
-            || action.ValueKind != JsonValueKind.String
-            || action.GetString() is not ("click" or "press-enter"))
+        if (step?.Fields is null
+            || step.Fields.Count < 1
+            || step.Submit is null
+            || !SelectorText(step.Submit.Selector)
+            || step.Submit.Action is not ("click" or "press-enter"))
         {
             return false;
         }
 
         var fieldIds = new HashSet<string>(StringComparer.Ordinal);
         var fieldSelectors = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var field in fields.EnumerateArray())
+        foreach (var field in step.Fields)
         {
             fieldCount++;
-            if (fieldCount > 16
-                || field.ValueKind != JsonValueKind.Object
-                || !Only(field, "entryFieldId", "selector", "control")
-                || !Selector(field, "selector")
-                || !field.TryGetProperty("entryFieldId", out var id)
-                || id.ValueKind != JsonValueKind.String
-                || !fieldIds.Add(id.GetString()!)
-                || !field.TryGetProperty("control", out var control)
-                || control.ValueKind != JsonValueKind.String
-                || !ValidLoginField(id.GetString()!, control.GetString()!))
+            if (fieldCount > _options.MaximumFields
+                || field is null
+                || !SelectorText(field.Selector)
+                || field.EntryFieldId is null
+                || field.EntryFieldId.Length > _options.MaximumFieldIdLength
+                || !FieldIdPattern().IsMatch(field.EntryFieldId)
+                || !fieldIds.Add(field.EntryFieldId)
+                || field.Control is null
+                || !ValidControl(field.Control))
             {
                 return false;
             }
 
-            fieldSelectors.Add(field.GetProperty("selector").GetString()!);
+            fieldSelectors.Add(field.Selector!);
         }
 
-        if (action.GetString() == "press-enter"
-            && !fieldSelectors.Contains(submit.GetProperty("selector").GetString()!))
+        if (step.Submit.Action == "press-enter"
+            && !fieldSelectors.Contains(step.Submit.Selector!))
         {
             return false;
         }
 
-        if (!step.TryGetProperty("waitFor", out var wait))
+        if (step.WaitFor is null)
         {
             return stepIndex == stepCount - 1;
         }
 
-        return wait.ValueKind == JsonValueKind.Object
-            && Only(wait, "selector", "timeoutMs")
-            && Selector(wait, "selector")
-            && (!wait.TryGetProperty("timeoutMs", out var timeout)
-                || (timeout.ValueKind == JsonValueKind.Number
-                    && timeout.TryGetInt32(out var timeoutMs)
-                    && timeoutMs is >= 100 and <= 60_000));
+        return SelectorText(step.WaitFor.Selector)
+            && (step.WaitFor.TimeoutMs is null
+                || step.WaitFor.TimeoutMs >= _options.MinimumWaitTimeoutMilliseconds
+                && step.WaitFor.TimeoutMs <= _options.MaximumWaitTimeoutMilliseconds);
     }
 
-    private static bool ValidOverlays(JsonElement overlays)
+    private bool ValidOverlays(IReadOnlyList<FormDiscoveryCookieOverlay> overlays)
     {
-        if (overlays.ValueKind != JsonValueKind.Array || overlays.GetArrayLength() > 4)
+        if (overlays.Count > _options.MaximumCookieOverlays)
         {
             return false;
         }
 
-        foreach (var overlay in overlays.EnumerateArray())
+        foreach (var overlay in overlays)
         {
-            if (overlay.ValueKind != JsonValueKind.Object
-                || !Only(overlay, "selectors", "dismiss", "disappears", "frame")
-                || !overlay.TryGetProperty("selectors", out var selectors)
-                || selectors.ValueKind != JsonValueKind.Array
-                || selectors.GetArrayLength() is < 1 or > 8
-                || !selectors.EnumerateArray().All(selector =>
-                    selector.ValueKind == JsonValueKind.String && SelectorText(selector.GetString()))
-                || !overlay.TryGetProperty("dismiss", out var dismiss)
-                || dismiss.ValueKind != JsonValueKind.Object
-                || !Only(dismiss, "selector", "action")
-                || !Selector(dismiss, "selector")
-                || !dismiss.TryGetProperty("action", out var action)
-                || action.ValueKind != JsonValueKind.String
-                || action.GetString() != "click")
-            {
-                return false;
-            }
-
-            if (overlay.TryGetProperty("disappears", out var disappears)
-                && (disappears.ValueKind != JsonValueKind.String || !SelectorText(disappears.GetString())))
-            {
-                return false;
-            }
-
-            if (overlay.TryGetProperty("frame", out var frame)
-                && (frame.ValueKind != JsonValueKind.String || frame.GetString() is not ("top" or "same-origin")))
+            if (overlay?.Selectors is null
+                || overlay.Selectors.Count is < 1
+                || overlay.Selectors.Count > _options.MaximumSelectorsPerOverlay
+                || overlay.Selectors.Any(selector => !SelectorText(selector))
+                || overlay.Dismiss is null
+                || !SelectorText(overlay.Dismiss.Selector)
+                || overlay.Dismiss.Action != "click"
+                || overlay.Disappears is not null && !SelectorText(overlay.Disappears)
+                || overlay.Frame is not null and not ("top" or "same-origin"))
             {
                 return false;
             }
@@ -346,32 +372,30 @@ internal static partial class FormDiscoveryMapContract
         return true;
     }
 
-    private static bool Selector(JsonElement value, string name) =>
-        value.TryGetProperty(name, out var item)
-        && item.ValueKind == JsonValueKind.String
-        && SelectorText(item.GetString());
-
-    private static bool SelectorText(string? value) =>
+    private bool SelectorText(string? value) =>
         !string.IsNullOrWhiteSpace(value)
-        && Encoding.UTF8.GetByteCount(value) <= 1_024
+        && Encoding.UTF8.GetByteCount(value) <= _options.MaximumSelectorBytes
         && value == value.Trim()
         && !value.Contains('\0');
 
-    private static bool VersionOne(JsonElement value) =>
-        value.ValueKind == JsonValueKind.Number
-        && value.TryGetInt32(out var number)
-        && number == 1;
+    private static bool ValidControl(string control) =>
+        control is "username" or "password" or "text" or "email" or "tel" or "otp";
 
-    private static bool ValidLoginField(string fieldId, string control) =>
-        (fieldId == "credential.username" && control is "email" or "tel" or "text" or "username")
-        || (fieldId == "credential.password" && control == "password");
+    private sealed record FormDiscoveryMapFingerprint(
+        string Domain,
+        string LoginUrl,
+        string Provider,
+        FormDiscoveryMapDefinition Map);
 
-    private static bool Only(JsonElement value, params string[] keys) =>
-        value.EnumerateObject().All(property => keys.Contains(property.Name, StringComparer.Ordinal));
-
-    [GeneratedRegex("^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$", RegexOptions.CultureInvariant)]
     private static partial Regex DomainPattern();
 
-    [GeneratedRegex("^[a-f0-9]{64}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$", RegexOptions.CultureInvariant)]
+    private static partial Regex ProviderPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9._:-]+$", RegexOptions.CultureInvariant)]
+    private static partial Regex FieldIdPattern();
+
+    [GeneratedRegex("^[a-f0-9]{64}$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex FingerprintPattern();
 }

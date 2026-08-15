@@ -16,7 +16,6 @@ internal sealed class AgentsDomainWriteContext(
     public IQueryable<FormDiscoveryMap> FormDiscoveryMaps => Track<FormDiscoveryMap>();
 
     public async Task<int> LockAndLoadNextFormDiscoveryMapVersionAsync(
-        Guid organizationId,
         string domain,
         string provider,
         CancellationToken cancellationToken)
@@ -25,14 +24,12 @@ internal sealed class AgentsDomainWriteContext(
             $"""
              SELECT 1 AS "Value"
              FROM pg_advisory_xact_lock(
-                 hashtextextended({organizationId.ToString("N") + ":" + domain + ":" + provider}, 641084))
+                 hashtextextended({domain + ":" + provider}, 641084))
              """)
             .SingleAsync(cancellationToken);
 
         var latestVersion = await FormDiscoveryMaps
-            .Where(x => x.Scope == FormDiscoveryMapScope.Organization
-                && x.OrganizationId == organizationId
-                && x.Domain == domain
+            .Where(x => x.Domain == domain
                 && x.Provider == provider)
             .Select(x => (int?)x.MapVersion)
             .MaxAsync(cancellationToken) ?? 0;

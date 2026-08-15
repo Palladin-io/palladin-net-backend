@@ -226,8 +226,7 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("DefinitionJson")
                         .IsRequired()
-                        .HasMaxLength(65536)
-                        .HasColumnType("character varying(65536)")
+                        .HasColumnType("text")
                         .HasColumnName("definition_json");
 
                     b.Property<string>("Domain")
@@ -238,33 +237,23 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Fingerprint")
                         .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
                         .HasColumnName("fingerprint");
 
                     b.Property<string>("LoginUrl")
                         .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)")
+                        .HasColumnType("text")
                         .HasColumnName("login_url");
 
                     b.Property<int>("MapVersion")
                         .HasColumnType("integer")
                         .HasColumnName("map_version");
 
-                    b.Property<Guid?>("OrganizationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("organization_id");
-
                     b.Property<string>("Provider")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("text")
                         .HasColumnName("provider");
-
-                    b.Property<int>("Scope")
-                        .HasColumnType("integer")
-                        .HasColumnName("scope");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer")
@@ -281,14 +270,9 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Domain", "Provider", "MapVersion")
-                        .IsUnique()
-                        .HasFilter("\"scope\" = 0");
+                        .IsUnique();
 
-                    b.HasIndex("OrganizationId", "Domain", "Provider", "MapVersion")
-                        .IsUnique()
-                        .HasFilter("\"scope\" = 1");
-
-                    b.HasIndex("Scope", "OrganizationId", "Domain", "Provider", "Status", "MapVersion");
+                    b.HasIndex("Domain", "Provider", "Status", "MapVersion");
 
                     b.ToTable("form_discovery_maps", (string)null);
                 });

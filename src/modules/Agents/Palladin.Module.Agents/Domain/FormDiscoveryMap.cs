@@ -9,17 +9,9 @@ internal enum FormDiscoveryMapStatus
     Verified = 2,
 }
 
-internal enum FormDiscoveryMapScope
-{
-    System = 0,
-    Organization = 1,
-}
-
 internal sealed class FormDiscoveryMap
 {
     public Guid Id { get; private set; }
-    public FormDiscoveryMapScope Scope { get; private set; }
-    public Guid? OrganizationId { get; private set; }
     public Guid? SubmittedByAgentId { get; private set; }
     public string Domain { get; private set; } = string.Empty;
     public string LoginUrl { get; private set; } = string.Empty;
@@ -34,12 +26,10 @@ internal sealed class FormDiscoveryMap
     private FormDiscoveryMap() { }
 
     internal static FormDiscoveryMap CreateCandidate(
-        Guid id, Guid organizationId, Guid agentId, string domain, string loginUrl,
+        Guid id, Guid agentId, string domain, string loginUrl,
         string provider, string fingerprint, string definitionJson, int mapVersion, Instant now) => new()
         {
             Id = id,
-            Scope = FormDiscoveryMapScope.Organization,
-            OrganizationId = organizationId,
             SubmittedByAgentId = agentId,
             Domain = domain,
             LoginUrl = loginUrl,
@@ -48,25 +38,6 @@ internal sealed class FormDiscoveryMap
             MapVersion = mapVersion,
             DefinitionJson = definitionJson,
             Status = FormDiscoveryMapStatus.Candidate,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-
-    internal static FormDiscoveryMap CreateSystemVerified(
-        Guid id, string domain, string loginUrl, string provider, string fingerprint,
-        string definitionJson, int mapVersion, Instant now) => new()
-        {
-            Id = id,
-            Scope = FormDiscoveryMapScope.System,
-            OrganizationId = null,
-            SubmittedByAgentId = null,
-            Domain = domain,
-            LoginUrl = loginUrl,
-            Provider = provider,
-            Fingerprint = fingerprint,
-            MapVersion = mapVersion,
-            DefinitionJson = definitionJson,
-            Status = FormDiscoveryMapStatus.Verified,
             CreatedAt = now,
             UpdatedAt = now,
         };

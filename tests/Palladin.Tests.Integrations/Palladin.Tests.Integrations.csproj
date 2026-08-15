@@ -13,8 +13,8 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
         <PackageReference Include="NodaTime.Testing" Version="3.3.0" />
         <PackageReference Include="NSubstitute" Version="5.3.0" />
-        <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
-        <PackageReference Include="Testcontainers.LocalStack" Version="4.10.0" />
+        <PackageReference Include="Testcontainers.PostgreSql" Version="4.14.0" />
+        <PackageReference Include="Testcontainers.LocalStack" Version="4.14.0" />
         <PackageReference Include="WireMock.Net" Version="1.8.7" />
         <PackageReference Include="Scriban.Signed" Version="7.2.5" />
         <PackageReference Include="xunit.v3" Version="3.2.2" />

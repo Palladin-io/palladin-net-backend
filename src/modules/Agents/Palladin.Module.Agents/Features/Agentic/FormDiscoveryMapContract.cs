@@ -139,8 +139,9 @@ internal static partial class FormDiscoveryMapContract
         Guid organizationId,
         string domain,
         string provider,
-        CancellationToken cancellationToken) =>
-        await maps
+        CancellationToken cancellationToken)
+    {
+        var candidates = maps
             .Where(map => map.Domain == domain
                 && map.Provider == provider
                 && map.Status == FormDiscoveryMapStatus.Verified
@@ -148,8 +149,43 @@ internal static partial class FormDiscoveryMapContract
                     || (map.Scope == FormDiscoveryMapScope.System && map.OrganizationId == null)))
             .OrderByDescending(map => map.Scope)
             .ThenByDescending(map => map.MapVersion)
-            .ThenByDescending(map => map.UpdatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ThenByDescending(map => map.UpdatedAt);
+
+        await foreach (var map in candidates.AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            if (IsPublishable(map))
+            {
+                return map;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsPublishable(FormDiscoveryMap map)
+    {
+        if (map.MapVersion < 1 || !FingerprintPattern().IsMatch(map.Fingerprint))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(map.DefinitionJson, new JsonDocumentOptions
+            {
+                MaxDepth = 32,
+            });
+            return FingerprintMatches(
+                document.RootElement,
+                map.Domain,
+                map.LoginUrl,
+                map.Fingerprint);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private static bool ValidLoginUrl(string value, string domain)
     {
@@ -322,4 +358,7 @@ internal static partial class FormDiscoveryMapContract
 
     [GeneratedRegex("^[A-Za-z0-9._:-]{1,128}$", RegexOptions.CultureInvariant)]
     private static partial Regex FieldIdPattern();
+
+    [GeneratedRegex("^[a-f0-9]{64}$", RegexOptions.CultureInvariant)]
+    private static partial Regex FingerprintPattern();
 }

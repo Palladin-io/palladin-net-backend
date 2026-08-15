@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Palladin.Module.Agents.Domain;
 using Palladin.Module.Agents.Features;
 using Palladin.Module.Agents.Infrastructure.Persistence;
@@ -92,7 +95,7 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             domain,
             $"https://{domain}/login",
             "playwright",
-            new string('a', 64),
+            Fingerprint(domain, $"https://{domain}/login"),
             SafeDefinition,
             3,
             now);
@@ -101,9 +104,9 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             organizationId,
             Guid.NewGuid(),
             domain,
-            $"https://{domain}/sign-in",
+            $"https://{domain}/login",
             "playwright",
-            new string('b', 64),
+            Fingerprint(domain, $"https://{domain}/login"),
             SafeDefinition,
             1,
             now.Plus(Duration.FromSeconds(1)));
@@ -137,6 +140,68 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
         beforeVerification.ShouldNotBeNull().Scope.ShouldBe(FormDiscoveryMapScope.System);
         afterVerification.ShouldNotBeNull().Scope.ShouldBe(FormDiscoveryMapScope.Organization);
         afterVerification.Id.ShouldBe(organizationMap.Id);
+    }
+
+    [Fact]
+    public async Task When_VerifiedRowsFailPublicationContract_Then_LookupFallsBackToSafeSystemRevision()
+    {
+        // Given
+        var organizationId = Guid.NewGuid();
+        var now = SystemClock.Instance.GetCurrentInstant();
+        var domain = $"fallback-{Guid.NewGuid():N}.example.net";
+        var loginUrl = $"https://{domain}/login";
+        var systemMap = FormDiscoveryMap.CreateSystemVerified(
+            Guid.NewGuid(),
+            domain,
+            loginUrl,
+            "playwright",
+            Fingerprint(domain, loginUrl),
+            SafeDefinition,
+            1,
+            now);
+        var mismatched = FormDiscoveryMap.CreateCandidate(
+            Guid.NewGuid(),
+            organizationId,
+            Guid.NewGuid(),
+            domain,
+            loginUrl,
+            "playwright",
+            new string('a', 64),
+            SafeDefinition,
+            1,
+            now.Plus(Duration.FromSeconds(1)));
+        mismatched.MarkVerified(now.Plus(Duration.FromSeconds(2)));
+        var malformed = FormDiscoveryMap.CreateCandidate(
+            Guid.NewGuid(),
+            organizationId,
+            Guid.NewGuid(),
+            domain,
+            loginUrl,
+            "playwright",
+            new string('b', 64),
+            "{not-json",
+            2,
+            now.Plus(Duration.FromSeconds(3)));
+        malformed.MarkVerified(now.Plus(Duration.FromSeconds(4)));
+        await using var seedScope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = seedScope.ServiceProvider.GetRequiredService<AgentsDomainWriteContext>();
+        writeContext.Add(systemMap);
+        writeContext.Add(mismatched);
+        writeContext.Add(malformed);
+        await writeContext.CommitAsync(TestContext.Current.CancellationToken);
+
+        // When
+        await using var lookupScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = lookupScope.ServiceProvider.GetRequiredService<AgentsDomainReadContext>();
+        var result = await FormDiscoveryMapContract.FindVerifiedAsync(
+            readContext.FormDiscoveryMaps,
+            organizationId,
+            domain,
+            "playwright",
+            TestContext.Current.CancellationToken);
+
+        // Then
+        result.ShouldNotBeNull().Id.ShouldBe(systemMap.Id);
     }
 
     [Theory]
@@ -207,4 +272,16 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             SafeDefinition,
             version,
             SystemClock.Instance.GetCurrentInstant());
+
+    private static string Fingerprint(string domain, string loginUrl)
+    {
+        using var definition = JsonDocument.Parse(SafeDefinition);
+        var payload = JsonSerializer.Serialize(new
+        {
+            domain,
+            loginUrl = new Uri(loginUrl).AbsolutePath,
+            form = definition.RootElement.GetProperty("form"),
+        });
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
+    }
 }

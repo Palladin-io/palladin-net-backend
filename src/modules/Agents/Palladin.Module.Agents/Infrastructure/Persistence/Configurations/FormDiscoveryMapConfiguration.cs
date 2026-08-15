@@ -13,6 +13,7 @@ internal sealed class FormDiscoveryMapConfiguration : IEntityTypeConfiguration<F
         builder.ToTable("form_discovery_maps");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id");
+        builder.Property(x => x.Scope).HasColumnName("scope");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id");
         builder.Property(x => x.SubmittedByAgentId).HasColumnName("submitted_by_agent_id");
         builder.Property(x => x.Domain).HasColumnName("domain").HasMaxLength(253).IsRequired();
@@ -24,7 +25,12 @@ internal sealed class FormDiscoveryMapConfiguration : IEntityTypeConfiguration<F
         builder.Property(x => x.Status).HasColumnName("status");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at");
-        builder.HasIndex(x => new { x.OrganizationId, x.Domain, x.Provider, x.Status });
-        builder.HasIndex(x => new { x.OrganizationId, x.Domain, x.Provider, x.MapVersion }).IsUnique();
+        builder.HasIndex(x => new { x.Scope, x.OrganizationId, x.Domain, x.Provider, x.Status, x.MapVersion });
+        builder.HasIndex(x => new { x.OrganizationId, x.Domain, x.Provider, x.MapVersion })
+            .IsUnique()
+            .HasFilter("\"scope\" = 1");
+        builder.HasIndex(x => new { x.Domain, x.Provider, x.MapVersion })
+            .IsUnique()
+            .HasFilter("\"scope\" = 0");
     }
 }

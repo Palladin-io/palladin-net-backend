@@ -30,7 +30,10 @@ internal sealed class AgentsDomainWriteContext(
             .SingleAsync(cancellationToken);
 
         var latestVersion = await FormDiscoveryMaps
-            .Where(x => x.OrganizationId == organizationId && x.Domain == domain && x.Provider == provider)
+            .Where(x => x.Scope == FormDiscoveryMapScope.Organization
+                && x.OrganizationId == organizationId
+                && x.Domain == domain
+                && x.Provider == provider)
             .Select(x => (int?)x.MapVersion)
             .MaxAsync(cancellationToken) ?? 0;
         return latestVersion + 1;

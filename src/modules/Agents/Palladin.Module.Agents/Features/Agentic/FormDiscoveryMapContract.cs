@@ -20,16 +20,6 @@ internal static partial class FormDiscoveryMapContract
         "playwright",
     };
 
-    private static readonly HashSet<string> Controls = new(StringComparer.Ordinal)
-    {
-        "email",
-        "otp",
-        "password",
-        "tel",
-        "text",
-        "username",
-    };
-
     internal static bool TryNormalizeDomain(string? value, out string domain)
     {
         domain = value?.Trim().ToLowerInvariant() ?? string.Empty;
@@ -259,11 +249,10 @@ internal static partial class FormDiscoveryMapContract
                 || !Selector(field, "selector")
                 || !field.TryGetProperty("entryFieldId", out var id)
                 || id.ValueKind != JsonValueKind.String
-                || !FieldIdPattern().IsMatch(id.GetString()!)
                 || !fieldIds.Add(id.GetString()!)
                 || !field.TryGetProperty("control", out var control)
                 || control.ValueKind != JsonValueKind.String
-                || !Controls.Contains(control.GetString()!))
+                || !ValidLoginField(id.GetString()!, control.GetString()!))
             {
                 return false;
             }
@@ -350,14 +339,15 @@ internal static partial class FormDiscoveryMapContract
         && value.TryGetInt32(out var number)
         && number == 1;
 
+    private static bool ValidLoginField(string fieldId, string control) =>
+        (fieldId == "credential.username" && control is "email" or "tel" or "text" or "username")
+        || (fieldId == "credential.password" && control == "password");
+
     private static bool Only(JsonElement value, params string[] keys) =>
         value.EnumerateObject().All(property => keys.Contains(property.Name, StringComparer.Ordinal));
 
     [GeneratedRegex("^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", RegexOptions.CultureInvariant)]
     private static partial Regex DomainPattern();
-
-    [GeneratedRegex("^[A-Za-z0-9._:-]{1,128}$", RegexOptions.CultureInvariant)]
-    private static partial Regex FieldIdPattern();
 
     [GeneratedRegex("^[a-f0-9]{64}$", RegexOptions.CultureInvariant)]
     private static partial Regex FingerprintPattern();

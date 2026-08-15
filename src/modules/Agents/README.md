@@ -43,7 +43,10 @@ repository deliberately contains no provider catalog or production seed data.
 - Deactivation is staged: Agents first publishes `AgentDeactivationRequestedEvent`; Vault rotates the VDK and removes grant/discovery envelopes in each affected Vault, then publishes `AgentDeactivationCompletedEvent`. A completion matching the active `DeactivationRequestId` moves the Agent to `Deactivated`; timestamp ordering silently rejects a stale completion for any previous request, so delayed duplicates cannot override reactivation. Request identity remains authoritative despite transport/database timestamp precision differences. A `Deactivating` Agent cannot receive new grants or Discovery provisioning, while its existing access remains usable for Vaults whose rotation has not committed. The legacy `AgentDeactivatedEvent` cleanup remains bounded and resumable for compatibility. `AgentDeletedEvent` hard-removes the tombstone and Agent replica.
 - Form-map lookup requires an explicit provider and returns the highest verified Organization revision
   before considering a verified System revision. Candidate/observed Organization maps never shadow a
-  System map. Domain and login host must match exactly after normalization and use HTTPS.
+  System map. Every returned revision is reparsed and must pass the full safety/fingerprint contract;
+  an invalid newer row is skipped in favor of an older safe revision. Domain and login host must match
+  exactly after normalization and use HTTPS. Maps may reference only `credential.username` with a
+  username-compatible control and `credential.password` with `password`.
 - System catalog SQL is an operational deployment artifact owned by the private Palladin repository.
   It is idempotent, retains older revisions, rejects same-version fingerprint conflicts, and never
   updates or deletes Organization-scoped rows.

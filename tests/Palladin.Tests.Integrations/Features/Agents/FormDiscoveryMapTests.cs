@@ -227,6 +227,25 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             "https://example.org/login").ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("private.credit-card-number", "password")]
+    [InlineData("credential.password", "username")]
+    [InlineData("credential.username", "password")]
+    public void When_FieldIsNotAnApprovedLoginFieldControlPair_Then_MapIsUnsafe(
+        string fieldId,
+        string control)
+    {
+        using var definition = JsonDocument.Parse(
+            SafeDefinition
+                .Replace("credential.password", fieldId)
+                .Replace("\"control\": \"password\"", $"\"control\": \"{control}\""));
+
+        FormDiscoveryMapContract.IsSafe(
+            definition.RootElement,
+            "example.org",
+            "https://example.org/login").ShouldBeFalse();
+    }
+
     [Fact]
     public void When_DefinitionMatchesTheBoundedContract_Then_MapIsSafe()
     {

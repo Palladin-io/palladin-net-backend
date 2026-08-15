@@ -149,9 +149,6 @@ internal sealed class VaultDomainWriteContext(
                  AS integer) AS "Value"
              """);
 
-    public Task FlushAsync(CancellationToken cancellationToken = default) =>
-        writeContext.SaveChangesAsync(cancellationToken);
-
     public IQueryable<VaultKeyRotationPreparedItem> RequestedRotationItems(
         Guid organizationId,
         Guid vaultId,
@@ -179,6 +176,16 @@ internal sealed class VaultDomainWriteContext(
             || writeContext.ChangeTracker.Entries<Grant>().Count() > maximumGrants)
         {
             throw new InvalidOperationException("Vault key rotation exceeded its bounded EF tracking page.");
+        }
+    }
+
+    public void EnsureFullGrantCommitTrackingIsBounded(int maximumGrants)
+    {
+        if (writeContext.ChangeTracker.Entries<GranularGrant>().Count() > maximumGrants
+            || writeContext.ChangeTracker.Entries<GrantEntryScope>().Count() > maximumGrants
+            || writeContext.ChangeTracker.Entries<GrantEntryEnvelope>().Count() > maximumGrants)
+        {
+            throw new InvalidOperationException("Full grant commit exceeded its bounded granular grant page.");
         }
     }
 

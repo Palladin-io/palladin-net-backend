@@ -83,6 +83,36 @@ internal static class GrantCoverageQueries
                 && g.Status == GrantStatus.Active)
             .ToListAsync(ct);
 
+    public static Task<List<GranularGrant>> LoadActiveGranularInVaultPageAsync(
+        this VaultDomainWriteContext ctx,
+        Guid agentId,
+        uint agentAccessEpoch,
+        Guid vaultId,
+        Guid? afterGrantId,
+        int pageSize,
+        CancellationToken ct)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageSize);
+        var query = ctx.Grants
+            .OfType<GranularGrant>()
+            .Include(g => g.GrantEntryScopes)
+            .ThenInclude(scope => scope.Envelope)
+            .Where(g =>
+                g.AgentId == agentId
+                && g.AgentAccessEpoch == agentAccessEpoch
+                && g.VaultId == vaultId
+                && g.Status == GrantStatus.Active);
+        if (afterGrantId is not null)
+        {
+            query = query.Where(g => g.Id.CompareTo(afterGrantId.Value) > 0);
+        }
+
+        return query
+            .OrderBy(g => g.Id)
+            .Take(pageSize)
+            .ToListAsync(ct);
+    }
+
     // The agent's pending GRANULAR request for this exact entry, if any — resolved (approved) instead of
     // creating a duplicate active grant, so the pending list clears. Read on the write context so the
     // caller can mutate the returned tracked entity.

@@ -21,6 +21,48 @@ public sealed class FullGrantPreparationTests(ApiFactory apiFactory) : TestBase
     private const int QueryLimit = 5;
     private const GrantMethods Methods = GrantMethods.Get | GrantMethods.Exec | GrantMethods.Inject;
 
+    [Fact]
+    public async Task ActiveGranularGrantPages_UseDeterministicBoundedKeysetPagination()
+    {
+        // Given
+        var setup = await ArrangeAsync();
+        var entries = await apiFactory.Services.SeedEntriesAsync(setup.VaultId, setup.UserId, 3);
+        var grants = entries
+            .Select(entry => GrantFaker.CreateGranular(
+                vaultId: setup.VaultId,
+                organizationId: setup.OrganizationId,
+                agentId: setup.AgentId,
+                entryId: entry.Id).Generate())
+            .ToArray();
+        await using var seedScope = apiFactory.Services.CreateAsyncScope();
+        var seedContext = seedScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        seedContext.Grants.AddRange(grants);
+        await seedContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await using var queryScope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = queryScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+
+        // When
+        var firstPage = await writeContext.LoadActiveGranularInVaultPageAsync(
+            setup.AgentId,
+            1,
+            setup.VaultId,
+            null,
+            2,
+            TestContext.Current.CancellationToken);
+        var secondPage = await writeContext.LoadActiveGranularInVaultPageAsync(
+            setup.AgentId,
+            1,
+            setup.VaultId,
+            firstPage[^1].Id,
+            2,
+            TestContext.Current.CancellationToken);
+
+        // Then
+        firstPage.Count.ShouldBe(2);
+        secondPage.Count.ShouldBe(1);
+        firstPage.Select(x => x.Id).Concat(secondPage.Select(x => x.Id)).Distinct().Count().ShouldBe(3);
+    }
+
     [Theory]
     [InlineData(GrantMethods.Get)]
     [InlineData(GrantMethods.Exec)]
@@ -103,6 +145,59 @@ public sealed class FullGrantPreparationTests(ApiFactory apiFactory) : TestBase
         grant.GrantEntryScopes.Count.ShouldBe(501);
         grant.GrantEntryScopes.ShouldAllBe(x => x.Envelope != null);
         (await db.FullGrantPreparations.AnyAsync(x => x.Id == grantId)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task MoreThanOneGranularGrantPage_IsSupersededAtomicallyByPreparedFullGrant()
+    {
+        // Given
+        var setup = await ArrangeAsync();
+        var entries = await apiFactory.Services.SeedEntriesAsync(setup.VaultId, setup.UserId, 101);
+        var granularGrants = entries.Select(entry =>
+        {
+            var grant = GrantFaker.CreateGranular(
+                vaultId: setup.VaultId,
+                organizationId: setup.OrganizationId,
+                agentId: setup.AgentId,
+                entryId: entry.Id).Generate();
+            grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
+                setup.OrganizationId,
+                setup.VaultId,
+                grant.Id,
+                entry.Id,
+                grant.Methods));
+            return grant;
+        }).ToArray();
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var seedContext = seedScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            seedContext.Grants.AddRange(granularGrants);
+            await seedContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var grantId = Guid.NewGuid();
+        await StartAsync(setup, grantId);
+        await AppendAllAsync(setup, grantId);
+
+        // When
+        var (response, _) = await setup.Client.POSTAsync<
+            CommitFullGrantPreparationEndpoint,
+            CommitFullGrantPreparationRequest,
+            CreateGrantResponse>(new CommitFullGrantPreparationRequest
+            {
+                VaultId = setup.VaultId,
+                GrantId = grantId,
+            });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var assertionScope = apiFactory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var granularIds = granularGrants.Select(x => x.Id).ToArray();
+        (await db.Grants.CountAsync(x => granularIds.Contains(x.Id) && x.Status == GrantStatus.Revoked))
+            .ShouldBe(101);
+        (await db.GrantEntryEnvelopes.CountAsync(x => granularIds.Contains(x.GrantId))).ShouldBe(0);
+        (await db.Grants.OfType<FullGrant>().CountAsync(x => x.Id == grantId && x.Status == GrantStatus.Active))
+            .ShouldBe(1);
     }
 
     [Fact]

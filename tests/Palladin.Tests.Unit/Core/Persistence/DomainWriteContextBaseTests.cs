@@ -38,6 +38,38 @@ public sealed class DomainWriteContextBaseTests
         calls.ShouldBe(["save", "commit", "publish"]);
     }
 
+    [Fact]
+    public async Task When_FlushedPagesAreCleared_Then_PublishesBufferedEventsAfterTransactionCommit()
+    {
+        // Given
+        var calls = new List<string>();
+        await using var dbContext = new TestDbContext(calls);
+        var publisher = Substitute.For<IEventPublisher>();
+        publisher.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("publish");
+                return Task.CompletedTask;
+            });
+        var transaction = Substitute.For<IDbContextTransaction>();
+        transaction.CommitAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("commit");
+                return Task.CompletedTask;
+            });
+        var context = new TestDomainWriteContext(dbContext, [publisher]);
+        context.Add(TestEntity.Create());
+
+        // When
+        await context.FlushAsync(TestContext.Current.CancellationToken);
+        context.Clear();
+        await context.CommitAsync(transaction, TestContext.Current.CancellationToken);
+
+        // Then
+        calls.ShouldBe(["save", "save", "commit", "publish"]);
+    }
+
     private sealed record TestEvent : IEvent;
 
     private sealed class TestEntity : EventEntityBase

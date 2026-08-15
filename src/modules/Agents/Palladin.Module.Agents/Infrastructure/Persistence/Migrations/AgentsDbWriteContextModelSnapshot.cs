@@ -276,6 +276,9 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OrganizationId", "Domain", "Provider", "MapVersion")
+                        .IsUnique();
+
                     b.HasIndex("OrganizationId", "Domain", "Provider", "Status");
 
                     b.ToTable("form_discovery_maps", (string)null);

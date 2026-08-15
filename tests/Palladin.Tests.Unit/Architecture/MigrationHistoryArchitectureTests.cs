@@ -36,6 +36,25 @@ public sealed class MigrationHistoryArchitectureTests
     }
 
     [Fact]
+    public void FormDiscoveryMaps_ShouldBeIntroducedByAnIncrementalAgentsMigration()
+    {
+        var root = FindRepositoryRoot();
+        File.ReadAllText(Directory.EnumerateFiles(GetMigrationsDirectory(root, "Agents"), "*_Initial.cs").Single())
+            .ShouldNotContain("form_discovery_maps");
+        var migrationFiles = Directory.EnumerateFiles(GetMigrationsDirectory(root, "Agents"), "*.cs")
+            .Where(path => !path.EndsWith(".Designer.cs", StringComparison.Ordinal)
+                           && !Path.GetFileName(path).EndsWith("_Initial.cs", StringComparison.Ordinal)
+                           && !path.EndsWith("ModelSnapshot.cs", StringComparison.Ordinal))
+            .ToList();
+
+        migrationFiles.ShouldContain(
+            path => File.ReadAllText(path).Contains(
+                "form_discovery_maps",
+                StringComparison.Ordinal),
+            "the approved Agents Initial migration is immutable after the pre-production squash");
+    }
+
+    [Fact]
     public void PersistenceModelAndMigrations_ShouldNeverDeclareDatabaseValidationOrTriggers()
     {
         var root = FindRepositoryRoot();

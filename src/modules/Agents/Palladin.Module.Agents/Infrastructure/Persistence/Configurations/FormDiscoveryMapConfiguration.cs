@@ -25,5 +25,6 @@ internal sealed class FormDiscoveryMapConfiguration : IEntityTypeConfiguration<F
         builder.Property(x => x.CreatedAt).HasColumnName("created_at");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         builder.HasIndex(x => new { x.OrganizationId, x.Domain, x.Provider, x.Status });
+        builder.HasIndex(x => new { x.OrganizationId, x.Domain, x.Provider, x.MapVersion }).IsUnique();
     }
 }

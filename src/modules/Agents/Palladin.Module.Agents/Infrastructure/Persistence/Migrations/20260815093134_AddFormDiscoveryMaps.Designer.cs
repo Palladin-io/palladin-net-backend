@@ -13,8 +13,8 @@ using Palladin.Module.Agents.Infrastructure.Persistence;
 namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AgentsDbWriteContext))]
-    [Migration("20260727145344_Initial")]
-    partial class Initial
+    [Migration("20260815093134_AddFormDiscoveryMaps")]
+    partial class AddFormDiscoveryMaps
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -214,6 +214,77 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId");
 
                     b.ToTable("api_keys", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Agents.Domain.FormDiscoveryMap", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("character varying(65536)")
+                        .HasColumnName("definition_json");
+
+                    b.Property<string>("Domain")
+                        .IsRequired()
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)")
+                        .HasColumnName("domain");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<string>("LoginUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("login_url");
+
+                    b.Property<int>("MapVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("map_version");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("provider");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("SubmittedByAgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("submitted_by_agent_id");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Domain", "Provider", "MapVersion")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "Domain", "Provider", "Status");
+
+                    b.ToTable("form_discovery_maps", (string)null);
                 });
 
             modelBuilder.Entity("Palladin.Module.Agents.Domain.User", b =>

@@ -196,12 +196,21 @@ internal sealed class CommitFullGrantPreparationEndpoint(
             domainWriteContext.Clear();
         }
 
-        var completedGrant = await domainWriteContext.Grants.OfType<FullGrant>()
-            .SingleAsync(x => x.Id == req.GrantId, ct);
-        var superseded = await domainWriteContext.LoadActiveGranularInVaultAsync(
-            preparation.AgentId, preparation.AgentAccessEpoch, req.VaultId, ct);
-        if (superseded.Count > 0)
+        Guid? afterGrantId = null;
+        while (true)
         {
+            var superseded = await domainWriteContext.LoadActiveGranularInVaultPageAsync(
+                preparation.AgentId,
+                preparation.AgentAccessEpoch,
+                req.VaultId,
+                afterGrantId,
+                cryptoOptions.Value.MaxFullGrantPreparationBatchEntries,
+                ct);
+            if (superseded.Count == 0)
+            {
+                break;
+            }
+
             var entryIds = superseded.Select(x => x.EntryId).Distinct().ToArray();
             var namesByEntry = await domainReadContext.ResolveForSupersedeAsync(
                 preparation.AgentId, req.VaultId, entryIds, ct);
@@ -209,8 +218,16 @@ internal sealed class CommitFullGrantPreparationEndpoint(
             {
                 granular.RevokeBySystem(namesByEntry[granular.EntryId], now);
             }
+
+            afterGrantId = superseded[^1].Id;
+            domainWriteContext.EnsureFullGrantCommitTrackingIsBounded(
+                cryptoOptions.Value.MaxFullGrantPreparationBatchEntries);
+            await domainWriteContext.FlushAsync(ct);
+            domainWriteContext.Clear();
         }
 
+        var completedGrant = await domainWriteContext.Grants.OfType<FullGrant>()
+            .SingleAsync(x => x.Id == req.GrantId, ct);
         completedGrant.CompletePreparation(
             await domainReadContext.ResolveAsync(
                 preparation.AgentId, null, req.VaultId, userId, ct),

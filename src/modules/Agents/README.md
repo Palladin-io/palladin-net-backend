@@ -23,7 +23,8 @@ bounded `candidate` maps; publication as `verified` is never agent-controlled.
 - **Agent** — an AI client; `AgentStatus` Pending→Active→Deactivating→Deactivated; carries versioned X25519 recipient identity plus an Ed25519 request-signing public key. Active deactivation is identified by a durable request id. Emits a single `AgentUpsertedEvent` per unit of work via `AddOrReplaceEvent`.
 - **ApiKey** — credential for agent auth; stored as a hash (`pl_` prefix) plus a 4-char suffix for display.
 - **FormDiscoveryMap** — versioned login structure with no credentials, cookie values or executable
-  code. Cookie/CMP data is limited to bounded same-origin selector clicks.
+  code. Cookie/CMP data is limited to bounded same-origin selector clicks. Candidate versions are
+  serialized per Organization, domain and provider and protected by a matching unique sequence key.
 - **User** — read-model replica synced from Identity.
 
 ## Contracts (namespaces / types)

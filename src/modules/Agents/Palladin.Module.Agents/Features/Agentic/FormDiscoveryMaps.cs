@@ -58,14 +58,18 @@ internal sealed class SubmitFormDiscoveryMapEndpoint(
         if (agent is null) { await Send.UnauthorizedAsync(ct); return; }
         if (!MapSafety.IsSafe(req.Map, req.Domain)) { AddError(r => r.Map, "The map contains unsupported or unsafe fields."); await Send.ErrorsAsync(400, ct); return; }
 
+        var domain = req.Domain.ToLowerInvariant();
         var now = clock.GetCurrentInstant();
-        var latestVersion = await readContext.FormDiscoveryMaps
-            .Where(x => x.OrganizationId == agent.OrganizationId && x.Domain == req.Domain.ToLowerInvariant() && x.Provider == req.Provider)
-            .Select(x => (int?)x.MapVersion).MaxAsync(ct) ?? 0;
+        await using var transaction = await writeContext.BeginTransactionAsync(ct);
+        var mapVersion = await writeContext.LockAndLoadNextFormDiscoveryMapVersionAsync(
+            agent.OrganizationId,
+            domain,
+            req.Provider,
+            ct);
         var map = FormDiscoveryMap.CreateCandidate(guidProvider.Generate(), agent.OrganizationId, agentId.Value,
-            req.Domain.ToLowerInvariant(), req.LoginUrl, req.Provider, req.Fingerprint.ToLowerInvariant(), req.Map.GetRawText(), latestVersion + 1, now);
+            domain, req.LoginUrl, req.Provider, req.Fingerprint.ToLowerInvariant(), req.Map.GetRawText(), mapVersion, now);
         writeContext.Add(map);
-        await writeContext.CommitAsync(ct);
+        await writeContext.CommitAsync(transaction, ct);
         await Send.OkAsync(new SubmitFormDiscoveryMapResponse(map.Id, map.MapVersion, "candidate", now), ct);
     }
 }

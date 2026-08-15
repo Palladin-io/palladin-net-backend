@@ -10,6 +10,8 @@ public abstract class DomainWriteContextBase(
     DbContext writeContext,
     IEnumerable<IEventPublisher> eventPublisher)
 {
+    private readonly List<IEvent> _pendingEvents = [];
+
     protected IQueryable<TEntity> Track<TEntity>() where TEntity : class => writeContext.Set<TEntity>();
 
     public void Add(object entity) => writeContext.Add(entity);
@@ -47,9 +49,8 @@ public abstract class DomainWriteContextBase(
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         var changes = writeContext.ChangeTracker.Entries().ToList();
-        var events = GetEvents(changes);
-
         await writeContext.SaveChangesAsync(cancellationToken);
+        var events = DrainEvents(changes);
 
         await PublishEventsAsync(events, cancellationToken);
     }
@@ -59,12 +60,18 @@ public abstract class DomainWriteContextBase(
         CancellationToken cancellationToken = default)
     {
         var changes = writeContext.ChangeTracker.Entries().ToList();
-        var events = GetEvents(changes);
-
         await writeContext.SaveChangesAsync(cancellationToken);
+        var events = DrainEvents(changes);
         await transaction.CommitAsync(cancellationToken);
 
         await PublishEventsAsync(events, cancellationToken);
+    }
+
+    public async Task FlushAsync(CancellationToken cancellationToken = default)
+    {
+        var changes = writeContext.ChangeTracker.Entries().ToList();
+        await writeContext.SaveChangesAsync(cancellationToken);
+        _pendingEvents.AddRange(GetEvents(changes));
     }
 
     private async Task PublishEventsAsync(
@@ -90,6 +97,14 @@ public abstract class DomainWriteContextBase(
                 }
             )
             .ToList();
+
+    private List<IEvent> DrainEvents(List<EntityEntry> changes)
+    {
+        var events = new List<IEvent>(_pendingEvents);
+        events.AddRange(GetEvents(changes));
+        _pendingEvents.Clear();
+        return events;
+    }
 
     protected virtual async Task HandleEventAsync(IEvent @event, CancellationToken cancellationToken = default)
     {

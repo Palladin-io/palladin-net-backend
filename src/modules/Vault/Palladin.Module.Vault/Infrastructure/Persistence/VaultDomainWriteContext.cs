@@ -29,6 +29,8 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<Grant> Grants => Track<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Track<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Track<GrantEntryEnvelope>();
+    public IQueryable<FullGrantPreparation> FullGrantPreparations => Track<FullGrantPreparation>();
+    public IQueryable<FullGrantPreparationEntry> FullGrantPreparationEntries => Track<FullGrantPreparationEntry>();
     public IQueryable<EncryptedReasonEnvelope> EncryptedReasonEnvelopes => Track<EncryptedReasonEnvelope>();
     public IQueryable<Agent> Agents => Track<Agent>();
     public IQueryable<User> Users => Track<User>();
@@ -74,6 +76,17 @@ internal sealed class VaultDomainWriteContext(
              FOR UPDATE
              """);
 
+    public IQueryable<VaultEntry> LockEntries(Guid organizationId, Guid vaultId, Guid[] entryIds) =>
+        FromSqlInterpolated<VaultEntry>(
+            $"""
+             SELECT * FROM "VaultEntries"
+             WHERE "OrganizationId" = {organizationId}
+               AND "VaultId" = {vaultId}
+               AND "Id" = ANY ({entryIds})
+             ORDER BY "Id"
+             FOR UPDATE
+             """);
+
     public IQueryable<Guid> LockVaultGrantIds(Guid organizationId, Guid vaultId) =>
         SqlQuery<Guid>(
             $"""
@@ -98,6 +111,46 @@ internal sealed class VaultDomainWriteContext(
              SELECT 1 AS "Value"
              FROM pg_advisory_xact_lock(hashtextextended({organizationId.ToString()}, 641083))
              """);
+
+    public IQueryable<int> FullGrantPreparationSnapshotMismatchCount(
+        Guid organizationId,
+        Guid vaultId,
+        Guid preparationId) =>
+        SqlQuery<int>(
+            $"""
+             SELECT CAST(
+                 (SELECT COUNT(*)
+                  FROM "VaultEntries" AS entry
+                  WHERE entry."OrganizationId" = {organizationId}
+                    AND entry."VaultId" = {vaultId}
+                    AND entry."State" = {(int)EntryState.Active}
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM "FullGrantPreparationEntries" AS prepared
+                        WHERE prepared."OrganizationId" = entry."OrganizationId"
+                          AND prepared."VaultId" = entry."VaultId"
+                          AND prepared."PreparationId" = {preparationId}
+                          AND prepared."EntryId" = entry."Id"
+                          AND prepared."EntryRevision" = entry."CurrentRevision"))
+                 +
+                 (SELECT COUNT(*)
+                  FROM "FullGrantPreparationEntries" AS prepared
+                  WHERE prepared."OrganizationId" = {organizationId}
+                    AND prepared."VaultId" = {vaultId}
+                    AND prepared."PreparationId" = {preparationId}
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM "VaultEntries" AS entry
+                        WHERE entry."OrganizationId" = prepared."OrganizationId"
+                          AND entry."VaultId" = prepared."VaultId"
+                          AND entry."Id" = prepared."EntryId"
+                          AND entry."State" = {(int)EntryState.Active}
+                          AND entry."CurrentRevision" = prepared."EntryRevision"))
+                 AS integer) AS "Value"
+             """);
+
+    public Task FlushAsync(CancellationToken cancellationToken = default) =>
+        writeContext.SaveChangesAsync(cancellationToken);
 
     public IQueryable<VaultKeyRotationPreparedItem> RequestedRotationItems(
         Guid organizationId,

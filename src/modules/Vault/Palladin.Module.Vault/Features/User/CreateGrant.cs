@@ -151,6 +151,21 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
+        if (req.Type == GrantType.Full)
+        {
+            var requestedEntryIds = req.GrantEntries.Select(x => x.EntryId).ToArray();
+            var currentEntryCount = await domainWriteContext.Entries.CountAsync(x =>
+                x.OrganizationId == organizationId
+                && x.VaultId == req.VaultId
+                && x.State == EntryState.Active, ct);
+            if (currentEntryCount != requestedEntryIds.Length)
+            {
+                AddError(r => r.GrantEntries, "FULL grant entries must exactly match the current active Vault entries. Use the bounded preparation flow for large Vaults.");
+                await Send.ErrorsAsync(409, ct);
+                return;
+            }
+        }
+
         var lockedRevisions = new Dictionary<Guid, ulong>(req.GrantEntries.Count);
         foreach (var entryId in req.GrantEntries.Select(x => x.EntryId).Distinct().Order())
         {

@@ -113,6 +113,7 @@ internal abstract class Grant : EventEntityBase
                     string.Empty,
                     GrantNames.SystemActor),
                 now);
+            EncryptedReason = null;
         }
     }
 
@@ -140,7 +141,7 @@ internal abstract class Grant : EventEntityBase
         RevokedBySystem = isSystem;
         RevokedAt = now;
         UpdatedAt = now;
-        DeleteSecretEnvelopes();
+        DeleteDeliveryEnvelopes();
 
         EmitRevoked(names);
     }
@@ -172,8 +173,6 @@ internal abstract class Grant : EventEntityBase
         ExpirySource = expirySource;
         Methods = methods ?? Methods;
         UpdatedAt = now;
-        EncryptedReason = null;
-
         EmitApproved(names);
     }
 
@@ -201,7 +200,7 @@ internal abstract class Grant : EventEntityBase
         DeniedBy = deniedBy;
         DeniedAt = now;
         UpdatedAt = now;
-        DeleteSecretEnvelopes();
+        DeleteDeliveryEnvelopes();
 
         EmitDenied(names);
     }
@@ -219,14 +218,13 @@ internal abstract class Grant : EventEntityBase
 
         Status = GrantStatus.Expired;
         UpdatedAt = now;
-        DeleteSecretEnvelopes();
+        DeleteDeliveryEnvelopes();
 
         EmitExpired(entryLabel);
     }
 
-    private void DeleteSecretEnvelopes()
+    private void DeleteDeliveryEnvelopes()
     {
-        EncryptedReason = null;
         foreach (var scope in GrantEntryScopes)
         {
             scope.DeleteEnvelope();

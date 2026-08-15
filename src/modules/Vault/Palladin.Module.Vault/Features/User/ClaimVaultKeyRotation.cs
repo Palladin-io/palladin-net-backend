@@ -154,14 +154,14 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
                 .Where(x => x.Kind != VaultKeyMaterialKind.DiscoveryKey)
                 .Select(VaultEnvelopeContractMapper.ToPrivateKeyContract)
                 .ToArray(),
-            pendingMemberItem is null ? null : VaultKeyRotationPayloadCodec.Decode<MemberVaultKeyEnvelopeContract>(pendingMemberItem.Payload),
+            pendingMemberItem is null ? null : VaultPreparedPayloadCodec.Decode<MemberVaultKeyEnvelopeContract>(pendingMemberItem.Payload),
             pendingKeyItems.SingleOrDefault(x =>
                     x.SubjectVersion == (ulong)VaultKeyMaterialKind.DiscoveryKey) is { } pendingDiscovery
-                ? VaultKeyRotationPayloadCodec.Decode<VaultDiscoveryKeyEnvelopeContract>(pendingDiscovery.Payload)
+                ? VaultPreparedPayloadCodec.Decode<VaultDiscoveryKeyEnvelopeContract>(pendingDiscovery.Payload)
                 : null,
             pendingKeyItems
                 .Where(x => x.SubjectVersion != (ulong)VaultKeyMaterialKind.DiscoveryKey)
-                .Select(x => VaultKeyRotationPayloadCodec.Decode<VaultPrivateKeyEnvelopeContract>(x.Payload))
+                .Select(x => VaultPreparedPayloadCodec.Decode<VaultPrivateKeyEnvelopeContract>(x.Payload))
                 .ToArray(),
             preparedMaterialReset), ct);
     }

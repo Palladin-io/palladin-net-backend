@@ -148,8 +148,8 @@ public sealed class VaultKeyRotationTests
             "wrapped-digest", "2", Now, 2, "signature");
         var payload = new RotationAgentDiscoveryContract(agentId, envelope, manifest);
 
-        var decoded = VaultKeyRotationPayloadCodec.Decode<RotationAgentDiscoveryContract>(
-            VaultKeyRotationPayloadCodec.Encode(payload));
+        var decoded = VaultPreparedPayloadCodec.Decode<RotationAgentDiscoveryContract>(
+            VaultPreparedPayloadCodec.Encode(payload));
 
         decoded.ShouldBe(payload);
         decoded.Manifest.IssuedAt.ShouldBe(Now);

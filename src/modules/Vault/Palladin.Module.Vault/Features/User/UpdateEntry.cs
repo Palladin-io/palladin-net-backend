@@ -180,7 +180,7 @@ internal sealed class UpdateEntryEndpoint(
                 {
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh Agent key is invalid.");
                 }
-                scope.NarrowAndRefresh(refreshed);
+                scope.RefreshScope(refreshed);
             }
         }
         catch (Exception ex) when (ex is FormatException or Palladin.Core.Types.Exceptions.DomainException)

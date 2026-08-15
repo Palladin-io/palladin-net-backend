@@ -32,7 +32,7 @@ internal sealed class FullGrant : Grant
         uint agentAccessEpoch)
     {
         ArgumentOutOfRangeException.ThrowIfZero(agentAccessEpoch);
-        if (scopes.Count == 0 || scopes.Any(scope => scope.OrganizationId != organizationId
+        if (scopes.Any(scope => scope.OrganizationId != organizationId
                                                     || scope.VaultId != vaultId
                                                     || scope.GrantId != id
                                                     || scope.Methods != methods))
@@ -62,5 +62,44 @@ internal sealed class FullGrant : Grant
         grant.EmitCreated(names);
 
         return grant;
+    }
+
+    internal static FullGrant CreateForPreparation(
+        FullGrantPreparation preparation,
+        Guid createdBy,
+        Instant now)
+    {
+        var grant = new FullGrant
+        {
+            Id = preparation.Id,
+            VaultId = preparation.VaultId,
+            OrganizationId = preparation.OrganizationId,
+            AgentId = preparation.AgentId,
+            AgentAccessEpoch = preparation.AgentAccessEpoch,
+            AgentPublicKey = preparation.AgentPublicKey,
+            Status = GrantStatus.Pending,
+            ExpiresAt = preparation.GrantExpiresAt,
+            QueryLimit = preparation.QueryLimit,
+            QueryCount = 0,
+            ExpirySource = preparation.ExpirySource,
+            Methods = preparation.Methods,
+            CreatedAt = now,
+            CreatedBy = createdBy,
+            UpdatedAt = now,
+        };
+
+        return grant;
+    }
+
+    internal void CompletePreparation(GrantNames names, Instant now)
+    {
+        if (Status != GrantStatus.Pending || RequestType is not null)
+        {
+            throw new Palladin.Core.Types.Exceptions.DomainException("FULL grant preparation is not completable.");
+        }
+
+        Status = GrantStatus.Active;
+        UpdatedAt = now;
+        EmitCreated(names);
     }
 }

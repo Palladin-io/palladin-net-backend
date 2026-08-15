@@ -8,6 +8,7 @@ internal sealed class AgentsDbWriteContext(DbContextOptions<AgentsDbWriteContext
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<FormDiscoveryMap> FormDiscoveryMaps => Set<FormDiscoveryMap>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

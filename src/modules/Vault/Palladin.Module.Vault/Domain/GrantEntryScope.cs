@@ -80,7 +80,7 @@ internal sealed class GrantEntryScope
         Envelope.RefreshFrom(envelope);
     }
 
-    internal void NarrowAndRefresh(GrantEntryScope refreshed)
+    internal void RefreshScope(GrantEntryScope refreshed)
     {
         if (OrganizationId != refreshed.OrganizationId || VaultId != refreshed.VaultId
             || GrantId != refreshed.GrantId || EntryId != refreshed.EntryId || Methods != refreshed.Methods
@@ -88,13 +88,6 @@ internal sealed class GrantEntryScope
             || refreshed.Envelope is null)
         {
             throw new DomainException("Grant refresh scope is invalid.");
-        }
-
-        var currentFields = FieldIds.Split('\n').ToHashSet(StringComparer.Ordinal);
-        var refreshedFields = refreshed.FieldIds.Split('\n').ToHashSet(StringComparer.Ordinal);
-        if (!refreshedFields.IsSubsetOf(currentFields))
-        {
-            throw new DomainException("Grant refresh cannot broaden the durable field scope.");
         }
 
         Refresh(refreshed.Envelope);

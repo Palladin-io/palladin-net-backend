@@ -12,4 +12,5 @@ internal sealed class AgentsDomainWriteContext(
     public IQueryable<Agent> Agents => Track<Agent>();
     public IQueryable<ApiKey> ApiKeys => Track<ApiKey>();
     public IQueryable<User> Users => Track<User>();
+    public IQueryable<FormDiscoveryMap> FormDiscoveryMaps => Track<FormDiscoveryMap>();
 }

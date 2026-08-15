@@ -253,6 +253,26 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task ProactiveFullGrant_WhenCurrentEntrySetIsIncomplete_RollsBackWithoutCreatingGrant()
+    {
+        var setup = await ArrangeAsync();
+        await apiFactory.Services.SeedEntryAsync(setup.VaultId, Guid.NewGuid());
+        var request = Request(setup) with
+        {
+            Type = GrantType.Full,
+            EntryId = null,
+        };
+
+        var (response, _) = await setup.Client
+            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.AnyAsync(g => g.Id == request.GrantId)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task TerminalGranularGrant_WithOnlyStaleActiveFullMaterial_CanBeGrantedAgain()
     {
         var setup = await ArrangeAsync();

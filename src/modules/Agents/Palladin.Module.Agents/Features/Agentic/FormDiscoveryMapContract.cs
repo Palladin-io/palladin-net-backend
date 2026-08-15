@@ -179,12 +179,13 @@ internal static partial class FormDiscoveryMapContract
 
     private static bool ValidLoginUrl(string value, string domain)
     {
-        if (value.Length > 2_048
+        if (Encoding.UTF8.GetByteCount(value) > 2_048
             || !Uri.TryCreate(value, UriKind.Absolute, out var uri)
             || uri.Scheme != Uri.UriSchemeHttps
             || !string.Equals(uri.IdnHost, domain, StringComparison.Ordinal)
             || !string.IsNullOrEmpty(uri.UserInfo)
-            || !string.IsNullOrEmpty(uri.Fragment))
+            || !string.IsNullOrEmpty(uri.Fragment)
+            || (!string.IsNullOrEmpty(uri.Query) && uri.Query != "?SignIn"))
         {
             return false;
         }
@@ -330,7 +331,7 @@ internal static partial class FormDiscoveryMapContract
 
     private static bool SelectorText(string? value) =>
         !string.IsNullOrWhiteSpace(value)
-        && value.Length <= 1_024
+        && Encoding.UTF8.GetByteCount(value) <= 1_024
         && value == value.Trim()
         && !value.Contains('\0');
 

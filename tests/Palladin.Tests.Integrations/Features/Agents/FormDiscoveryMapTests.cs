@@ -208,6 +208,7 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
     [InlineData("https://login.example.org/login", "example.org")]
     [InlineData("http://example.org/login", "example.org")]
     [InlineData("https://example.org/login#credential", "example.org")]
+    [InlineData("https://example.org/login?access_token=secret", "example.org")]
     public void When_LoginOriginIsNotExactHttpsHost_Then_MapIsUnsafe(string loginUrl, string domain)
     {
         using var definition = System.Text.Json.JsonDocument.Parse(SafeDefinition);
@@ -255,6 +256,22 @@ public sealed class FormDiscoveryMapTests(ApiFactory apiFactory) : TestBase
             definition.RootElement,
             "example.org",
             "https://example.org/login").ShouldBeTrue();
+        FormDiscoveryMapContract.IsSafe(
+            definition.RootElement,
+            "signin.ebay.com",
+            "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void When_SelectorExceedsTheUtf8ByteLimit_Then_MapIsUnsafe()
+    {
+        using var definition = JsonDocument.Parse(
+            SafeDefinition.Replace("input[type=password]", string.Concat(Enumerable.Repeat("😀", 500))));
+
+        FormDiscoveryMapContract.IsSafe(
+            definition.RootElement,
+            "example.org",
+            "https://example.org/login").ShouldBeFalse();
     }
 
     [Fact]

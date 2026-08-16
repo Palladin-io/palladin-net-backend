@@ -27,8 +27,9 @@ separate implementation before candidate revisions can be published.
 - **ApiKey** — credential for agent auth; stored as a hash (`pl_` prefix) plus a 4-char suffix for display.
 - **FormDiscoveryMap** — versioned login structure with no credentials, cookie values or executable
   code. Cookie/CMP data is limited to bounded same-origin selector clicks. Versions are serialized
-  globally per normalized domain and provider. `SubmittedByAgentId` records candidate provenance but
-  does not scope visibility or confer publication authority.
+  by one global PostgreSQL sequence and are opaque monotonic tokens whose gaps are valid.
+  `SubmittedByAgentId` records candidate provenance but does not scope visibility or confer
+  publication authority.
 - **User** — read-model replica synced from Identity.
 
 ## Contracts (namespaces / types)
@@ -55,3 +56,7 @@ separate implementation before candidate revisions can be published.
   absolute path as `loginUrl`, normalized `provider`, and the complete typed `map` definition,
   including form steps and optional cookie overlays. The same typed serialization stores definition
   JSON; no handwritten canonical JSON writer is used.
+- The global-catalog migration is an irreversible pre-production cutover. It resets retired
+  organization-scoped rows because their caller-supplied fingerprints were not bound to the typed
+  definition. All replicas running the old schema must be stopped before the migration is applied;
+  retaining `organization_id` or dual reads/writes for a rolling deployment is not supported.

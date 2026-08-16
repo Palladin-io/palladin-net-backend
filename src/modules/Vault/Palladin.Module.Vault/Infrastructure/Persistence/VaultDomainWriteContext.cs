@@ -229,17 +229,42 @@ internal sealed class VaultDomainWriteContext(
              """,
             cancellationToken);
 
-    public Task<int> ResetVaultKeyRotationPreparedItemsAsync(
+    public async Task<bool> ResetVaultKeyRotationPreparedItemsIfLeaseCurrentAsync(
         Guid organizationId,
         Guid vaultId,
         Guid rotationId,
-        CancellationToken cancellationToken) =>
-        ExecuteSqlInterpolatedAsync(
+        Guid fencingToken,
+        ulong leaseRevision,
+        CancellationToken cancellationToken)
+    {
+        var matchedLeaseRows = await ExecuteSqlInterpolatedAsync(
             $"""
-             DELETE FROM "VaultKeyRotationPreparedItems"
-             WHERE "OrganizationId" = {organizationId}
-               AND "VaultId" = {vaultId}
-               AND "RotationId" = {rotationId}
+             WITH current_lease AS MATERIALIZED (
+                 SELECT 1
+                 FROM "VaultKeyRotations"
+                 WHERE "OrganizationId" = {organizationId}
+                   AND "VaultId" = {vaultId}
+                   AND "Id" = {rotationId}
+                   AND "FencingToken" = {fencingToken}
+                   AND "LeaseRevision" = {(decimal)leaseRevision}
+                 FOR UPDATE
+             ), deleted AS (
+                 DELETE FROM "VaultKeyRotationPreparedItems"
+                 WHERE "OrganizationId" = {organizationId}
+                   AND "VaultId" = {vaultId}
+                   AND "RotationId" = {rotationId}
+                   AND EXISTS (SELECT 1 FROM current_lease)
+                 RETURNING 1
+             )
+             UPDATE "VaultKeyRotations" AS rotation
+             SET "LeaseRevision" = rotation."LeaseRevision"
+             WHERE rotation."OrganizationId" = {organizationId}
+               AND rotation."VaultId" = {vaultId}
+               AND rotation."Id" = {rotationId}
+               AND EXISTS (SELECT 1 FROM current_lease)
+               AND (SELECT COUNT(*) FROM deleted) >= 0
              """,
             cancellationToken);
+        return matchedLeaseRows == 1;
+    }
 }

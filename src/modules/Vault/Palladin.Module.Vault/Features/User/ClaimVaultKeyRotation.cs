@@ -107,6 +107,7 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
             fencingToken,
             clock.GetCurrentInstant(),
             Duration.FromSeconds(VaultProtocol.RotationLeaseSeconds));
+        var claimedLeaseRevision = rotation.LeaseRevision;
         var currentMemberKey = await domainWriteContext.VaultMemberKeyEnvelopes.AsNoTracking().SingleAsync(
             x => x.OrganizationId == organizationId
                  && x.VaultId == req.VaultId
@@ -146,8 +147,17 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
         if (preparedMaterialReset)
         {
             domainWriteContext.Clear();
-            await domainWriteContext.ResetVaultKeyRotationPreparedItemsAsync(
-                organizationId, req.VaultId, req.RotationId, ct);
+            var resetByCurrentLease = await domainWriteContext.ResetVaultKeyRotationPreparedItemsIfLeaseCurrentAsync(
+                organizationId,
+                req.VaultId,
+                req.RotationId,
+                fencingToken,
+                claimedLeaseRevision,
+                ct);
+            if (!resetByCurrentLease)
+            {
+                throw new VaultKeyRotationFenceException();
+            }
         }
         await Send.OkAsync(new ClaimVaultKeyRotationResponse(
             VaultKeyRotationResponses.Map(rotation),

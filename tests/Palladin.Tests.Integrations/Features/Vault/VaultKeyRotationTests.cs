@@ -692,6 +692,66 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_StaleClaimCleanupRunsAfterANewerLeasePreparedItems_Then_NewItemsRemain()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        await SeedMemberDirectoryAsync(user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+        var firstClaim = await StartAndClaimAsync(client, vault.Id);
+        var targetMemberKey = VaultEnvelopeContractMapper.ToContract(
+            VaultFaker.CreateMemberKey(vault.Scope, user.Id, new MemberKeyGeneration(2), new VaultKeyVersion(2)));
+        var firstBatch = await client.PutAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{firstClaim.Rotation.Id}/batch",
+            new PrepareVaultKeyRotationBatchRequest
+            {
+                VaultId = vault.Id,
+                RotationId = firstClaim.Rotation.Id,
+                FencingToken = firstClaim.FencingToken,
+                MemberVaultKeys = [targetMemberKey],
+            },
+            TestContext.Current.CancellationToken);
+        firstBatch.EnsureSuccessStatusCode();
+        var (_, secondClaim) = await client.POSTAsync<
+            ClaimVaultKeyRotationEndpoint,
+            ClaimVaultKeyRotationRequest,
+            ClaimVaultKeyRotationResponse>(new ClaimVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = firstClaim.Rotation.Id,
+            });
+        secondClaim!.PreparedMaterialReset.ShouldBeTrue();
+        var secondBatch = await client.PutAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{firstClaim.Rotation.Id}/batch",
+            new PrepareVaultKeyRotationBatchRequest
+            {
+                VaultId = vault.Id,
+                RotationId = firstClaim.Rotation.Id,
+                FencingToken = secondClaim.FencingToken,
+                MemberVaultKeys = [targetMemberKey],
+            },
+            TestContext.Current.CancellationToken);
+        secondBatch.EnsureSuccessStatusCode();
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        var staleLeaseCouldReset = await writeContext.ResetVaultKeyRotationPreparedItemsIfLeaseCurrentAsync(
+            organization.Id,
+            vault.Id,
+            firstClaim.Rotation.Id,
+            firstClaim.FencingToken,
+            firstClaim.Rotation.LeaseRevision,
+            TestContext.Current.CancellationToken);
+
+        staleLeaseCouldReset.ShouldBeFalse();
+        (await writeContext.VaultKeyRotationPreparedItems.CountAsync(
+            x => x.OrganizationId == organization.Id
+                 && x.VaultId == vault.Id
+                 && x.RotationId == firstClaim.Rotation.Id,
+            TestContext.Current.CancellationToken)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task When_RotationSourceIsPaged_Then_EntryKeysAreBoundedAndStaleFenceFailsClosed()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();

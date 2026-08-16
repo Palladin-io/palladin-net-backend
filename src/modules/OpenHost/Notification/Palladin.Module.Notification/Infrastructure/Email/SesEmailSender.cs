@@ -24,14 +24,17 @@ internal sealed class SesEmailSender(
             return;
         }
 
-        if (await suppressionStore.IsSuppressedAsync(message.ToAddress, ct))
+        using var providerOperation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        providerOperation.CancelAfter(EmailDispatchPolicy.ProviderTimeout);
+
+        if (await suppressionStore.IsSuppressedAsync(message.ToAddress, providerOperation.Token))
         {
             logger.LogInformation("Recipient {Recipient} is suppressed — skipping send.", Mask(message.ToAddress));
             return;
         }
 
         var request = BuildRequest(message, options.Value);
-        var response = await client.SendEmailAsync(request, ct);
+        var response = await client.SendEmailAsync(request, providerOperation.Token);
 
         logger.LogInformation(
             "Sent email to {Recipient} (messageId {MessageId}).", Mask(message.ToAddress), response.MessageId);

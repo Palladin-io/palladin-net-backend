@@ -89,6 +89,44 @@ public sealed class EmailDispatchDeduplicatorTests(ApiFactory apiFactory) : Test
         await sender.Received(2).SendAsync(message, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task When_ProviderOutlivesTheFormerLease_Then_AConcurrentDeliveryCannotReclaimIt()
+    {
+        var firstSender = Substitute.For<IEmailSender>();
+        var concurrentSender = Substitute.For<IEmailSender>();
+        var providerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseProvider = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var message = new EmailMessage("user@example.com", "Subject", "<p>Body</p>", "Body");
+        var idempotencyKey = $"organization-invitation:{Guid.NewGuid()}";
+        firstSender.SendAsync(message, Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            providerStarted.TrySetResult();
+            await releaseProvider.Task;
+        });
+
+        var firstDelivery = SendAsync(idempotencyKey, firstSender, message);
+        await providerStarted.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+        apiFactory.FakeClock.Advance(Duration.FromSeconds(5));
+
+        try
+        {
+            await Should.ThrowAsync<EmailDispatchInProgressException>(() =>
+                SendAsync(idempotencyKey, concurrentSender, message));
+            await concurrentSender.DidNotReceive()
+                .SendAsync(Arg.Any<EmailMessage>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            releaseProvider.TrySetResult();
+            await firstDelivery;
+        }
+
+        EmailDispatchPolicy.DispatchLease.ShouldBeGreaterThan(
+            Duration.FromTimeSpan(EmailDispatchPolicy.ProviderTimeout));
+    }
+
     private async Task SendAsync(string idempotencyKey, IEmailSender sender, EmailMessage message)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();

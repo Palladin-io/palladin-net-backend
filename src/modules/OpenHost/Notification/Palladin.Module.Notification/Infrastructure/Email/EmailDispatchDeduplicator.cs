@@ -13,8 +13,6 @@ internal sealed class EmailDispatchDeduplicator(
     IClock clock,
     IGuidProvider guidProvider) : IEmailDispatchDeduplicator
 {
-    private static readonly Duration DispatchLease = Duration.FromSeconds(4);
-
     public async Task SendOnceAsync(
         string? idempotencyKey,
         EmailMessage message,
@@ -33,7 +31,7 @@ internal sealed class EmailDispatchDeduplicator(
             ct);
         if (delivery is null)
         {
-            delivery = EmailDelivery.Claim(idempotencyKey, dispatchToken, now, DispatchLease);
+            delivery = EmailDelivery.Claim(idempotencyKey, dispatchToken, now, EmailDispatchPolicy.DispatchLease);
             domainWriteContext.Add(delivery);
             try
             {
@@ -56,7 +54,7 @@ internal sealed class EmailDispatchDeduplicator(
 
         if (delivery.DispatchToken != dispatchToken)
         {
-            if (!delivery.TryReclaim(dispatchToken, now, DispatchLease))
+            if (!delivery.TryReclaim(dispatchToken, now, EmailDispatchPolicy.DispatchLease))
             {
                 throw new EmailDispatchInProgressException();
             }
@@ -103,3 +101,9 @@ internal sealed class EmailDispatchDeduplicator(
 
 internal sealed class EmailDispatchInProgressException()
     : Exception("The idempotent email dispatch is already in progress.");
+
+internal static class EmailDispatchPolicy
+{
+    internal static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(30);
+    internal static readonly Duration DispatchLease = Duration.FromMinutes(2);
+}

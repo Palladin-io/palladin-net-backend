@@ -1,10 +1,7 @@
 ---
 name: fix-pr
-description: Implementuje poprawki na podstawie komentarzy review — czyta nierozwiązane uwagi, modyfikuje kod, buduje, testuje, commituje, odpowiada na komentarze i resolvuje wątki.
-argument-hint: <pr-number>
-disable-model-invocation: true
+description: Implementuje poprawki dla konkretnie wskazanego PR-a na podstawie komentarzy review — czyta nierozwiązane uwagi, krytycznie je kwalifikuje, modyfikuje kod, buduje, testuje, commituje, odpowiada i resolvuje wątki. Używaj wyłącznie na jawne żądanie użytkownika z numerem PR-a.
 allowed-tools: Read Write Edit Grep Glob Bash(gh pr *) Bash(gh api *) Bash(gh repo *) Bash(git fetch *) Bash(git checkout *) Bash(git add *) Bash(git commit *) Bash(git push) Bash(dotnet *) Bash(jq *)
-effort: high
 ---
 
 # Fix PR — Palladin .NET Backend
@@ -29,6 +26,14 @@ effort: high
 
 ## Jak przeprowadzić naprawę
 
+### Limit i kwalifikacja uwag
+
+- Cały PR może przejść maksymalnie trzy oficjalne rundy Codex Review. Grupuj wszystkie zaakceptowane poprawki w jeden przebieg; nie uruchamiaj review po każdym komentarzu ani commicie.
+- Przed zmianą kodu odtwórz realny scenariusz produkcyjny, sprawdź czy bieżący kod go dopuszcza, potwierdź zgodność uwagi z `AGENTS.md`, aktualną dokumentacją domeny i zakresem PR-a.
+- Naprawiaj in-scope Critical/Warning oraz małe, rzeczywiste problemy niższej wagi. Odrzucaj lub odkładaj uwagi spekulatywne, sprzeczne z obowiązującymi zasadami, wymagające nowego subsystemu albo abstrahujące pod hipotetyczną przyszłość.
+- Druga runda służy ocenie zbiorczej poprawki. Trzecia jest wyłącznie końcową weryfikacją zaakceptowanej istotnej poprawki i kończy pętlę niezależnie od werdyktu, chyba że product owner jawnie zezwoli na kolejną.
+- Dla każdej uwagi zapisz dyspozycję: `accepted`, `rejected` albo `deferred`, wraz z krótkim uzasadnieniem. Komentarz review sam nie rozszerza scope zadania.
+
 ### Krok 1 — przygotuj branch
 
 Upewnij się że jesteś na właściwym branchu PR. Jeśli nie:
@@ -43,7 +48,7 @@ git checkout "$HEAD"
 Przeczytaj wszystkie nierozwiązane komentarze z review (powyżej). Dla każdego:
 - Zrozum problem — użyj `Read`, `Grep`, `Glob` żeby przejrzeć powiązany kod
 - Ustal konkretną zmianę do wprowadzenia
-- Jeśli komentarz jest niejasny lub sprzeczny z innymi wymaganiami — zaznacz to w odpowiedzi zamiast zgadywać
+- Jeśli komentarz jest niejasny, spekulatywny, poza zakresem lub sprzeczny z innymi wymaganiami — odrzuć albo odłóż go z uzasadnieniem zamiast zgadywać
 
 ### Krok 3 — wprowadź poprawki
 

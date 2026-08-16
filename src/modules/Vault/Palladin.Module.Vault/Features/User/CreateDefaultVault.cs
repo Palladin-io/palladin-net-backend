@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Npgsql;
 using Palladin.Core.Security;
+using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -44,8 +45,8 @@ internal sealed class CreateDefaultVaultEndpoint(
         try
         {
             var now = clock.GetCurrentInstant();
-            await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-            await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
+            await CreateVaultEndpoint.FenceOrganizationLifecycleAsync(
+                domainWriteContext, organizationId, ct);
             await CreateVaultEndpoint.EnsureMemberIsNotRemovingAsync(
                 domainWriteContext, organizationId, userId, ct);
             if (await domainWriteContext.Vaults.AnyAsync(
@@ -92,11 +93,21 @@ internal sealed class CreateDefaultVaultEndpoint(
                 now);
 
             domainWriteContext.Add(vault);
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
             await Send.CreatedAtAsync<GetVaultEndpoint>(
                 new { id = vault.Id },
                 CreateVaultEndpoint.ToResponse(vault, vault.VaultMemberKeyEnvelopes.Single()),
                 cancellation: ct);
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: "PK_VaultOrganizationLifecycles",
+            })
+        {
+            domainWriteContext.Clear();
+            throw new VaultOrganizationLifecycleChangedException();
         }
         catch (DbUpdateException ex)
             when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })

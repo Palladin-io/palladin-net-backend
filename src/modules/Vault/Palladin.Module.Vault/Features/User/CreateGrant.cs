@@ -101,9 +101,8 @@ internal sealed class CreateGrantEndpoint(
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
 
-        var agent = await domainReadContext.Agents
+        var agent = await domainWriteContext.Agents
             .Where(a => a.Id == req.AgentId && a.OrganizationId == organizationId)
-            .Select(a => new { a.Status, a.PublicKey, a.RecipientKeyVersion, a.AccessEpoch })
             .FirstOrDefaultAsync(ct);
         if (agent is null)
         {
@@ -130,8 +129,6 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
         if (await domainWriteContext.VaultPrincipalDeprovisionings.AnyAsync(x =>
                 x.OrganizationId == organizationId
                 && x.PrincipalType == VaultPrincipalType.Agent
@@ -143,7 +140,8 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
-        var lockedVault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var lockedVault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (lockedVault is null)
         {
@@ -169,8 +167,11 @@ internal sealed class CreateGrantEndpoint(
         var lockedRevisions = new Dictionary<Guid, ulong>(req.GrantEntries.Count);
         foreach (var entryId in req.GrantEntries.Select(x => x.EntryId).Distinct().Order())
         {
-            var lockedEntry = await domainWriteContext.LockEntry(organizationId, req.VaultId, entryId)
-                .SingleOrDefaultAsync(ct);
+            var lockedEntry = await domainWriteContext.Entries.SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId
+                     && x.VaultId == req.VaultId
+                     && x.Id == entryId,
+                ct);
             if (lockedEntry is null || lockedEntry.State != EntryState.Active)
             {
                 AddError(r => r.GrantEntries, "One or more entries are no longer active.");
@@ -225,7 +226,9 @@ internal sealed class CreateGrantEndpoint(
                     return;
                 }
                 pending.Approve(userId, pendingNames, pendingScope, req.ExpiresAt, req.QueryLimit, expirySource, req.Methods, now);
-                await domainWriteContext.CommitAsync(transaction, ct);
+                agent.FenceAccessMutation();
+                lockedVault.FenceAccessMutation(userId, now);
+                await domainWriteContext.CommitAsync(ct);
 
                 await Send.CreatedAtAsync<GetGrantEndpoint>(
                     new { vaultId = req.VaultId, grantId = pending.Id },
@@ -304,9 +307,11 @@ internal sealed class CreateGrantEndpoint(
         var grant = BuildGrant(req, scopes, organizationId, agent.AccessEpoch, agent.PublicKey, userId, names, now, expirySource);
 
         domainWriteContext.Add(grant);
+        agent.FenceAccessMutation();
+        lockedVault.FenceAccessMutation(userId, now);
         try
         {
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
         {

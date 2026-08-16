@@ -40,10 +40,6 @@ internal sealed class PublicAssetCatalogDomainWriteContext(PublicAssetCatalogDbW
     public IQueryable<PublicAssetUploadSession> UploadSessions => Track<PublicAssetUploadSession>();
     public void Add(PublicAsset asset) => base.Add(asset);
     public void Add(PublicAssetUploadSession session) => base.Add(session);
-    public Task<List<PublicAsset>> LockAssetsForAcquisitionDispatchAsync(Guid[] assetIds, CancellationToken ct) =>
-        context.Assets
-            .FromSqlInterpolated($"SELECT * FROM \"Assets\" WHERE \"Id\" = ANY({assetIds}) ORDER BY \"Id\" FOR UPDATE")
-            .ToListAsync(ct);
 }
 internal static class PersistenceModule
 {

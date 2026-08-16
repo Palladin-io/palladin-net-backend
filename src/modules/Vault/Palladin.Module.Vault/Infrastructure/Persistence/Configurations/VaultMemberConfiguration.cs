@@ -11,6 +11,7 @@ internal sealed class VaultMemberConfiguration : IEntityTypeConfiguration<VaultM
     public void Configure(EntityTypeBuilder<VaultMember> builder)
     {
         builder.HasKey(x => new { x.OrganizationId, x.VaultId, x.UserId });
+        builder.HasQueryFilter(x => !x.Vault.IsDeleting);
 
         builder.HasOne(x => x.Vault)
             .WithMany(x => x.VaultMembers)

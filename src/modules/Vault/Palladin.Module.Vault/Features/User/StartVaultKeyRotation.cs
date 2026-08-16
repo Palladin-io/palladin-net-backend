@@ -3,6 +3,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Npgsql;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
 using Palladin.Module.Vault.Domain;
@@ -63,8 +64,8 @@ internal sealed class StartVaultKeyRotationEndpoint(
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var vault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (vault is null
             || !await domainWriteContext.VaultMembers.AnyAsync(
@@ -96,10 +97,25 @@ internal sealed class StartVaultKeyRotationEndpoint(
                 userId,
                 clock.GetCurrentInstant());
             domainWriteContext.Add(active);
-            await domainWriteContext.CommitAsync(ct);
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                   {
+                       SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+                       ConstraintName: "IX_VaultKeyRotations_OrganizationId_VaultId",
+                   })
+            {
+                // The filtered unique index is the authoritative active-rotation invariant.
+                domainWriteContext.Clear();
+                active = await domainWriteContext.VaultKeyRotations.SingleAsync(
+                    x => x.OrganizationId == organizationId
+                         && x.VaultId == req.VaultId
+                         && x.Status != VaultKeyRotationStatus.Committed,
+                    ct);
+            }
         }
-
-        await transaction.CommitAsync(ct);
         await Send.OkAsync(VaultKeyRotationResponses.Map(active), ct);
     }
 }

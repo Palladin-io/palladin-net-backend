@@ -105,20 +105,21 @@ internal sealed class EntryLifecycleService(
         CancellationToken cancellationToken)
     {
         var transition = Map(request);
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(cancellationToken);
-        var lockedVault = await domainWriteContext.LockVault(organizationId, request.VaultId)
+        var vault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == request.VaultId)
             .SingleOrDefaultAsync(cancellationToken);
-        if (lockedVault is null)
+        if (vault is null)
         {
             return (EntryLifecycleMutation.NotFound, null);
         }
 
-        await domainWriteContext.LockVaultGrantIds(organizationId, request.VaultId)
-            .ToListAsync(cancellationToken);
-        var entry = await domainWriteContext.LockEntry(organizationId, request.VaultId, request.EntryId)
+        var entry = await domainWriteContext.Entries
             .Include(x => x.Keys)
             .Include(x => x.Versions)
-            .SingleOrDefaultAsync(cancellationToken);
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId
+                                       && x.VaultId == request.VaultId
+                                       && x.Id == request.EntryId,
+                cancellationToken);
         if (entry is null)
         {
             return (EntryLifecycleMutation.NotFound, null);
@@ -136,7 +137,6 @@ internal sealed class EntryLifecycleService(
         }
 
         var now = clock.GetCurrentInstant();
-        var vault = await LoadVaultAsync(entry, cancellationToken);
         var grants = await domainWriteContext.Grants
             .Include(x => x.EncryptedReason)
             .Include(x => x.GrantEntryScopes)
@@ -162,7 +162,7 @@ internal sealed class EntryLifecycleService(
             sequences,
             now,
             userId);
-        await domainWriteContext.CommitAsync(transaction, cancellationToken);
+        await domainWriteContext.CommitAsync(cancellationToken);
         return (EntryLifecycleMutation.Changed, entry);
     }
 

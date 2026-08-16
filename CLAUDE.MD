@@ -301,6 +301,20 @@ Cross-cutting pieces already exist in `src/core/`. Use them — re-implementing 
 - Check existence before expensive operations, early returns, projection with `Select` when possible
 - For polymorphic entities use EF Core TPH (Table-Per-Hierarchy): abstract base class, concrete subclasses, `HasDiscriminator(e => e.Type)` in configuration
 
+### Transaction boundaries — explicit transactions are the last resort
+
+`DomainWriteContext.CommitAsync(...)` is the normal write boundary. EF Core already wraps one `SaveChangesAsync` call in a database transaction, so a feature must not call `BeginTransactionAsync` merely because it performs several tracked changes, writes multiple tables, or wants an operation to be "atomic". Prefer domain invariants, PK/FK/UNIQUE constraints and optimistic concurrency tokens; prepare the complete tracked graph and commit it once through `DomainWriteContext`.
+
+An explicit transaction is allowed only when a reviewed invariant cannot be preserved by one domain commit, normally because a bounded operation must flush and clear multiple write-side pages while retaining all-or-nothing rollback. Every surviving explicit transaction must:
+
+- document the concrete invariant that would be violated by separate commits;
+- use a deterministic lock/write order and a bounded data set;
+- remain database-only and short — never call HTTP, S3, a message broker, an e-mail/push provider, or write an HTTP response while it is open;
+- persist and commit through `DomainWriteContext.CommitAsync(transaction, ...)`, so domain events are published only after the database commit;
+- have concurrency tests covering the conflicting operations and a later-page rollback test when it spans pages.
+
+Use optimistic concurrency for read-check-write races. A concurrency token must fence the complete invariant, including related-set/phantom changes: every command capable of changing that invariant updates the same aggregate stamp. Handle a stale stamp as a retryable conflict or a structural `409`; do not replace it with a wider `FOR UPDATE`/advisory lock. External side effects use an outbox or a durable state machine with separate short claim/finalize commits. Adding a new explicit transaction, row lock or transaction-scoped advisory lock is an architecture decision requiring explicit review, not a local implementation shortcut.
+
 ## Mutating entities — ALWAYS load-edit-commit through the domain
 To change an existing entity, **fetch it through a `{Module}DomainWriteContext` query property, mutate it through a domain method, and persist via `DomainWriteContext.CommitAsync`**. Features never receive a DbContext. Use `{Module}DomainReadContext` only for no-tracking reads; never load an entity through it and then mutate that detached entity. NEVER mutate with `ExecuteUpdateAsync`/`ExecuteDeleteAsync` or a raw DbContext set-based write: that bypasses domain invariants and domain-event dispatch. The state setter lives on the entity (e.g. `agent.UpdateOnConnect(...)`), not in the caller.
 

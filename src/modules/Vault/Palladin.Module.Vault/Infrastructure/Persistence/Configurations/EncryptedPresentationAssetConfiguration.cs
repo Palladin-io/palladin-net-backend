@@ -18,6 +18,7 @@ internal sealed class EncryptedPresentationAssetConfiguration : IEntityTypeConfi
         builder.Property(x => x.Status).HasConversion<short>();
         builder.Property(x => x.MediaType).HasMaxLength(32).IsRequired();
         builder.Property(x => x.CiphertextSha256).HasMaxLength(EncryptedPresentationAsset.DigestLength).IsRequired();
+        builder.Property(x => x.UpdatedAt).IsConcurrencyToken();
 
         builder.HasOne<Domain.Vault>()
             .WithMany()

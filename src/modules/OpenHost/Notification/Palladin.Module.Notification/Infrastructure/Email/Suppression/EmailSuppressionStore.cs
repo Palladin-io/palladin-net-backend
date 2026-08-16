@@ -10,7 +10,7 @@ namespace Palladin.Module.Notification.Infrastructure.Email.Suppression;
 [UsedImplicitly]
 internal sealed class EmailSuppressionStore(
     NotificationDbReadContext readContext,
-    NotificationDbWriteContext writeContext,
+    NotificationDomainWriteContext domainWriteContext,
     IClock clock) : IEmailSuppressionStore
 {
     public Task<bool> IsSuppressedAsync(string address, CancellationToken ct) =>
@@ -19,21 +19,21 @@ internal sealed class EmailSuppressionStore(
     public async Task SuppressAsync(string address, SuppressionReason reason, CancellationToken ct)
     {
         var normalized = Normalize(address);
-        if (await writeContext.SuppressedEmails.AnyAsync(x => x.Address == normalized, ct))
+        if (await domainWriteContext.SuppressedEmails.AnyAsync(x => x.Address == normalized, ct))
         {
             return;
         }
 
         var entity = SuppressedEmail.Create(normalized, reason, clock.GetCurrentInstant());
-        writeContext.SuppressedEmails.Add(entity);
+        domainWriteContext.Add(entity);
         try
         {
-            await writeContext.SaveChangesAsync(ct);
+            await domainWriteContext.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: Core.Persistence.PostgresErrorCodes.UniqueViolation })
         {
             // A concurrent poller already suppressed this address — the row exists, so this is success.
-            writeContext.Entry(entity).State = EntityState.Detached;
+            domainWriteContext.Clear();
         }
     }
 

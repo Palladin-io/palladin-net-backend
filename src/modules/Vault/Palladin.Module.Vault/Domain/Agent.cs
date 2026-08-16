@@ -19,6 +19,7 @@ internal sealed class Agent
     public Instant? AccessEpochStartedAt { get; private set; }
     public uint LastProcessedDeactivationEpoch { get; private set; }
     public Instant? LastProcessedDeactivationAt { get; private set; }
+    internal ulong MutationVersion { get; private set; }
 
     private Agent() { }
 
@@ -49,6 +50,7 @@ internal sealed class Agent
             UpdatedAt = updatedAt,
             AccessEpoch = accessEpoch,
             AccessEpochStartedAt = accessEpochStartedAt,
+            MutationVersion = 1,
         };
 
     internal void Apply(
@@ -73,6 +75,7 @@ internal sealed class Agent
         UpdatedAt = updatedAt;
         AccessEpoch = accessEpoch;
         AccessEpochStartedAt = accessEpochStartedAt;
+        AdvanceMutationVersion();
     }
 
     internal bool AcceptDeactivation(uint deactivatedAccessEpoch, Instant deactivatedAt)
@@ -98,6 +101,20 @@ internal sealed class Agent
             AccessEpochStartedAt = null;
         }
 
+        AdvanceMutationVersion();
         return true;
+    }
+
+    internal void FenceAccessMutation() => AdvanceMutationVersion();
+
+    private void AdvanceMutationVersion()
+    {
+        if (MutationVersion == ulong.MaxValue)
+        {
+            throw new Palladin.Core.Types.Exceptions.DomainException(
+                "Agent mutation version namespace is exhausted.");
+        }
+
+        MutationVersion++;
     }
 }

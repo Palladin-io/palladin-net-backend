@@ -1,17 +1,17 @@
-using Palladin.Core.Persistence;
 using Palladin.Module.Notification.Domain;
 using Palladin.Module.Notification.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Npgsql;
+using Palladin.Core.Guid;
 
 namespace Palladin.Module.Notification.Infrastructure.Email;
 
 internal sealed class EmailDispatchDeduplicator(
-    NotificationDbWriteContext writeContext,
     NotificationDomainWriteContext domainWriteContext,
     IEmailSender emailSender,
-    IClock clock) : IEmailDispatchDeduplicator
+    IClock clock,
+    IGuidProvider guidProvider) : IEmailDispatchDeduplicator
 {
     public async Task SendOnceAsync(
         string? idempotencyKey,
@@ -24,19 +24,86 @@ internal sealed class EmailDispatchDeduplicator(
             return;
         }
 
-        await using var transaction = await writeContext.Database.BeginTransactionAsync(ct);
-        domainWriteContext.Add(EmailDelivery.Create(idempotencyKey, clock.GetCurrentInstant()));
-        try
+        var now = clock.GetCurrentInstant();
+        var dispatchToken = guidProvider.Generate();
+        var delivery = await domainWriteContext.EmailDeliveries.SingleOrDefaultAsync(
+            x => x.IdempotencyKey == idempotencyKey,
+            ct);
+        if (delivery is null)
         {
-            await domainWriteContext.CommitAsync(ct);
+            delivery = EmailDelivery.Claim(idempotencyKey, dispatchToken, now, EmailDispatchPolicy.DispatchLease);
+            domainWriteContext.Add(delivery);
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                   { SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation })
+            {
+                domainWriteContext.Clear();
+                delivery = await domainWriteContext.EmailDeliveries.SingleAsync(
+                    x => x.IdempotencyKey == idempotencyKey,
+                    ct);
+            }
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
-        { SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation })
+
+        if (delivery.Status == EmailDeliveryStatus.Sent)
         {
             return;
         }
 
-        await emailSender.SendAsync(message, ct);
-        await transaction.CommitAsync(ct);
+        if (delivery.DispatchToken != dispatchToken)
+        {
+            if (!delivery.TryReclaim(dispatchToken, now, EmailDispatchPolicy.DispatchLease))
+            {
+                throw new EmailDispatchInProgressException();
+            }
+
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                throw new EmailDispatchInProgressException();
+            }
+        }
+
+        try
+        {
+            // SES is never called while a database transaction or row lock is held. A crash after
+            // provider acceptance can still cause a retry (SES has no idempotency token), so the
+            // delivery contract is explicitly at-least-once in that narrow failure window.
+            await emailSender.SendAsync(message, ct);
+        }
+        catch
+        {
+            domainWriteContext.Clear();
+            delivery = await domainWriteContext.EmailDeliveries.SingleOrDefaultAsync(
+                x => x.IdempotencyKey == idempotencyKey && x.DispatchToken == dispatchToken,
+                CancellationToken.None);
+            if (delivery is not null)
+            {
+                domainWriteContext.Remove(delivery);
+                await domainWriteContext.CommitAsync(CancellationToken.None);
+            }
+            throw;
+        }
+
+        domainWriteContext.Clear();
+        delivery = await domainWriteContext.EmailDeliveries.SingleAsync(
+            x => x.IdempotencyKey == idempotencyKey,
+            ct);
+        delivery.MarkSent(dispatchToken, clock.GetCurrentInstant());
+        await domainWriteContext.CommitAsync(ct);
     }
+}
+
+internal sealed class EmailDispatchInProgressException()
+    : Exception("The idempotent email dispatch is already in progress.");
+
+internal static class EmailDispatchPolicy
+{
+    internal static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(30);
+    internal static readonly Duration DispatchLease = Duration.FromMinutes(2);
 }

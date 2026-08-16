@@ -22,6 +22,17 @@ provenance. A tenant can never publish a catalog revision. Promotion to `verifie
 trusted private catalog process, which is intentionally outside this repository and requires a
 separate implementation before candidate revisions can be published.
 
+Candidate version allocation is one reviewed explicit-transaction exception. Two Agents may submit
+for the same `(OrganizationId, Domain, Provider)` concurrently and both valid submissions must be
+stored with distinct monotonic versions. `MAX(MapVersion) + 1` and the insert are separate SQL
+statements, so the endpoint holds one transaction-scoped advisory lock for that exact tuple until the
+insert commits. The transaction is database-only and contains one logical lock plus one insert; it
+does not acquire a second advisory key or perform external I/O, so this flow cannot form an advisory
+lock-order cycle. The matching UNIQUE index is the final integrity fence. Removing the boundary
+without replacing allocation semantics would either reject a legitimate racing submission or assign
+the same version twice; adding a coordinator aggregate only to avoid this short critical section would
+increase schema and retry complexity without reducing the invariant.
+
 ## Key aggregates (name + role)
 - **Agent** — an AI client; `AgentStatus` Pending→Active→Deactivating→Deactivated; carries versioned X25519 recipient identity plus an Ed25519 request-signing public key. Active deactivation is identified by a durable request id. Emits a single `AgentUpsertedEvent` per unit of work via `AddOrReplaceEvent`.
 - **ApiKey** — credential for agent auth; stored as a hash (`pl_` prefix) plus a 4-char suffix for display.

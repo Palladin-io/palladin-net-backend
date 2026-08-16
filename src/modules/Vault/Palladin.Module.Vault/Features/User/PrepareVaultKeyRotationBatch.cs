@@ -127,8 +127,8 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        if (await domainWriteContext.LockVault(organizationId, req.VaultId).SingleOrDefaultAsync(ct) is null)
+        if (await domainWriteContext.Vaults.SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId && x.Id == req.VaultId, ct) is null)
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -151,6 +151,7 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
 
         var now = clock.GetCurrentInstant();
         rotation.AssertLease(userId, req.FencingToken, now);
+        rotation.FencePreparation();
         var rotatesVaultKey = rotation.Scope.HasFlag(VaultKeyRotationScope.VaultKey);
         var rotatesVdk = rotation.Scope.HasFlag(VaultKeyRotationScope.Vdk);
         var rotatesAgentProjection = rotatesVdk
@@ -314,7 +315,6 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
             .CountAsync(x => x.OrganizationId == organizationId
                              && x.VaultId == req.VaultId
                              && x.RotationId == req.RotationId, ct);
-        await transaction.CommitAsync(ct);
         await Send.OkAsync(new PrepareVaultKeyRotationBatchResponse(accepted, totalPreparedItems), ct);
 
         int PrepareTrustAnchor(VaultPublicKeyContract? contract, VaultPublicKeyKindContract kind,

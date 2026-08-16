@@ -15,4 +15,5 @@ internal sealed class NotificationDomainWriteContext(
     public IQueryable<User> Users => Track<User>();
     public IQueryable<NotificationPreference> NotificationPreferences => Track<NotificationPreference>();
     public IQueryable<SuppressedEmail> SuppressedEmails => Track<SuppressedEmail>();
+    public IQueryable<EmailDelivery> EmailDeliveries => Track<EmailDelivery>();
 }

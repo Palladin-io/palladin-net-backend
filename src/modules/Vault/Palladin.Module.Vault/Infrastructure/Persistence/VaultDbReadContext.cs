@@ -13,6 +13,7 @@ internal sealed class VaultDbReadContext(DbContextOptions<VaultDbReadContext> op
     public DbSet<VaultKeyRotationPreparedItem> VaultKeyRotationPreparedItems => Set<VaultKeyRotationPreparedItem>();
     public DbSet<VaultKeyMaterialEnvelope> VaultKeyMaterialEnvelopes => Set<VaultKeyMaterialEnvelope>();
     public DbSet<VaultPrincipalDeprovisioning> VaultPrincipalDeprovisionings => Set<VaultPrincipalDeprovisioning>();
+    public DbSet<VaultOrganizationLifecycle> VaultOrganizationLifecycles => Set<VaultOrganizationLifecycle>();
     public DbSet<VaultCreationChallenge> VaultCreationChallenges => Set<VaultCreationChallenge>();
     public DbSet<EntryCreationChallenge> EntryCreationChallenges => Set<EntryCreationChallenge>();
     public DbSet<MemberKeyDirectoryEntry> MemberKeyDirectory => Set<MemberKeyDirectoryEntry>();
@@ -20,8 +21,6 @@ internal sealed class VaultDbReadContext(DbContextOptions<VaultDbReadContext> op
     public DbSet<VaultEntryKey> EntryKeys => Set<VaultEntryKey>();
     public DbSet<VaultEntryVersion> EntryVersions => Set<VaultEntryVersion>();
     public DbSet<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Set<AgentVaultDiscoveryEnvelope>();
-    public DbSet<AgentPairingActivation> AgentPairingActivations => Set<AgentPairingActivation>();
-    public DbSet<AgentPairingActivationCandidate> AgentPairingActivationCandidates => Set<AgentPairingActivationCandidate>();
     public DbSet<Grant> Grants => Set<Grant>();
     public DbSet<GrantEntryScope> GrantEntryScopes => Set<GrantEntryScope>();
     public DbSet<GrantEntryEnvelope> GrantEntryEnvelopes => Set<GrantEntryEnvelope>();

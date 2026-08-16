@@ -63,8 +63,8 @@ internal sealed class GetMemberSnapshotEndpoint(
 
         var principalId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
-        await using var transaction = await readContext.BeginTransactionAsync(ct);
-        var vault = await readContext.LockVaultForShare(organizationId, req.VaultId)
+        var vault = await readContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (vault is null)
         {
@@ -182,6 +182,5 @@ internal sealed class GetMemberSnapshotEndpoint(
         }
 
         await Send.OkAsync(response, ct);
-        await transaction.CommitAsync(ct);
     }
 }

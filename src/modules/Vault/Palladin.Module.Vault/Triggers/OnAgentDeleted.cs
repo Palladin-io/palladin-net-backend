@@ -24,10 +24,9 @@ internal sealed class OnAgentDeleted(
         var msg = context.Message;
         var ct = context.CancellationToken;
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(msg.OrganizationId).SingleAsync(ct);
-        var agent = await domainWriteContext.LockAgent(msg.OrganizationId, msg.AgentId)
-            .SingleOrDefaultAsync(ct);
+        var agent = await domainWriteContext.Agents.SingleOrDefaultAsync(
+            x => x.OrganizationId == msg.OrganizationId && x.Id == msg.AgentId,
+            ct);
 
         if (agent is null)
         {
@@ -51,6 +50,5 @@ internal sealed class OnAgentDeleted(
         domainWriteContext.RemoveRange(grants);
         domainWriteContext.Remove(agent);
         await domainWriteContext.CommitAsync(ct);
-        await transaction.CommitAsync(ct);
     }
 }

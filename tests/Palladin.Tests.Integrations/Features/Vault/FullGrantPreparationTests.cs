@@ -464,35 +464,6 @@ public sealed class FullGrantPreparationTests(ApiFactory apiFactory) : TestBase
         (await db.Grants.AnyAsync(x => x.Id == grantId)).ShouldBeFalse();
     }
 
-    [Fact]
-    public async Task Commit_WaitsForOrganizationAgentLifecycleFence()
-    {
-        var setup = await ArrangeAsync();
-        var grantId = Guid.NewGuid();
-        await StartAsync(setup, grantId);
-        await using var lockScope = apiFactory.Services.CreateAsyncScope();
-        var writeContext = lockScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-        await using var transaction = await writeContext.BeginTransactionAsync(
-            TestContext.Current.CancellationToken);
-        await writeContext.LockOrganizationAgentLifecycle(setup.OrganizationId)
-            .SingleAsync(TestContext.Current.CancellationToken);
-
-        var commitTask = setup.Client.POSTAsync<
-            CommitFullGrantPreparationEndpoint,
-            CommitFullGrantPreparationRequest,
-            CreateGrantResponse>(new CommitFullGrantPreparationRequest
-            {
-                VaultId = setup.VaultId,
-                GrantId = grantId,
-            });
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        commitTask.IsCompleted.ShouldBeFalse();
-
-        await transaction.RollbackAsync(TestContext.Current.CancellationToken);
-        var (response, _) = await commitTask;
-        response.StatusCode.ShouldBe(HttpStatusCode.Created);
-    }
-
     private async Task<Setup> ArrangeAsync()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();

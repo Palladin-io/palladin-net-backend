@@ -11,6 +11,7 @@ internal sealed class VaultMemberKeyEnvelopeConfiguration : IEntityTypeConfigura
     public void Configure(EntityTypeBuilder<VaultMemberKeyEnvelope> builder)
     {
         builder.HasKey(x => new { x.OrganizationId, x.VaultId, x.MemberId, x.MemberKeyGeneration });
+        builder.HasQueryFilter(x => !x.Vault.IsDeleting);
 
         builder.Property(x => x.ProtocolVersion).IsRequired();
         builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();

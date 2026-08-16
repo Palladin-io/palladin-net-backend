@@ -27,7 +27,7 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
-    public async Task When_VaultRotationHoldsTheWriteFence_Then_MemberSnapshotWaitsBeforeReadingWrappers()
+    public async Task When_VaultRotationHoldsTheWriteFence_Then_MemberSnapshotDoesNotRetainAReadLock()
     {
         // Given
         var ct = TestContext.Current.CancellationToken;
@@ -46,12 +46,14 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
             GetMemberSnapshotEndpoint,
             GetMemberSnapshotRequest,
             MemberSnapshotResponse>(new GetMemberSnapshotRequest { VaultId = vault.Id });
-        var completedBeforeRotationFence = await Task.WhenAny(snapshotTask, Task.Delay(100, ct)) == snapshotTask;
+        var completedBeforeRotationFence = await Task.WhenAny(
+            snapshotTask,
+            Task.Delay(TimeSpan.FromSeconds(2), ct)) == snapshotTask;
         await transaction.CommitAsync(ct);
         var (response, snapshot) = await snapshotTask;
 
         // Then
-        completedBeforeRotationFence.ShouldBeFalse();
+        completedBeforeRotationFence.ShouldBeTrue();
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         snapshot!.Items.Single().EntryKey.ShouldNotBeNull();
     }

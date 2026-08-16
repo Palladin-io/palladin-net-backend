@@ -26,10 +26,10 @@ internal sealed class RequireVaultMembershipPreProcessor<TRequest> : IPreProcess
 
         var readContext = context.HttpContext.RequestServices.GetRequiredService<VaultDbReadContext>();
         var vaultId = context.Request!.VaultId;
-        var isMember = await readContext.VaultMembers
-            .AnyAsync(m => m.OrganizationId == organizationId
-                           && m.VaultId == vaultId
-                           && m.UserId == userId, ct);
+        var isMember = await readContext.Vaults.AnyAsync(v =>
+            v.OrganizationId == organizationId
+            && v.Id == vaultId
+            && v.VaultMembers.Any(m => m.UserId == userId), ct);
 
         if (!isMember)
         {

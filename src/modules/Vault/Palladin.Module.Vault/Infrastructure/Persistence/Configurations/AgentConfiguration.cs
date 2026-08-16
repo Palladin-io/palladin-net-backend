@@ -20,6 +20,10 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
         builder.Property(x => x.IconColor).HasMaxLength(32);
         builder.Property(x => x.AccessEpoch).HasDefaultValue(0u);
         builder.Property(x => x.LastProcessedDeactivationEpoch).HasDefaultValue(0u);
+        builder.Property(x => x.MutationVersion)
+            .HasConversion(x => (decimal)x, x => (ulong)x)
+            .HasPrecision(20, 0)
+            .IsConcurrencyToken();
 
         builder.HasIndex(x => new { x.OrganizationId, x.Status });
         builder.HasAlternateKey(x => new { x.OrganizationId, x.Id });

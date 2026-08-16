@@ -76,12 +76,14 @@ internal sealed class CommitFullGrantPreparationEndpoint(
         }
 
         var now = clock.GetCurrentInstant();
+        // A later prepared page can invalidate the whole access grant, so every flush must remain
+        // rollbackable until the final exact-snapshot validation and activation succeed.
         await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
         var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (vault is null)
         {
+            await transaction.RollbackAsync(ct);
             await Send.NotFoundAsync(ct);
             return;
         }
@@ -92,6 +94,7 @@ internal sealed class CommitFullGrantPreparationEndpoint(
             && x.Id == req.GrantId, ct);
         if (preparation is null || preparation.CreatedBy != userId)
         {
+            await transaction.RollbackAsync(ct);
             await Send.NotFoundAsync(ct);
             return;
         }
@@ -121,6 +124,7 @@ internal sealed class CommitFullGrantPreparationEndpoint(
                 && x.PrincipalId == preparation.AgentId
                 && x.Status != VaultPrincipalDeprovisioningStatus.Completed, ct))
         {
+            await transaction.RollbackAsync(ct);
             AddError(ErrorResponses.General("full-grant-preparation-context-changed"));
             await Send.ErrorsAsync(409, ct);
             return;
@@ -134,6 +138,7 @@ internal sealed class CommitFullGrantPreparationEndpoint(
                 && g.AgentAccessEpoch == preparation.AgentAccessEpoch
                 && g.Status == GrantStatus.Active, ct))
         {
+            await transaction.RollbackAsync(ct);
             AddError(ErrorResponses.General("full-grant-active-coverage"));
             await Send.ErrorsAsync(409, ct);
             return;
@@ -142,12 +147,15 @@ internal sealed class CommitFullGrantPreparationEndpoint(
         if (await domainWriteContext.FullGrantPreparationSnapshotMismatchCount(
                 organizationId, req.VaultId, req.GrantId).SingleAsync(ct) != 0)
         {
+            await transaction.RollbackAsync(ct);
             AddError(ErrorResponses.General("full-grant-preparation-snapshot-changed"));
             await Send.ErrorsAsync(409, ct);
             return;
         }
 
         var grant = FullGrant.CreateForPreparation(preparation, userId, now);
+        vault.FenceAccessMutation(userId, now);
+        agent.FenceAccessMutation();
         domainWriteContext.Add(grant);
         await domainWriteContext.FlushAsync(ct);
         domainWriteContext.Clear();
@@ -186,6 +194,7 @@ internal sealed class CommitFullGrantPreparationEndpoint(
             }
             catch (Exception ex) when (ex is JsonException or FormatException or DomainException or OverflowException)
             {
+                await transaction.RollbackAsync(ct);
                 AddError(ErrorResponses.General("full-grant-preparation-invalid"));
                 await Send.ErrorsAsync(409, ct);
                 return;

@@ -77,12 +77,12 @@ internal sealed class ProvisionAgentDiscoveryEndpoint(
     {
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
-        var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var vault = await domainWriteContext.Vaults
             .Include(x => x.VaultMembers)
             .Include(x => x.AgentVaultDiscoveryEnvelopes)
-            .Where(x => x.VaultMembers.Any(member => member.UserId == userId))
+            .Where(x => x.OrganizationId == organizationId
+                        && x.Id == req.VaultId
+                        && x.VaultMembers.Any(member => member.UserId == userId))
             .SingleOrDefaultAsync(ct);
         if (vault is null)
         {
@@ -90,9 +90,7 @@ internal sealed class ProvisionAgentDiscoveryEndpoint(
             return;
         }
 
-        // Serialize provisioning with Agent deactivation. Both paths lock the canonical replica row,
-        // so a higher manifest cannot clear a tombstone while a deactivation event is in flight.
-        var agent = await domainWriteContext.LockAgent(organizationId, req.AgentId)
+        var agent = await domainWriteContext.Agents
             .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == req.AgentId, ct);
         if (agent is null)
         {
@@ -112,8 +110,8 @@ internal sealed class ProvisionAgentDiscoveryEndpoint(
 
         var provisioning = VaultManifestCryptoValidator.Validate(req.Envelope, req.Manifest, agent);
         vault.ProvisionAgentDiscovery(agent, provisioning, userId, clock.GetCurrentInstant());
+        agent.FenceAccessMutation();
         await domainWriteContext.CommitAsync(ct);
-        await transaction.CommitAsync(ct);
         await Send.NoContentAsync(ct);
     }
 }

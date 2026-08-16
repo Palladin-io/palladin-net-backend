@@ -71,8 +71,8 @@ internal sealed class GetMemberDeltaEndpoint(
 
         var principalId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
-        await using var transaction = await readContext.BeginTransactionAsync(ct);
-        var vault = await readContext.LockVaultForShare(organizationId, req.VaultId)
+        var vault = await readContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (vault is null)
         {
@@ -115,7 +115,6 @@ internal sealed class GetMemberDeltaEndpoint(
         if (cursor.LastSafeScannedSequence == cursor.DeltaUpperBound)
         {
             await Send.OkAsync(CreateResponse(cursor, cursor.LastSafeScannedSequence, [], null), ct);
-            await transaction.CommitAsync(ct);
             return;
         }
 
@@ -228,7 +227,6 @@ internal sealed class GetMemberDeltaEndpoint(
         response = response with { Items = items };
 
         await Send.OkAsync(response, ct);
-        await transaction.CommitAsync(ct);
     }
 
     private static MemberDeltaResponse CreateResponse(

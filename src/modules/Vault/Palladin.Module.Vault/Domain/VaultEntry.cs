@@ -25,6 +25,10 @@ internal sealed class VaultEntry : EventEntityBase
     public Guid? ArchivedBy { get; private set; }
     public Instant? DeletedAt { get; private set; }
     public Guid? DeletedBy { get; private set; }
+    internal bool IsPurging { get; private set; }
+    internal bool PurgeLedgerRequired { get; private set; }
+    internal Instant? PurgeRequestedAt { get; private set; }
+    internal Guid? PurgeRequestedBy { get; private set; }
 
     internal ushort MemberIndexProtocolVersion { get; private set; }
     internal string MemberIndexCryptoSuiteId { get; private set; } = string.Empty;
@@ -481,6 +485,21 @@ internal sealed class VaultEntry : EventEntityBase
             discoveryFloor,
             removable,
             removableKeys);
+    }
+
+    internal void BeginPurge(Guid requestedBy, bool ledgerRequired, Instant requestedAt)
+    {
+        if (IsPurging)
+        {
+            return;
+        }
+
+        IsPurging = true;
+        PurgeLedgerRequired = ledgerRequired;
+        PurgeRequestedAt = requestedAt;
+        PurgeRequestedBy = requestedBy;
+        UpdatedAt = requestedAt;
+        UpdatedBy = requestedBy;
     }
 
     private void ApplyLifecycleTransition(

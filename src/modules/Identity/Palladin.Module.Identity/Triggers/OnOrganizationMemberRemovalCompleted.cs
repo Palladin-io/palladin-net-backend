@@ -27,7 +27,6 @@ internal sealed class OnOrganizationMemberRemovalCompleted(
     {
         var message = context.Message;
         var ct = context.CancellationToken;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         var member = await domainWriteContext.OrganizationMembers
             .Include(x => x.User)
             .SingleOrDefaultAsync(x => x.OrganizationId == message.OrganizationId
@@ -86,12 +85,15 @@ internal sealed class OnOrganizationMemberRemovalCompleted(
         member = await domainWriteContext.OrganizationMembers
             .Include(x => x.User)
             .SingleAsync(x => x.OrganizationId == message.OrganizationId && x.UserId == message.UserId, ct);
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == message.OrganizationId, ct);
         var removedByName = await domainWriteContext.Users
             .Where(x => x.Id == member.RemovalRequestedBy)
             .Select(x => x.DisplayName)
             .SingleAsync(ct);
         member.CompleteRemoval(member.User.DisplayName, removedByName, message.CompletedAt);
         domainWriteContext.Remove(member);
-        await domainWriteContext.CommitAsync(transaction, ct);
+        organization.FenceMembershipMutation();
+        await domainWriteContext.CommitAsync(ct);
     }
 }

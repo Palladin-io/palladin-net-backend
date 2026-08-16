@@ -26,33 +26,56 @@ internal sealed class EntryPurgeService(
         bool requireDeleted,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(cancellationToken);
-        var entry = await domainWriteContext.LockEntry(
-                scope.OrganizationId,
-                scope.VaultId,
-                scope.EntryId)
+        var entry = await domainWriteContext.Entries
+            .IgnoreQueryFilters()
+            .Where(x => x.OrganizationId == scope.OrganizationId
+                        && x.VaultId == scope.VaultId
+                        && x.Id == scope.EntryId)
             .SingleOrDefaultAsync(cancellationToken);
         if (entry is null)
         {
-            await transaction.RollbackAsync(cancellationToken);
             return EntryPurgeResult.NotFound;
         }
 
-        if ((requireDeleted && entry.State != Palladin.Core.Types.EntryState.Deleted)
-            || (deletedOnOrBefore is not null
-                && (entry.DeletedAt is null || entry.DeletedAt > deletedOnOrBefore)))
+        if (!entry.IsPurging
+            && ((requireDeleted && entry.State != Palladin.Core.Types.EntryState.Deleted)
+                || (deletedOnOrBefore is not null
+                    && (entry.DeletedAt is null || entry.DeletedAt > deletedOnOrBefore))))
         {
-            await transaction.RollbackAsync(cancellationToken);
             return EntryPurgeResult.NotEligible;
         }
 
-        var now = clock.GetCurrentInstant();
-        if (appendLedger)
+        if (!entry.IsPurging)
         {
-            await ledger.AppendAsync(scope, now, cancellationToken);
+            entry.BeginPurge(actorId, appendLedger, clock.GetCurrentInstant());
+            await domainWriteContext.CommitAsync(cancellationToken);
         }
 
+        var purgeRequestedAt = entry.PurgeRequestedAt
+                               ?? throw new InvalidOperationException("Purging Entry is missing its durable request time.");
+        if (entry.PurgeLedgerRequired)
+        {
+            await ledger.AppendAsync(scope, purgeRequestedAt, cancellationToken);
+        }
+
+        // Both operations are idempotent and intentionally execute without database locks.
         await assetPurger.PurgeAsync(scope, cancellationToken);
+
+        domainWriteContext.Clear();
+        entry = await domainWriteContext.Entries
+            .IgnoreQueryFilters()
+            .SingleOrDefaultAsync(x => x.OrganizationId == scope.OrganizationId
+                                       && x.VaultId == scope.VaultId
+                                       && x.Id == scope.EntryId,
+                cancellationToken);
+        if (entry is null)
+        {
+            return EntryPurgeResult.Purged;
+        }
+
+        var now = clock.GetCurrentInstant();
+        var purgeRequestedBy = entry.PurgeRequestedBy
+                               ?? throw new InvalidOperationException("Purging Entry is missing its durable actor.");
 
         var grants = await domainWriteContext.Grants
             .Include(x => x.EncryptedReason)
@@ -87,17 +110,17 @@ internal sealed class EntryPurgeService(
             .Select(x => x.DiscoverySequence!.Value.Value)
             .DefaultIfEmpty(0UL)
             .Max();
-        var vault = await domainWriteContext.Vaults.SingleAsync(
+        var vault = await domainWriteContext.Vaults.IgnoreQueryFilters().SingleAsync(
             x => x.OrganizationId == scope.OrganizationId && x.Id == scope.VaultId,
             cancellationToken);
         vault.AdvanceRetentionFloors(
             new MemberSequence(Math.Max(vault.MinRetainedMemberSequence.Value, memberFloor)),
             new DiscoverySequence(Math.Max(vault.MinRetainedDiscoverySequence.Value, discoveryFloor)),
-            actorId,
+            purgeRequestedBy,
             now);
 
         domainWriteContext.Remove(entry);
-        await domainWriteContext.CommitAsync(transaction, cancellationToken);
+        await domainWriteContext.CommitAsync(cancellationToken);
         domainWriteContext.Clear();
         return EntryPurgeResult.Purged;
     }

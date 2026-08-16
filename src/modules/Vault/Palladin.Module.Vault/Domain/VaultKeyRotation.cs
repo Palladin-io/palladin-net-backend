@@ -203,6 +203,11 @@ internal sealed class VaultKeyRotation
         }
     }
 
+    internal void FencePreparation()
+    {
+        LeaseRevision = checked(LeaseRevision + 1);
+    }
+
     internal bool Prepare(VaultKeyRotationPreparedItem item, Guid memberId, Guid fencingToken, Instant now)
     {
         AssertLease(memberId, fencingToken, now);

@@ -15,6 +15,11 @@ internal sealed class Vault : EventEntityBase
     public Instant CreatedAt { get; private set; }
     public Guid UpdatedBy { get; private set; }
     public Instant UpdatedAt { get; private set; }
+    internal ulong MutationVersion { get; private set; }
+    internal bool IsDeleting { get; private set; }
+    internal Guid? DeletionRequestedBy { get; private set; }
+    internal string? DeletionRequestedByName { get; private set; }
+    internal Instant? DeletionRequestedAt { get; private set; }
 
     internal ushort ProtocolVersion { get; private set; }
     internal MetadataRevision MetadataRevision { get; private set; }
@@ -146,6 +151,7 @@ internal sealed class Vault : EventEntityBase
             CreatedAt = now,
             UpdatedBy = createdBy,
             UpdatedAt = now,
+            MutationVersion = 1,
             ProtocolVersion = VaultProtocol.CurrentVersion,
             MetadataRevision = metadata.MetadataRevision,
             MemberSequence = new MemberSequence(0),
@@ -212,7 +218,9 @@ internal sealed class Vault : EventEntityBase
 
         ValidateMemberKey(Scope, userId, wrappedVaultKey, MemberKeyGeneration, CurrentVaultKeyVersion);
 
-        return AddMemberCore(userId, wrappedVaultKey, now);
+        var added = AddMemberCore(userId, wrappedVaultKey, now);
+        AdvanceMutationVersion();
+        return added;
     }
 
     internal void ReplaceMetadata(
@@ -240,6 +248,7 @@ internal sealed class Vault : EventEntityBase
         MemberVaultMetadataEncodedSuitePayload = SuitePayload.Encode(metadata.Header.Nonce, metadata.Ciphertext);
         UpdatedBy = updatedBy;
         UpdatedAt = now;
+        AdvanceMutationVersion();
         EmitUpserted(updatedBy, actorName, EntityChange.Updated, now);
     }
 
@@ -259,6 +268,7 @@ internal sealed class Vault : EventEntityBase
 
         UpdatedBy = updatedBy;
         UpdatedAt = now;
+        AdvanceMutationVersion();
 
         return new AllocatedVaultSequences(MemberSequence, allocatedDiscoverySequence);
     }
@@ -284,6 +294,7 @@ internal sealed class Vault : EventEntityBase
         MinRetainedDiscoverySequence = discoveryFloor;
         UpdatedBy = updatedBy;
         UpdatedAt = now;
+        AdvanceMutationVersion();
     }
 
     internal bool ProvisionAgentDiscovery(
@@ -318,6 +329,7 @@ internal sealed class Vault : EventEntityBase
         {
             UpdatedBy = provisionedBy;
             UpdatedAt = now;
+            AdvanceMutationVersion();
         }
 
         return changed;
@@ -329,16 +341,28 @@ internal sealed class Vault : EventEntityBase
         uint deactivatedAccessEpoch)
     {
         var existing = AgentVaultDiscoveryEnvelopes.SingleOrDefault(x => x.AgentId == agentId);
-        return existing is not null
-               && existing.RevokeForAcceptedAgentDeactivation(
-                   deactivatedAt,
-                   deactivatedAccessEpoch);
+        var changed = existing is not null
+                      && existing.RevokeForAcceptedAgentDeactivation(
+                          deactivatedAt,
+                          deactivatedAccessEpoch);
+        if (changed)
+        {
+            AdvanceMutationVersion();
+        }
+
+        return changed;
     }
 
     internal bool DeleteAgentDiscovery(Guid agentId)
     {
         var existing = AgentVaultDiscoveryEnvelopes.SingleOrDefault(x => x.AgentId == agentId);
-        return existing is not null && AgentVaultDiscoveryEnvelopes.Remove(existing);
+        var changed = existing is not null && AgentVaultDiscoveryEnvelopes.Remove(existing);
+        if (changed)
+        {
+            AdvanceMutationVersion();
+        }
+
+        return changed;
     }
 
     internal void CommitKeyRotation(
@@ -453,6 +477,7 @@ internal sealed class Vault : EventEntityBase
 
         UpdatedBy = committedBy;
         UpdatedAt = committedAt;
+        AdvanceMutationVersion();
     }
 
     internal void AddRotatedMemberKeyPage(
@@ -525,22 +550,60 @@ internal sealed class Vault : EventEntityBase
         VaultMembers.Remove(member);
     }
 
-    internal void Delete(Guid deletedBy, string actorName, Instant now)
+    internal void BeginDeletion(Guid deletedBy, string actorName, Instant now)
     {
         if (IsDefault)
         {
             throw new DefaultVaultUndeletableException();
         }
 
+        if (IsDeleting)
+        {
+            return;
+        }
+
+        IsDeleting = true;
+        DeletionRequestedBy = deletedBy;
+        DeletionRequestedByName = actorName;
+        DeletionRequestedAt = now;
         UpdatedBy = deletedBy;
         UpdatedAt = now;
+        AdvanceMutationVersion();
+    }
+
+    internal void CompleteDeletion()
+    {
+        if (!IsDeleting
+            || DeletionRequestedBy is not { } deletedBy
+            || DeletionRequestedAt is not { } deletedAt)
+        {
+            throw new DomainException("Vault deletion must be durably requested before completion.");
+        }
+
         AddEvent(new VaultDeletedEvent(
             Id,
             deletedBy,
             OrganizationId,
-            actorName,
+            DeletionRequestedByName ?? string.Empty,
             VaultMembers.Select(x => x.UserId).ToList(),
-            now));
+            deletedAt));
+    }
+
+    internal void FenceAccessMutation(Guid updatedBy, Instant now)
+    {
+        UpdatedBy = updatedBy;
+        UpdatedAt = now;
+        AdvanceMutationVersion();
+    }
+
+    private void AdvanceMutationVersion()
+    {
+        if (MutationVersion == ulong.MaxValue)
+        {
+            throw new DomainException("Vault mutation version namespace is exhausted.");
+        }
+
+        MutationVersion++;
     }
 
     private void AddInitialMember(Guid userId, MemberWrappedVaultKey wrappedVaultKey, Instant now) =>

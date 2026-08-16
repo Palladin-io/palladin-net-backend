@@ -19,8 +19,18 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         Instant requestedAt,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(cancellationToken);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(cancellationToken);
+        var lifecycle = await domainWriteContext.VaultOrganizationLifecycles
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId, cancellationToken);
+        if (lifecycle is null)
+        {
+            lifecycle = VaultOrganizationLifecycle.Create(organizationId);
+            domainWriteContext.Add(lifecycle);
+        }
+        else
+        {
+            lifecycle.FenceMutation();
+        }
+
         var operation = await domainWriteContext.VaultPrincipalDeprovisionings
             .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == requestId, cancellationToken);
         if (operation is not null)
@@ -28,7 +38,7 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
             if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
             {
                 operation.ResumeCompletion();
-                await domainWriteContext.CommitAsync(transaction, cancellationToken);
+                await domainWriteContext.CommitAsync(cancellationToken);
             }
 
             return;
@@ -46,7 +56,7 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
             await AdvanceAsync(operation, requestedAt, cancellationToken);
         }
 
-        await domainWriteContext.CommitAsync(transaction, cancellationToken);
+        await domainWriteContext.CommitAsync(cancellationToken);
     }
 
     internal async Task AdvanceAsync(
@@ -73,8 +83,9 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
             }
         }
 
-        var vault = await domainWriteContext.LockVault(operation.OrganizationId, vaultId.Value)
-            .SingleAsync(cancellationToken);
+        var vault = await domainWriteContext.Vaults.SingleAsync(
+            x => x.OrganizationId == operation.OrganizationId && x.Id == vaultId.Value,
+            cancellationToken);
         var rotation = await domainWriteContext.VaultKeyRotations.SingleOrDefaultAsync(
             x => x.OrganizationId == operation.OrganizationId
                  && x.VaultId == vaultId.Value
@@ -105,6 +116,7 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
 
         rotation.AttachDeprovisioning(operation);
         operation.WaitForRotation(vaultId.Value, rotation.Id, now);
+        vault.FenceAccessMutation(operation.RequestedBy, now);
     }
 
     internal async Task StartNextPendingAsync(

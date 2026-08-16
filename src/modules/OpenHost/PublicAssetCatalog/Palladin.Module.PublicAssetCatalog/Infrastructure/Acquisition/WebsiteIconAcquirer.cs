@@ -191,15 +191,15 @@ internal sealed class WebsiteIconAcquirer(
     private async Task ResetAggregateForRetryAsync(Guid assetId, CancellationToken ct)
     {
         db.Clear();
-        await using var transaction = await db.BeginTransactionAsync(ct);
-        var pending = (await db.LockAssetsForAcquisitionDispatchAsync([assetId], ct))
-            .SingleOrDefault(x => x.Status == PublicAssetStatus.Pending);
+        var pending = await db.Assets.SingleOrDefaultAsync(
+            x => x.Id == assetId && x.Status == PublicAssetStatus.Pending,
+            ct);
         if (pending is null)
         {
             return;
         }
         pending.ResetWebsiteIconAcquisitionDispatch();
-        await db.CommitAsync(transaction, ct);
+        await db.CommitAsync(ct);
     }
 
     private sealed record IconCandidate(Uri Uri, int Score);

@@ -54,8 +54,20 @@ internal sealed class VaultConfiguration : IEntityTypeConfiguration<Domain.Vault
         builder.Property(x => x.MemberVaultMetadataKeyVersion)
             .HasConversion(x => (decimal)x.Value, x => new Domain.VaultKeyVersion((uint)x))
             .HasPrecision(10, 0);
+        builder.Property(x => x.MutationVersion)
+            .HasConversion(x => (decimal)x, x => (ulong)x)
+            .HasPrecision(20, 0)
+            .IsConcurrencyToken();
+        builder.Property(x => x.IsDeleting).IsRequired();
+        builder.Property(x => x.DeletionRequestedBy);
+        builder.Property(x => x.DeletionRequestedByName).HasMaxLength(200);
+        builder.Property(x => x.DeletionRequestedAt);
 
         builder.Property(x => x.UpdatedAt).IsConcurrencyToken();
+
+        // A requested deletion is fail-closed: normal reads and mutations cannot revive the
+        // aggregate while external object cleanup is retried outside the database transaction.
+        builder.HasQueryFilter(x => !x.IsDeleting);
 
         builder.HasIndex(x => x.CreatedBy)
             .IsUnique()

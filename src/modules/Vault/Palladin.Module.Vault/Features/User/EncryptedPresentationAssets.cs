@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Npgsql;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
 using Palladin.Core.Json;
@@ -175,9 +176,10 @@ internal sealed class UploadEncryptedPresentationAssetEndpoint(
             return;
         }
 
-        await using var registrationTransaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var vaultExists = await domainWriteContext.LockVault(organizationId, req.VaultId).AnyAsync(ct);
-        var membershipExists = vaultExists && await domainWriteContext.VaultMembers.AnyAsync(
+        var vault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == req.VaultId,
+            ct);
+        var membershipExists = vault is not null && await domainWriteContext.VaultMembers.AnyAsync(
             x => x.OrganizationId == organizationId
                  && x.VaultId == req.VaultId
                  && x.UserId == userId,
@@ -194,6 +196,12 @@ internal sealed class UploadEncryptedPresentationAssetEndpoint(
         var created = false;
         if (asset is not null)
         {
+            if (asset.Status == EncryptedPresentationAssetStatus.Deleting)
+            {
+                await Send.NotFoundAsync(ct);
+                return;
+            }
+
             if (!asset.IsExactRetry(target, req.EntryId, req.MediaType, req.Ciphertext.Length, computedDigest))
             {
                 ThrowError("Asset identifier is already bound to different ciphertext.");
@@ -234,7 +242,28 @@ internal sealed class UploadEncryptedPresentationAssetEndpoint(
             created = true;
         }
 
-        await domainWriteContext.CommitAsync(registrationTransaction, ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+               { SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation })
+        {
+            // Another exact upload won the asset identifier. Rebuild from durable state and
+            // continue only when it is the same ciphertext; substitutions remain rejected.
+            domainWriteContext.Clear();
+            asset = await domainWriteContext.EncryptedPresentationAssets.SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId
+                     && x.VaultId == req.VaultId
+                     && x.Id == req.AssetId,
+                ct);
+            if (asset is null
+                || !asset.IsExactRetry(target, req.EntryId, req.MediaType, req.Ciphertext.Length, computedDigest))
+            {
+                throw;
+            }
+            created = false;
+        }
         var storageKey = asset.StorageKey;
         var objectExists = await assetStorage.ExistsAsync(storageKey, ct);
         if (asset.Status != EncryptedPresentationAssetStatus.Ready || !objectExists)
@@ -246,33 +275,34 @@ internal sealed class UploadEncryptedPresentationAssetEndpoint(
 
             domainWriteContext.Clear();
             var canFinalize = false;
-            await using (var finalizationTransaction = await domainWriteContext.BeginTransactionAsync(ct))
-            {
-                vaultExists = await domainWriteContext.LockVault(organizationId, req.VaultId).AnyAsync(ct);
-                membershipExists = vaultExists && await domainWriteContext.VaultMembers.AnyAsync(
+            var finalizationVault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId && x.Id == req.VaultId,
+                ct);
+            membershipExists = finalizationVault is not null && await domainWriteContext.VaultMembers.AnyAsync(
+                x => x.OrganizationId == organizationId
+                     && x.VaultId == req.VaultId
+                     && x.UserId == userId,
+                ct);
+            asset = membershipExists
+                ? await domainWriteContext.EncryptedPresentationAssets.SingleOrDefaultAsync(
                     x => x.OrganizationId == organizationId
                          && x.VaultId == req.VaultId
-                         && x.UserId == userId,
-                    ct);
-                asset = membershipExists
-                    ? await domainWriteContext.EncryptedPresentationAssets.SingleOrDefaultAsync(
-                        x => x.OrganizationId == organizationId
-                             && x.VaultId == req.VaultId
-                             && x.Id == req.AssetId,
-                        ct)
-                    : null;
-                canFinalize = asset is not null
-                              && asset.IsExactRetry(
-                                  target,
-                                  req.EntryId,
-                                  req.MediaType,
-                                  req.Ciphertext.Length,
-                                  computedDigest);
-                if (canFinalize)
-                {
-                    asset!.MarkReady(clock.GetCurrentInstant());
-                    await domainWriteContext.CommitAsync(finalizationTransaction, ct);
-                }
+                         && x.Id == req.AssetId,
+                    ct)
+                : null;
+            canFinalize = asset is not null
+                          && asset.Status != EncryptedPresentationAssetStatus.Deleting
+                          && asset.IsExactRetry(
+                              target,
+                              req.EntryId,
+                              req.MediaType,
+                              req.Ciphertext.Length,
+                              computedDigest);
+            if (canFinalize)
+            {
+                var finalizedAt = clock.GetCurrentInstant();
+                asset!.MarkReady(finalizedAt);
+                await domainWriteContext.CommitAsync(ct);
             }
 
             if (!canFinalize)
@@ -363,7 +393,8 @@ internal sealed class GetEncryptedPresentationAssetEndpoint(
 [PublicAPI]
 internal sealed class DeleteEncryptedPresentationAssetEndpoint(
     VaultDomainWriteContext domainWriteContext,
-    IEncryptedPresentationAssetStorage assetStorage) : Endpoint<DeleteEncryptedPresentationAssetRequest>
+    IEncryptedPresentationAssetStorage assetStorage,
+    IClock clock) : Endpoint<DeleteEncryptedPresentationAssetRequest>
 {
     public override void Configure()
     {
@@ -384,9 +415,10 @@ internal sealed class DeleteEncryptedPresentationAssetEndpoint(
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var vaultExists = await domainWriteContext.LockVault(organizationId, req.VaultId).AnyAsync(ct);
-        var membershipExists = vaultExists && await domainWriteContext.VaultMembers.AnyAsync(
+        var vault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == req.VaultId,
+            ct);
+        var membershipExists = vault is not null && await domainWriteContext.VaultMembers.AnyAsync(
             x => x.OrganizationId == organizationId
                  && x.VaultId == req.VaultId
                  && x.UserId == userId,
@@ -406,9 +438,24 @@ internal sealed class DeleteEncryptedPresentationAssetEndpoint(
             return;
         }
 
-        await assetStorage.DeleteAllVersionsAsync(asset.StorageKey, ct);
-        domainWriteContext.Remove(asset);
-        await domainWriteContext.CommitAsync(transaction, ct);
+        if (asset.Status != EncryptedPresentationAssetStatus.Deleting)
+        {
+            var deletionRequestedAt = clock.GetCurrentInstant();
+            asset.BeginDeletion(deletionRequestedAt);
+            await domainWriteContext.CommitAsync(ct);
+        }
+
+        var storageKey = asset.StorageKey;
+        await assetStorage.DeleteAllVersionsAsync(storageKey, ct);
+        domainWriteContext.Clear();
+        asset = await domainWriteContext.EncryptedPresentationAssets.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.VaultId == req.VaultId && x.Id == req.AssetId,
+            ct);
+        if (asset is not null)
+        {
+            domainWriteContext.Remove(asset);
+            await domainWriteContext.CommitAsync(ct);
+        }
         await Send.NoContentAsync(ct);
     }
 }

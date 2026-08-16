@@ -79,18 +79,18 @@ internal sealed class StartFullGrantPreparationEndpoint(
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
         var now = clock.GetCurrentInstant();
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
-        var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
-            .SingleOrDefaultAsync(ct);
+        var vault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == req.VaultId,
+            ct);
         if (vault is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
-        var agent = await domainWriteContext.LockAgent(organizationId, req.AgentId)
-            .SingleOrDefaultAsync(ct);
+        var agent = await domainWriteContext.Agents.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == req.AgentId,
+            ct);
         if (agent is null)
         {
             await Send.NotFoundAsync(ct);
@@ -145,7 +145,7 @@ internal sealed class StartFullGrantPreparationEndpoint(
         if (existing is not null && now >= existing.PreparationExpiresAt)
         {
             domainWriteContext.Remove(existing);
-            await domainWriteContext.FlushAsync(ct);
+            await domainWriteContext.CommitAsync(ct);
             domainWriteContext.Clear();
             existing = null;
         }
@@ -184,7 +184,7 @@ internal sealed class StartFullGrantPreparationEndpoint(
         domainWriteContext.Add(preparation);
         try
         {
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
         {

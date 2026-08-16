@@ -6,6 +6,7 @@ using Palladin.Tests.Integrations.Shared.Extensions;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Vault;
@@ -82,5 +83,36 @@ public sealed class DeleteVaultTests(ApiFactory apiFactory) : TestBase
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task When_ObjectPurgeFails_Then_VaultIsHiddenAndExactRetryCompletesDeletion()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var attempt = 0;
+        apiFactory.EntryAssetPurger
+            .PurgeVaultAsync(organization.Id, vault.Id, Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref attempt) == 1
+                ? Task.FromException(new InvalidOperationException("object storage unavailable"))
+                : Task.CompletedTask);
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => client.DeleteAsync($"api/vaults/{vault.Id}"));
+        await using (var hiddenScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var readContext = hiddenScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+            (await readContext.Vaults.AnyAsync(x => x.Id == vault.Id)).ShouldBeFalse();
+            (await readContext.Vaults.IgnoreQueryFilters().SingleAsync(x => x.Id == vault.Id))
+                .IsDeleting.ShouldBeTrue();
+        }
+
+        var retry = await client.DeleteAsync($"api/vaults/{vault.Id}");
+
+        retry.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using var completedScope = apiFactory.Services.CreateAsyncScope();
+        var completedReadContext = completedScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await completedReadContext.Vaults.IgnoreQueryFilters().AnyAsync(x => x.Id == vault.Id)).ShouldBeFalse();
     }
 }

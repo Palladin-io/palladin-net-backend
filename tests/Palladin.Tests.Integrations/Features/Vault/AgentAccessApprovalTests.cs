@@ -364,51 +364,6 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task Approval_WaitsForGrantLifecycleLockBeforeLockingEntry()
-    {
-        var setup = await ArrangeAsync();
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(Request(setup));
-        var approval = new ApproveGrantRequest
-        {
-            VaultId = setup.VaultId,
-            GrantId = pending!.GrantId,
-            GrantEntry = GrantEnvelopeTestData.Contract(
-                setup.OrganizationId,
-                setup.VaultId,
-                pending.GrantId,
-                setup.EntryId,
-                setup.AgentPublicKey,
-                agentId: setup.AgentId),
-        };
-
-        await using var grantScope = apiFactory.Services.CreateAsyncScope();
-        var grantContext = grantScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-        await using var grantTransaction = await grantContext.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        await grantContext.LockVaultGrantIds(setup.OrganizationId, setup.VaultId)
-            .ToListAsync(TestContext.Current.CancellationToken);
-
-        var approvalTask = setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(approval);
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        approvalTask.IsCompleted.ShouldBeFalse();
-
-        await using (var entryScope = apiFactory.Services.CreateAsyncScope())
-        {
-            var entryContext = entryScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-            await using var entryTransaction = await entryContext.BeginTransactionAsync(TestContext.Current.CancellationToken);
-            var entry = await entryContext.LockEntry(setup.OrganizationId, setup.VaultId, setup.EntryId)
-                .SingleAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-            entry.Id.ShouldBe(setup.EntryId);
-            await entryTransaction.RollbackAsync(TestContext.Current.CancellationToken);
-        }
-
-        await grantTransaction.RollbackAsync(TestContext.Current.CancellationToken);
-        var response = await approvalTask;
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
     public async Task Approval_WithCrossScopeEnvelope_FailsClosed()
     {
         var setup = await ArrangeAsync();

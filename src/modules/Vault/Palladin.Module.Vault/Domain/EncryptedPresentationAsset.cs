@@ -13,6 +13,7 @@ internal enum EncryptedPresentationAssetStatus : short
 {
     PendingUpload = 1,
     Ready = 2,
+    Deleting = 3,
 }
 
 internal sealed class EncryptedPresentationAsset
@@ -98,8 +99,19 @@ internal sealed class EncryptedPresentationAsset
 
     internal void MarkReady(Instant completedAt)
     {
+        if (Status == EncryptedPresentationAssetStatus.Deleting)
+        {
+            throw new DomainException("A deleting encrypted presentation asset cannot become ready.");
+        }
+
         Status = EncryptedPresentationAssetStatus.Ready;
         UpdatedAt = completedAt;
+    }
+
+    internal void BeginDeletion(Instant requestedAt)
+    {
+        Status = EncryptedPresentationAssetStatus.Deleting;
+        UpdatedAt = requestedAt;
     }
 
     internal bool IsExactRetry(

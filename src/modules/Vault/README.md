@@ -26,7 +26,7 @@ The value `protocolVersion = 2` is only the frozen wire/AAD discriminator from t
 
 Plaintext `Name`, `Description`, `Icon`, and `Color` columns do not exist. Vault projections are not published to backend Search or Audit. Web and mobile decrypt and match Vault projections locally.
 
-`GET /api/vaults` returns each authorized Member's complete encrypted unlock projection in one bounded page: Member metadata, that Member's wrapped VK, the Discovery-key envelope and both specialized Vault private-key envelopes. Clients can therefore validate and open every listed Vault without an N+1 detail request; the endpoint never exposes raw keys or plaintext presentation data.
+`GET /api/vaults` returns each authorized Member's complete encrypted unlock projection in one bounded page: Member metadata, that Member's wrapped VK, the Discovery-key envelope and both specialized Vault private-key envelopes. Clients can therefore validate and open every listed Vault without an N+1 detail request; the endpoint never exposes raw keys or plaintext presentation data. `GET /api/vaults/{vaultId}` additionally returns the server-owned `metadataRevision` as a canonical unsigned decimal string at the response top level, allowing clients to reject a stale metadata envelope before unwrapping any key material.
 
 `VaultMember` is structural membership only, keyed by `(OrganizationId, VaultId, UserId)`. Wrapped keys are stored separately in `VaultMemberKeyEnvelope`, keyed by `(OrganizationId, VaultId, MemberId, MemberKeyGeneration)`. Rotation adds the committed generation atomically; pending generations live only in rotation preparation storage and are never served by current reads.
 

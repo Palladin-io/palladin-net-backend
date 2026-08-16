@@ -12,7 +12,6 @@ internal enum FormDiscoveryMapStatus
 internal sealed class FormDiscoveryMap
 {
     public Guid Id { get; private set; }
-    public Guid OrganizationId { get; private set; }
     public Guid? SubmittedByAgentId { get; private set; }
     public string Domain { get; private set; } = string.Empty;
     public string LoginUrl { get; private set; } = string.Empty;
@@ -27,22 +26,20 @@ internal sealed class FormDiscoveryMap
     private FormDiscoveryMap() { }
 
     internal static FormDiscoveryMap CreateCandidate(
-        Guid id, Guid organizationId, Guid agentId, string domain, string loginUrl,
-        string provider, string fingerprint, string definitionJson, int mapVersion, Instant now) => new()
-    {
-        Id = id,
-        OrganizationId = organizationId,
-        SubmittedByAgentId = agentId,
-        Domain = domain,
-        LoginUrl = loginUrl,
-        Provider = provider,
-        Fingerprint = fingerprint,
-        MapVersion = mapVersion,
-        DefinitionJson = definitionJson,
-        Status = FormDiscoveryMapStatus.Candidate,
-        CreatedAt = now,
-        UpdatedAt = now,
-    };
+        Guid id, Guid agentId, string domain, string loginUrl,
+        string provider, string fingerprint, string definitionJson, Instant now) => new()
+        {
+            Id = id,
+            SubmittedByAgentId = agentId,
+            Domain = domain,
+            LoginUrl = loginUrl,
+            Provider = provider,
+            Fingerprint = fingerprint,
+            DefinitionJson = definitionJson,
+            Status = FormDiscoveryMapStatus.Candidate,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
 
     internal void MarkVerified(Instant now)
     {

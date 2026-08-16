@@ -83,6 +83,36 @@ public sealed class MigrationHistoryArchitectureTests
             "validation and behavior belong in domain methods and application services, never PostgreSQL triggers or functions");
     }
 
+    [Fact]
+    public void FormDiscoveryMapRequestPath_ShouldRemainFreeOfExplicitDatabaseCoordination()
+    {
+        var root = FindRepositoryRoot();
+        var featurePath = Path.Combine(
+            root,
+            "src",
+            "modules",
+            "Agents",
+            "Palladin.Module.Agents",
+            "Features",
+            "Agentic",
+            "FormDiscoveryMaps.cs");
+        var source = File.ReadAllText(featurePath);
+
+        new[]
+            {
+                "BeginTransaction",
+                "pg_advisory",
+                "LOCK TABLE",
+                "FOR UPDATE",
+                "SERIALIZABLE",
+                "REPEATABLE READ",
+                "MAX(",
+            }
+            .Where(forbidden => source.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
+            .ShouldBeEmpty(
+                "form-map submit and lookup use the sequence, unique constraint, and ordinary reads instead of explicit transactions or locks");
+    }
+
     private static string GetMigrationsDirectory(string root, string moduleName) =>
         Path.Combine(GetPersistenceDirectory(root, moduleName), "Migrations");
 

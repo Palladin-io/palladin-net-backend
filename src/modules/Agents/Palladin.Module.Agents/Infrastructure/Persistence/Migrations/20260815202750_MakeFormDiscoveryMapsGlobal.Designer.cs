@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Palladin.Module.Agents.Infrastructure.Persistence;
 namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AgentsDbWriteContext))]
-    partial class AgentsDbWriteContextModelSnapshot : ModelSnapshot
+    [Migration("20260815202750_MakeFormDiscoveryMapsGlobal")]
+    partial class MakeFormDiscoveryMapsGlobal
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

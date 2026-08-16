@@ -74,18 +74,15 @@ internal sealed class ApproveGrantEndpoint(
     {
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
 
-        var lockedVault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var lockedVault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (lockedVault is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-
-        await domainWriteContext.LockVaultGrantIds(organizationId, req.VaultId).ToListAsync(ct);
 
         var grant = await domainWriteContext.Grants
             .OfType<GranularGrant>()
@@ -120,11 +117,10 @@ internal sealed class ApproveGrantEndpoint(
             return;
         }
 
-        var currentAgent = await domainReadContext.Agents
+        var currentAgent = await domainWriteContext.Agents
             .Where(agent => agent.OrganizationId == grant.OrganizationId
                             && agent.Id == grant.AgentId
                             && agent.Status == AgentStatus.Active)
-            .Select(agent => new { agent.AccessEpoch, agent.PublicKey, agent.RecipientKeyVersion })
             .SingleOrDefaultAsync(ct);
         if (currentAgent is null || currentAgent.AccessEpoch != grant.AgentAccessEpoch)
         {
@@ -141,9 +137,11 @@ internal sealed class ApproveGrantEndpoint(
             throw new AgentAlreadyHasActiveAccessException("entry");
         }
 
-        var lockedEntry = await domainWriteContext.LockEntry(
-                grant.OrganizationId, grant.VaultId, grant.EntryId)
-            .SingleOrDefaultAsync(ct);
+        var lockedEntry = await domainWriteContext.Entries.SingleOrDefaultAsync(
+            x => x.OrganizationId == grant.OrganizationId
+                 && x.VaultId == grant.VaultId
+                 && x.Id == grant.EntryId,
+            ct);
         var finalMethods = req.Methods ?? grant.Methods;
         if (lockedEntry is null
             || lockedEntry.State != EntryState.Active
@@ -181,6 +179,7 @@ internal sealed class ApproveGrantEndpoint(
         var names = await domainReadContext.ResolveAsync(
             grant.AgentId, grant.EntryId, grant.VaultId, userId, ct);
         var expirySource = ExpirySource.From(req.ExpiresAt, req.QueryLimit);
+        var now = clock.GetCurrentInstant();
         grant.Approve(
             userId,
             names,
@@ -189,9 +188,11 @@ internal sealed class ApproveGrantEndpoint(
             req.QueryLimit,
             expirySource,
             req.Methods,
-            clock.GetCurrentInstant());
+            now);
 
-        await domainWriteContext.CommitAsync(transaction, ct);
+        currentAgent.FenceAccessMutation();
+        lockedVault.FenceAccessMutation(userId, now);
+        await domainWriteContext.CommitAsync(ct);
 
         await Send.NoContentAsync(ct);
     }

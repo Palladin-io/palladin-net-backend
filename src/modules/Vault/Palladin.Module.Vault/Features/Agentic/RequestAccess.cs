@@ -194,8 +194,6 @@ internal sealed class RequestAccessEndpoint(
             clock.GetCurrentInstant(),
             accessEpoch.Value);
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(agent.OrganizationId).SingleAsync(ct);
         if (await domainWriteContext.VaultPrincipalDeprovisionings.AnyAsync(x =>
                 x.OrganizationId == agent.OrganizationId
                 && x.PrincipalType == VaultPrincipalType.Agent
@@ -209,7 +207,7 @@ internal sealed class RequestAccessEndpoint(
         domainWriteContext.Add(grant);
         try
         {
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
         {

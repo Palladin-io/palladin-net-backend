@@ -11,5 +11,9 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
     public void Configure(EntityTypeBuilder<Organization> builder)
     {
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.MembershipVersion)
+            .HasConversion(x => (decimal)x, x => (ulong)x)
+            .HasPrecision(20, 0)
+            .IsConcurrencyToken();
     }
 }

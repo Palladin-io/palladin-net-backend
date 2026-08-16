@@ -50,7 +50,15 @@ internal sealed class VaultEntryConfiguration : IEntityTypeConfiguration<Domain.
 
         builder.Property(x => x.MemberIndexEncodedSuitePayload).HasMaxLength(32_792).IsRequired();
         builder.Property(x => x.AgentDiscoveryEncodedSuitePayload).HasMaxLength(16_408);
+        builder.Property(x => x.IsPurging).IsRequired();
+        builder.Property(x => x.PurgeLedgerRequired).IsRequired();
+        builder.Property(x => x.PurgeRequestedAt);
+        builder.Property(x => x.PurgeRequestedBy);
         builder.Property(x => x.UpdatedAt).IsConcurrencyToken();
+
+        // Purge is a durable, fail-closed state while the idempotent ledger and object-storage
+        // phases run outside the database transaction.
+        builder.HasQueryFilter(x => !x.IsPurging);
 
         builder.HasIndex(x => new { x.OrganizationId, x.VaultId, x.CreatedAt, x.Id });
 

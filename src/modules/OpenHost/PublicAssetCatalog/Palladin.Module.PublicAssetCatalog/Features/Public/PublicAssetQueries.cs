@@ -210,16 +210,32 @@ internal sealed class EnsureWebsiteIconsEndpoint(PublicAssetCatalogDomainWriteCo
     private async Task DispatchAcquisitionWaveAsync(Guid[] assetIds, IReadOnlySet<Guid> liveUploadAssetIds)
     {
         db.Clear();
-        await using var transaction = await db.BeginTransactionAsync(CancellationToken.None);
-        var dispatch = (await db.LockAssetsForAcquisitionDispatchAsync(assetIds, CancellationToken.None))
+        var dispatch = (await db.Assets
+                .Where(x => assetIds.Contains(x.Id))
+                .OrderBy(x => x.Id)
+                .ToListAsync(CancellationToken.None))
             .Where(x => PublicAssetContracts.IsWebsiteAcquisitionReservation(x, liveUploadAssetIds))
             .ToArray();
+
+        // Publishing is deliberately outside a database transaction. Concurrent ensure requests
+        // may emit the same idempotent acquisition command, while the concurrency token below
+        // ensures only one scheduling stamp wins. This is cheaper and cannot hold a row lock while
+        // RabbitMQ is unavailable.
         var published = await Task.WhenAll(dispatch.Select(TryPublishAcquisitionAsync));
         foreach (var asset in published.OfType<PublicAsset>())
         {
             asset.TryMarkWebsiteIconAcquisitionDispatched(clock.GetCurrentInstant());
         }
-        await db.CommitAsync(transaction, CancellationToken.None);
+
+        try
+        {
+            await db.CommitAsync(CancellationToken.None);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A concurrent dispatcher already persisted the same idempotent scheduling decision.
+            db.Clear();
+        }
     }
 
     private async Task<PublicAsset?> TryPublishAcquisitionAsync(PublicAsset asset)

@@ -1,10 +1,7 @@
 ---
 name: pr-review
-description: Reviews a pull request in the Palladin .NET 10 backend for architecture compliance, code quality, performance, security, and stability. Posts findings as a structured GitHub PR comment.
-argument-hint: <pr-number>
-disable-model-invocation: true
+description: Reviews a specifically requested Palladin .NET 10 backend pull request for architecture compliance, code quality, performance, security, and stability, then posts a structured GitHub review. Use only when the user explicitly requests review of a concrete PR number.
 allowed-tools: Read Grep Glob Bash(gh pr view *) Bash(gh pr diff *) Bash(gh api *) Bash(gh repo *) Bash(git log *)
-effort: high
 ---
 
 # PR Review — Palladin .NET Backend
@@ -22,6 +19,14 @@ gh pr diff $PR_NUMBER > /tmp/pr_diff.patch
 
 Fail the review setup if any command above fails; never continue with missing or stale context files.
 
+## Bounded review rounds
+
+- Count earlier reviews by `chatgpt-codex-connector[bot]` before starting. Never submit more than three official Codex review rounds for one PR.
+- Run round 1 only for a complete, locally validated change. Batch accepted findings into one remediation pass; never request a new review after every comment or commit.
+- Stop before round 3 when CI is green, no unresolved in-scope Critical/Warning remains, and every lower-severity finding is fixed, deferred or rejected with a reason. Use round 3 only to verify an accepted material fix; it is the final round regardless of verdict unless the product owner explicitly authorizes more.
+- A review finding is advisory until verified. Accept it only when a reproducible production path exists, the current code permits it, it belongs to the PR scope and the proposed fix agrees with `AGENTS.md` and current architecture/business rules.
+- Reject or defer findings that are speculative, out of scope, contradict current rules, duplicate an existing invariant, or add abstraction/locking/configuration for a hypothetical future need. Explain the disposition instead of changing code to satisfy the reviewer mechanically.
+
 ## Pull Request Context
 
 **Metadata:**
@@ -37,7 +42,7 @@ Fail the review setup if any command above fails; never continue with missing or
 
 ## How to Conduct the Review
 
-0. **Sprawdź poprzednie komentarze** — zanim przejdziesz do nowego kodu, przeczytaj `/tmp/pr_reviews.json` i `/tmp/pr_inline_comments.json`. Dla każdego wątku REQUEST_CHANGES: ustal czy problem został zaadresowany w aktualnym diffie. Zanotuj co naprawiono, co wisi.
+0. **Sprawdź poprzednie komentarze i limit rund** — zanim przejdziesz do nowego kodu, przeczytaj `/tmp/pr_reviews.json` i `/tmp/pr_inline_comments.json`, policz wcześniejsze review Codexa i przerwij po osiągnięciu limitu. Dla każdego wątku REQUEST_CHANGES ustal, czy problem został zaadresowany w aktualnym diffie. Zanotuj co naprawiono, co wisi oraz które uwagi świadomie odrzucono lub odłożono.
 1. Read `AGENTS.md` — it is the source of truth for all conventions in this project.
 2. Load [criteria.md](criteria.md) — it contains the detailed review checklist. Read it fully before starting.
 3. For each changed file: use `Read`, `Grep`, `Glob` to explore beyond the diff when context is needed. Cross-reference with unchanged files that are touched by the change (e.g. module registrations, consumers, domain entities).

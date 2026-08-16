@@ -82,13 +82,15 @@ internal sealed class CommitVaultKeyRotationEndpoint(
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
+        // Rotation is the exceptional hard-atomic boundary: every prepared envelope and key epoch
+        // must become authoritative together or remain entirely on the previous generation.
         await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
         var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
             .Include(x => x.KeyMaterialEnvelopes)
             .SingleOrDefaultAsync(ct);
         if (vault is null)
         {
+            await transaction.RollbackAsync(ct);
             await Send.NotFoundAsync(ct);
             return;
         }
@@ -99,6 +101,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                                        && x.Id == req.RotationId, ct);
         if (rotation is null)
         {
+            await transaction.RollbackAsync(ct);
             await Send.NotFoundAsync(ct);
             return;
         }
@@ -123,6 +126,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
 
         if (rotation.ExcludedMemberId == userId)
         {
+            await transaction.RollbackAsync(ct);
             AddError(ErrorResponses.General("rotation-removing-principal"));
             await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
             return;
@@ -169,7 +173,11 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         {
             if (prunedItems > 0)
             {
-                await transaction.CommitAsync(ct);
+                await domainWriteContext.CommitAsync(transaction, ct);
+            }
+            else
+            {
+                await transaction.RollbackAsync(ct);
             }
             await Send.ResultAsync(Results.Json(coverage.Response, statusCode: StatusCodes.Status409Conflict));
             return;
@@ -266,7 +274,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
     {
         if (rotation.DeprovisioningId is null)
         {
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
             await deprovisioningCoordinator.StartNextPendingAsync(
                 rotation.OrganizationId, completedAt, cancellationToken);
@@ -301,7 +309,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         }
 
         operation.CompleteCurrentVault(rotation.VaultId, rotation.Id, completedAt);
-        await domainWriteContext.CommitAsync(cancellationToken);
+        await domainWriteContext.FlushAsync(cancellationToken);
         domainWriteContext.Clear();
         operation = await domainWriteContext.VaultPrincipalDeprovisionings.SingleAsync(
             x => x.OrganizationId == rotation.OrganizationId && x.Id == rotation.DeprovisioningId,
@@ -346,7 +354,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             }
 
             lastGrantId = grants[^1].Id;
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
             if (grants.Count < CommitPageSize)
             {
@@ -656,7 +664,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             }
 
             lastEntryId = entries[^1].Id;
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
             if (entries.Count < CommitPageSize)
             {
@@ -704,7 +712,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             vault.AddRotatedMemberKeyPage(targetGeneration, targetVaultKeyVersion, memberKeys);
             domainWriteContext.EnsureRotationRecipientTrackingIsBounded(CommitPageSize, 0);
             lastMemberId = memberIds[^1];
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
             if (memberIds.Count < CommitPageSize)
             {
@@ -760,7 +768,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 targetEpoch, targets, manifest, committedBy, committedAt);
             domainWriteContext.EnsureRotationRecipientTrackingIsBounded(0, CommitPageSize);
             lastAgentId = agents[^1].Id;
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
             if (agents.Count < CommitPageSize)
             {
@@ -800,7 +808,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 .SingleAsync(x => x.OrganizationId == organizationId && x.Id == vaultId, cancellationToken);
             vault.RemoveAgentDiscoveryPage(ids);
             domainWriteContext.EnsureRotationRecipientTrackingIsBounded(0, CommitPageSize);
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
         }
     }
@@ -837,7 +845,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             }
 
             lastGrantId = grants[^1].Id;
-            await domainWriteContext.CommitAsync(cancellationToken);
+            await domainWriteContext.FlushAsync(cancellationToken);
             domainWriteContext.Clear();
             if (grants.Count < CommitPageSize)
             {

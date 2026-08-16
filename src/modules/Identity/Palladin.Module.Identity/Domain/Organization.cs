@@ -13,6 +13,7 @@ internal sealed class Organization : EventEntityBase
     public PlanType PlanType { get; private set; }
     public int SeatLimit { get; private set; } = 1;
     public Instant CreatedAt { get; private set; }
+    internal ulong MembershipVersion { get; private set; }
 
     // Org-level onboarding milestones — done for every member once anyone reaches them.
     public bool ApiKeyCreated { get; private set; }
@@ -55,6 +56,7 @@ internal sealed class Organization : EventEntityBase
             PlanType = planType,
             SeatLimit = 1,
             CreatedAt = now,
+            MembershipVersion = 1,
         };
 
         organization.AddEvent(new OrganizationCreatedEvent(id, name, createdBy, createdByName, now));
@@ -71,5 +73,16 @@ internal sealed class Organization : EventEntityBase
 
         Name = name;
         AddEvent(new OrganizationUpdatedEvent(Id, name, updatedBy, updatedByName, ["name"], now));
+    }
+
+    internal void FenceMembershipMutation()
+    {
+        if (MembershipVersion == ulong.MaxValue)
+        {
+            throw new Palladin.Core.Types.Exceptions.DomainException(
+                "Organization membership version namespace is exhausted.");
+        }
+
+        MembershipVersion++;
     }
 }

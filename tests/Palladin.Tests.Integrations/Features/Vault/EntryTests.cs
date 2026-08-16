@@ -204,7 +204,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_ImportingEntries_Then_WaitsForStableVaultLifecycleLock()
+    public async Task When_VaultChangesDuringImport_Then_StaleAttemptConflictsAndExactRetryUsesFreshSequence()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -229,9 +229,13 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
 
         lockedVault.AllocateSequences(false, user.Id, apiFactory.FakeClock.GetCurrentInstant());
         await writeContext.CommitAsync(transaction, TestContext.Current.CancellationToken);
-        var (response, result) = await importTask;
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        result!.ImportedCount.ShouldBe(1);
+        var (staleResponse, _) = await importTask;
+        staleResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+
+        var (retryResponse, retryResult) = await client
+            .POSTAsync<ImportEntriesEndpoint, ImportEntriesRequest, ImportEntriesResponse>(request);
+        retryResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        retryResult!.ImportedCount.ShouldBe(1);
         await using var assertionScope = apiFactory.Services.CreateAsyncScope();
         var readContext = assertionScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         var version = await readContext.EntryVersions.SingleAsync(x => x.EntryId == entryId);
@@ -603,43 +607,6 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
         (await readContext.EntryVersions.CountAsync(x => x.OrganizationId == organization.Id
                                                          && x.VaultId == vault.Id
                                                          && x.EntryId == entryId)).ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task When_UpdatingEntry_Then_WaitsForCoveringGrantLifecycleLock()
-    {
-        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
-        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
-        var agent = await apiFactory.Services.SeedVaultAgentAsync(organization.Id);
-        var client = apiFactory.CreateAuthenticatedClient(user);
-        var entryId = await CreateEntryAsync(client, organization.Id, vault.Id);
-        var grant = GrantFaker.CreateGranular(
-                vaultId: vault.Id,
-                organizationId: organization.Id,
-                agentId: agent.Id,
-                entryId: entryId,
-                createdBy: user.Id).Generate();
-        grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
-            organization.Id, vault.Id, grant.Id, entryId, grant.Methods));
-        await apiFactory.Services.SeedGranularGrantAsync(grant);
-        var request = EntryEnvelopeFaker.CreateUpdateRequest(
-            organization.Id,
-            vault.Id,
-            entryId,
-            baseRevision: 1);
-        await using var scope = apiFactory.Services.CreateAsyncScope();
-        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-        await using var transaction = await writeContext.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        await writeContext.LockVaultGrantIds(organization.Id, vault.Id)
-            .ToListAsync(TestContext.Current.CancellationToken);
-
-        var updateTask = client.PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(request);
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        updateTask.IsCompleted.ShouldBeFalse();
-
-        await transaction.RollbackAsync(TestContext.Current.CancellationToken);
-        var (response, _) = await updateTask;
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
 
     [Fact]

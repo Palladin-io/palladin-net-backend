@@ -70,14 +70,33 @@ public sealed class EmailDispatchDeduplicatorTests(ApiFactory apiFactory) : Test
         await sender.Received(1).SendAsync(message, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task When_ProviderFails_Then_DurableClaimIsReleasedAndRetryCanSend()
+    {
+        var sender = Substitute.For<IEmailSender>();
+        var message = new EmailMessage("user@example.com", "Subject", "<p>Body</p>", "Body");
+        var idempotencyKey = $"organization-invitation:{Guid.NewGuid()}";
+        var attempt = 0;
+        sender.SendAsync(message, Arg.Any<CancellationToken>()).Returns(_ =>
+            Interlocked.Increment(ref attempt) == 1
+                ? Task.FromException(new InvalidOperationException("provider unavailable"))
+                : Task.CompletedTask);
+
+        await Should.ThrowAsync<InvalidOperationException>(() => SendAsync(idempotencyKey, sender, message));
+        await SendAsync(idempotencyKey, sender, message);
+        await SendAsync(idempotencyKey, sender, message);
+
+        await sender.Received(2).SendAsync(message, Arg.Any<CancellationToken>());
+    }
+
     private async Task SendAsync(string idempotencyKey, IEmailSender sender, EmailMessage message)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var deduplicator = new EmailDispatchDeduplicator(
-            scope.ServiceProvider.GetRequiredService<NotificationDbWriteContext>(),
             scope.ServiceProvider.GetRequiredService<NotificationDomainWriteContext>(),
             sender,
-            scope.ServiceProvider.GetRequiredService<IClock>());
+            scope.ServiceProvider.GetRequiredService<IClock>(),
+            scope.ServiceProvider.GetRequiredService<Palladin.Core.Guid.IGuidProvider>());
 
         await deduplicator.SendOnceAsync(idempotencyKey, message);
     }

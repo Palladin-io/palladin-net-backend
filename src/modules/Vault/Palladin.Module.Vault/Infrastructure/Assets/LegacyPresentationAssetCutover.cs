@@ -27,7 +27,7 @@ internal sealed class LegacyPresentationAssetPurger(ILegacyPresentationAssetStor
 }
 
 internal sealed class PurgeLegacyPresentationAssetsApplicationStartingHook(
-    VaultDbWriteContext writeContext,
+    VaultDomainWriteContext domainWriteContext,
     LegacyPresentationAssetPurger purger,
     IConfiguration configuration,
     IHostEnvironment environment,
@@ -35,7 +35,7 @@ internal sealed class PurgeLegacyPresentationAssetsApplicationStartingHook(
 {
     public async Task OnApplicationStartingAsync(CancellationToken cancellationToken)
     {
-        var state = await writeContext.VaultPresentationAssetCutoverStates.SingleAsync(
+        var state = await domainWriteContext.VaultPresentationAssetCutoverStates.SingleAsync(
             x => x.Id == VaultPresentationAssetCutoverState.ZeroKnowledgeAssets,
             cancellationToken);
         if (state.LegacyObjectsPurgedAt is not null)
@@ -55,6 +55,6 @@ internal sealed class PurgeLegacyPresentationAssetsApplicationStartingHook(
         }
 
         state.MarkLegacyObjectsPurged(clock.GetCurrentInstant());
-        await writeContext.SaveChangesAsync(cancellationToken);
+        await domainWriteContext.CommitAsync(cancellationToken);
     }
 }

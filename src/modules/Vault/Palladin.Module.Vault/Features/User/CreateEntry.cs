@@ -91,8 +91,8 @@ internal sealed class CreateEntryEndpoint(
             return;
         }
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var vault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (vault is null)
         {
@@ -100,7 +100,6 @@ internal sealed class CreateEntryEndpoint(
             return;
         }
 
-        await domainWriteContext.LockVaultGrantIds(organizationId, req.VaultId).ToListAsync(ct);
         var activeFullGrants = await domainWriteContext.Grants.OfType<FullGrant>()
             .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
             .Where(
@@ -164,7 +163,7 @@ internal sealed class CreateEntryEndpoint(
         }
 
         domainWriteContext.Add(entry);
-        await domainWriteContext.CommitAsync(transaction, ct);
+        await domainWriteContext.CommitAsync(ct);
 
         await Send.CreatedAtAsync<GetEntryEndpoint>(
             new { vaultId = req.VaultId, entryId = entry.Id },

@@ -174,7 +174,17 @@ internal sealed class CreateVaultEndpoint(
         catch (DbUpdateConcurrencyException)
         {
             domainWriteContext.Clear();
-            ThrowError("The Vault creation challenge was already consumed.");
+            ThrowError("Vault creation state changed concurrently. Retry with a fresh challenge if required.");
+            return;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+        {
+            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "PK_VaultOrganizationLifecycles",
+        })
+        {
+            domainWriteContext.Clear();
+            ThrowError("Vault organization lifecycle changed concurrently. Retry the request.");
             return;
         }
 
@@ -189,8 +199,7 @@ internal sealed class CreateVaultEndpoint(
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
         var now = clock.GetCurrentInstant();
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
+        await FenceOrganizationLifecycleAsync(domainWriteContext, organizationId, ct);
         await EnsureMemberIsNotRemovingAsync(domainWriteContext, organizationId, userId, ct);
 
         var challenge = await domainWriteContext.VaultCreationChallenges
@@ -225,8 +234,24 @@ internal sealed class CreateVaultEndpoint(
                 manifestSigningPublicKey, now);
 
         domainWriteContext.Add(vault);
-        await domainWriteContext.CommitAsync(transaction, ct);
+        await domainWriteContext.CommitAsync(ct);
         return vault;
+    }
+
+    internal static async Task FenceOrganizationLifecycleAsync(
+        VaultDomainWriteContext domainWriteContext,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var lifecycle = await domainWriteContext.VaultOrganizationLifecycles
+            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId, cancellationToken);
+        if (lifecycle is null)
+        {
+            domainWriteContext.Add(VaultOrganizationLifecycle.Create(organizationId));
+            return;
+        }
+
+        lifecycle.FenceMutation();
     }
 
     internal static async Task EnsureMemberIsNotRemovingAsync(
@@ -283,3 +308,6 @@ internal sealed class CreateVaultEndpoint(
 
 internal sealed class MemberDeprovisioningInProgressException()
     : ConflictException("Organization Member removal is in progress.");
+
+internal sealed class VaultOrganizationLifecycleChangedException()
+    : ConflictException("Vault organization lifecycle changed concurrently. Retry the request.");

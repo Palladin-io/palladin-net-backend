@@ -50,8 +50,9 @@ internal sealed class CancelFullGrantPreparationEndpoint(VaultDomainWriteContext
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        if (await domainWriteContext.LockVault(organizationId, req.VaultId).SingleOrDefaultAsync(ct) is null)
+        if (!await domainWriteContext.Vaults.AnyAsync(
+                x => x.OrganizationId == organizationId && x.Id == req.VaultId,
+                ct))
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -65,7 +66,7 @@ internal sealed class CancelFullGrantPreparationEndpoint(VaultDomainWriteContext
         if (preparation is not null)
         {
             domainWriteContext.Remove(preparation);
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
         }
 
         await Send.NoContentAsync(ct);

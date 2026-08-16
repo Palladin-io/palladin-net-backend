@@ -206,57 +206,6 @@ public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_DeleteWaitsForGrantLifecycleLock_Then_ItDoesNotLockEntryFirst()
-    {
-        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
-        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
-        var agent = await apiFactory.Services.SeedVaultAgentAsync(organization.Id);
-        var client = apiFactory.CreateAuthenticatedClient(user);
-        var entryId = await CreateEntryAsync(client, organization.Id, vault.Id);
-        var grant = GrantFaker.CreateGranular(
-            vaultId: vault.Id,
-            organizationId: organization.Id,
-            agentId: agent.Id,
-            entryId: entryId,
-            createdBy: user.Id).Generate();
-        grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
-            organization.Id, vault.Id, grant.Id, entryId, grant.Methods));
-        await apiFactory.Services.SeedGranularGrantAsync(grant);
-
-        await using var grantScope = apiFactory.Services.CreateAsyncScope();
-        var grantContext = grantScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-        await using var grantTransaction = await grantContext.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        await grantContext.LockVaultGrantIds(organization.Id, vault.Id)
-            .ToListAsync(TestContext.Current.CancellationToken);
-
-        var deleteTask = client.POSTAsync<DeleteEntryEndpoint, ChangeEntryStateRequest, ChangeEntryStateResponse>(
-            EntryEnvelopeFaker.CreateStateChangeRequest(
-                organization.Id, vault.Id, entryId, 1, EntryOperation.Deleted));
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        deleteTask.IsCompleted.ShouldBeFalse();
-
-        await using (var entryScope = apiFactory.Services.CreateAsyncScope())
-        {
-            var entryContext = entryScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-            await using var entryTransaction = await entryContext.BeginTransactionAsync(TestContext.Current.CancellationToken);
-            var entry = await entryContext.LockEntry(organization.Id, vault.Id, entryId)
-                .SingleAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-            entry.Id.ShouldBe(entryId);
-            await entryTransaction.RollbackAsync(TestContext.Current.CancellationToken);
-        }
-
-        await grantTransaction.RollbackAsync(TestContext.Current.CancellationToken);
-        var (response, deleted) = await deleteTask;
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        deleted!.State.ShouldBe(EntryState.Deleted);
-
-        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
-        var readContext = verificationScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await readContext.GrantEntryEnvelopes.AnyAsync(x => x.EntryId == entryId)).ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task When_DeletedEntryRetentionExpires_Then_RestoreAndRecentlyDeletedListingFailClosed()
     {
         var originalNow = apiFactory.FakeClock.GetCurrentInstant();
@@ -405,9 +354,38 @@ public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
 
         await using var verificationScope = apiFactory.Services.CreateAsyncScope();
         var readContext = verificationScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await readContext.Entries.AnyAsync(x => x.Id == entryId)).ShouldBeTrue();
+        (await readContext.Entries.AnyAsync(x => x.Id == entryId)).ShouldBeFalse();
+        var durablePurge = await readContext.Entries.IgnoreQueryFilters().SingleAsync(x => x.Id == entryId);
+        durablePurge.IsPurging.ShouldBeTrue();
+        durablePurge.PurgeLedgerRequired.ShouldBeTrue();
         (await readContext.EntryVersions.CountAsync(x => x.EntryId == entryId)).ShouldBe(2);
         (await readContext.EntryKeys.CountAsync(x => x.EntryId == entryId)).ShouldBe(1);
+
+        var recoveryLedger = Substitute.For<IEntryPurgeLedger>();
+        recoveryLedger.AppendAsync(default, default, default)
+            .ReturnsForAnyArgs(new EntryPurgeLedgerRecord(
+                1,
+                "opaque",
+                apiFactory.FakeClock.GetCurrentInstant()));
+        await using (var retryScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var service = new EntryPurgeService(
+                retryScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>(),
+                recoveryLedger,
+                assetPurger,
+                apiFactory.FakeClock);
+            (await service.PurgeAsync(
+                new EntryScope(organization.Id, vault.Id, entryId),
+                user.Id,
+                null,
+                appendLedger: true,
+                requireDeleted: true,
+                TestContext.Current.CancellationToken)).ShouldBe(EntryPurgeResult.Purged);
+        }
+
+        await using var completedScope = apiFactory.Services.CreateAsyncScope();
+        var completedReadContext = completedScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await completedReadContext.Entries.IgnoreQueryFilters().AnyAsync(x => x.Id == entryId)).ShouldBeFalse();
     }
 
     [Fact]

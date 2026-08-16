@@ -87,7 +87,7 @@ internal sealed class RefreshAccessTokenEndpoint(
         var user = existingToken.User;
         var membership = user.OrganizationMemberships
             .FirstOrDefault(m => m.OrganizationId == existingToken.OrganizationId);
-        if (membership is null)
+        if (membership is null || membership.Status != OrganizationMemberStatus.Active)
         {
             existingToken.Revoke(now);
             await domainWriteContext.CommitAsync(ct);

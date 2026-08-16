@@ -43,7 +43,7 @@ internal sealed class ReplayEntryPurgeLedgerApplicationStartingHook(
         EntryReplayCursor? cursor = null;
         while (true)
         {
-            var query = readContext.Entries.AsNoTracking();
+            var query = readContext.Entries.IgnoreQueryFilters().AsNoTracking();
             if (cursor is not null)
             {
                 query = query.Where(x =>

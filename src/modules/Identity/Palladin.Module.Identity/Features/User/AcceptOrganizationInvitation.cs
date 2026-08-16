@@ -87,10 +87,8 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var organization = await domainWriteContext
-            .FromSqlInterpolated<Organization>($"""SELECT * FROM "Organizations" WHERE "Id" = {invitation.OrganizationId} FOR UPDATE""")
-            .SingleAsync(ct);
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == invitation.OrganizationId, ct);
         var occupiedSeats = await domainWriteContext.OrganizationMembers.CountAsync(
             m => m.OrganizationId == invitation.OrganizationId, ct);
         if (occupiedSeats >= organization.SeatLimit)
@@ -104,6 +102,7 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
         domainWriteContext.Add(OrganizationMember.Create(
             invitation.OrganizationId, user.Id, invitation.Role,
             user.DisplayName, user.Email, now));
+        organization.FenceMembershipMutation();
         try
         {
             await domainWriteContext.CommitAsync(ct);
@@ -116,7 +115,6 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
-        await transaction.CommitAsync(ct);
         await Send.NoContentAsync(ct);
     }
 }

@@ -17,6 +17,7 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<VaultKeyRotationPreparedItem> VaultKeyRotationPreparedItems => Track<VaultKeyRotationPreparedItem>();
     public IQueryable<VaultKeyMaterialEnvelope> VaultKeyMaterialEnvelopes => Track<VaultKeyMaterialEnvelope>();
     public IQueryable<VaultPrincipalDeprovisioning> VaultPrincipalDeprovisionings => Track<VaultPrincipalDeprovisioning>();
+    public IQueryable<VaultOrganizationLifecycle> VaultOrganizationLifecycles => Track<VaultOrganizationLifecycle>();
     public IQueryable<VaultCreationChallenge> VaultCreationChallenges => Track<VaultCreationChallenge>();
     public IQueryable<EntryCreationChallenge> EntryCreationChallenges => Track<EntryCreationChallenge>();
     public IQueryable<MemberKeyDirectoryEntry> MemberKeyDirectory => Track<MemberKeyDirectoryEntry>();
@@ -24,8 +25,6 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<VaultEntryKey> EntryKeys => Track<VaultEntryKey>();
     public IQueryable<VaultEntryVersion> EntryVersions => Track<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Track<AgentVaultDiscoveryEnvelope>();
-    public IQueryable<AgentPairingActivation> AgentPairingActivations => Track<AgentPairingActivation>();
-    public IQueryable<AgentPairingActivationCandidate> AgentPairingActivationCandidates => Track<AgentPairingActivationCandidate>();
     public IQueryable<Grant> Grants => Track<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Track<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Track<GrantEntryEnvelope>();
@@ -36,25 +35,14 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<User> Users => Track<User>();
     public IQueryable<CredentialFailureReport> CredentialFailureReports => Track<CredentialFailureReport>();
     public IQueryable<EncryptedPresentationAsset> EncryptedPresentationAssets => Track<EncryptedPresentationAsset>();
+    public IQueryable<VaultPresentationAssetCutoverState> VaultPresentationAssetCutoverStates =>
+        Track<VaultPresentationAssetCutoverState>();
 
     public IQueryable<Agent> LockAgent(Guid organizationId, Guid agentId) =>
         FromSqlInterpolated<Agent>(
             $"""
              SELECT * FROM "Agents"
              WHERE "OrganizationId" = {organizationId} AND "Id" = {agentId}
-             FOR UPDATE
-             """);
-
-    public IQueryable<AgentPairingActivation> LockAgentPairingActivation(
-        Guid organizationId,
-        Guid agentId,
-        Guid activationId) =>
-        FromSqlInterpolated<AgentPairingActivation>(
-            $"""
-             SELECT * FROM "AgentPairingActivations"
-             WHERE "OrganizationId" = {organizationId}
-               AND "AgentId" = {agentId}
-               AND "Id" = {activationId}
              FOR UPDATE
              """);
 
@@ -66,36 +54,6 @@ internal sealed class VaultDomainWriteContext(
              FOR UPDATE
              """);
 
-    public IQueryable<VaultEntry> LockEntry(Guid organizationId, Guid vaultId, Guid entryId) =>
-        FromSqlInterpolated<VaultEntry>(
-            $"""
-             SELECT * FROM "VaultEntries"
-             WHERE "OrganizationId" = {organizationId}
-               AND "VaultId" = {vaultId}
-               AND "Id" = {entryId}
-             FOR UPDATE
-             """);
-
-    public IQueryable<VaultEntry> LockEntries(Guid organizationId, Guid vaultId, Guid[] entryIds) =>
-        FromSqlInterpolated<VaultEntry>(
-            $"""
-             SELECT * FROM "VaultEntries"
-             WHERE "OrganizationId" = {organizationId}
-               AND "VaultId" = {vaultId}
-               AND "Id" = ANY ({entryIds})
-             ORDER BY "Id"
-             FOR UPDATE
-             """);
-
-    public IQueryable<Guid> LockVaultGrantIds(Guid organizationId, Guid vaultId) =>
-        SqlQuery<Guid>(
-            $"""
-             SELECT "Id" AS "Value" FROM "Grants"
-             WHERE "OrganizationId" = {organizationId} AND "VaultId" = {vaultId}
-             ORDER BY "Id"
-             FOR UPDATE
-             """);
-
     public IQueryable<MemberKeyDirectoryEntry> LockMemberKeyDirectory(Guid[] memberIds) =>
         FromSqlInterpolated<MemberKeyDirectoryEntry>(
             $"""
@@ -103,13 +61,6 @@ internal sealed class VaultDomainWriteContext(
              WHERE "UserId" = ANY ({memberIds})
              ORDER BY "UserId"
              FOR UPDATE
-             """);
-
-    public IQueryable<int> LockOrganizationAgentLifecycle(Guid organizationId) =>
-        SqlQuery<int>(
-            $"""
-             SELECT 1 AS "Value"
-             FROM pg_advisory_xact_lock(hashtextextended({organizationId.ToString()}, 641083))
              """);
 
     public IQueryable<int> FullGrantPreparationSnapshotMismatchCount(

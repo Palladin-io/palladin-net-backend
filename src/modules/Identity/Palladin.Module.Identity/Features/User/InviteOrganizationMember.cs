@@ -94,10 +94,8 @@ internal sealed class InviteOrganizationMemberEndpoint(
             return;
         }
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var organization = await domainWriteContext
-            .FromSqlInterpolated<Organization>($"""SELECT * FROM "Organizations" WHERE "Id" = {organizationId.Value} FOR UPDATE""")
-            .SingleAsync(ct);
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == organizationId.Value, ct);
         if (await domainWriteContext.OrganizationMembers.AnyAsync(
                 m => m.OrganizationId == organizationId && m.User.Email == email, ct))
         {
@@ -134,8 +132,8 @@ internal sealed class InviteOrganizationMemberEndpoint(
             invitationId, organizationId.Value, organization.Name, role.Id, role.Name,
             invitedBy.Value, inviter.DisplayName, email, inviter.PreferredLanguage.Code,
             token, tokenHash, ttl, now));
+        organization.FenceMembershipMutation();
         await domainWriteContext.CommitAsync(ct);
-        await transaction.CommitAsync(ct);
 
         await Send.NoContentAsync(ct);
     }

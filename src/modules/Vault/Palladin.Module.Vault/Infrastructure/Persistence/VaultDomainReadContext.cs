@@ -1,7 +1,6 @@
 using Palladin.Core.Persistence;
 using Palladin.Module.Vault.Domain;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -14,6 +13,7 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
     public IQueryable<VaultKeyRotationPreparedItem> VaultKeyRotationPreparedItems => Query<VaultKeyRotationPreparedItem>();
     public IQueryable<VaultKeyMaterialEnvelope> VaultKeyMaterialEnvelopes => Query<VaultKeyMaterialEnvelope>();
     public IQueryable<VaultPrincipalDeprovisioning> VaultPrincipalDeprovisionings => Query<VaultPrincipalDeprovisioning>();
+    public IQueryable<VaultOrganizationLifecycle> VaultOrganizationLifecycles => Query<VaultOrganizationLifecycle>();
     public IQueryable<VaultCreationChallenge> VaultCreationChallenges => Query<VaultCreationChallenge>();
     public IQueryable<EntryCreationChallenge> EntryCreationChallenges => Query<EntryCreationChallenge>();
     public IQueryable<MemberKeyDirectoryEntry> MemberKeyDirectory => Query<MemberKeyDirectoryEntry>();
@@ -21,8 +21,6 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
     public IQueryable<VaultEntryKey> EntryKeys => Query<VaultEntryKey>();
     public IQueryable<VaultEntryVersion> EntryVersions => Query<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Query<AgentVaultDiscoveryEnvelope>();
-    public IQueryable<AgentPairingActivation> AgentPairingActivations => Query<AgentPairingActivation>();
-    public IQueryable<AgentPairingActivationCandidate> AgentPairingActivationCandidates => Query<AgentPairingActivationCandidate>();
     public IQueryable<Grant> Grants => Query<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Query<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Query<GrantEntryEnvelope>();
@@ -73,14 +71,6 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
              """);
     }
 
-    public IQueryable<Domain.Vault> LockVaultForShare(Guid organizationId, Guid vaultId) =>
-        readContext.Vaults.FromSqlInterpolated(
-            $"""
-             SELECT * FROM "Vaults"
-             WHERE "OrganizationId" = {organizationId} AND "Id" = {vaultId}
-             FOR SHARE
-             """);
-
     public IQueryable<VaultEntryVersion> GetEntryHistoryPage(
         Guid organizationId,
         Guid vaultId,
@@ -98,8 +88,6 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
              LIMIT {take}
              """);
 
-    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default) =>
-        readContext.Database.BeginTransactionAsync(cancellationToken);
 }
 
 internal sealed record RotationEntryKeyRow(

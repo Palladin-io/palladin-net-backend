@@ -40,16 +40,8 @@ internal sealed class DeleteVaultEndpoint(
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var lockedVault = await domainWriteContext.LockVault(organizationId, req.Id)
-            .SingleOrDefaultAsync(ct);
-        if (lockedVault is null)
-        {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-
         var vault = await domainWriteContext.Vaults
+            .IgnoreQueryFilters()
             .Include(v => v.VaultMembers)
             .FirstOrDefaultAsync(v => v.Id == req.Id && v.OrganizationId == organizationId, ct);
         if (vault is null)
@@ -58,13 +50,27 @@ internal sealed class DeleteVaultEndpoint(
             return;
         }
 
-        var now = clock.GetCurrentInstant();
+        if (!vault.IsDeleting)
+        {
+            vault.BeginDeletion(userId, User.GetDisplayName(), clock.GetCurrentInstant());
+            await domainWriteContext.CommitAsync(ct);
+        }
 
-        vault.Delete(userId, User.GetDisplayName(), now);
+        // Object storage is outside the database boundary. IsDeleting hides the Vault and makes
+        // this phase safely retryable without holding locks during S3 calls.
         await assetPurger.PurgeVaultAsync(organizationId, vault.Id, ct);
-        domainWriteContext.Remove(vault);
 
-        await domainWriteContext.CommitAsync(transaction, ct);
+        domainWriteContext.Clear();
+        vault = await domainWriteContext.Vaults
+            .IgnoreQueryFilters()
+            .Include(v => v.VaultMembers)
+            .SingleOrDefaultAsync(v => v.Id == req.Id && v.OrganizationId == organizationId, ct);
+        if (vault is not null)
+        {
+            vault.CompleteDeletion();
+            domainWriteContext.Remove(vault);
+            await domainWriteContext.CommitAsync(ct);
+        }
 
         await Send.NoContentAsync(ct);
     }

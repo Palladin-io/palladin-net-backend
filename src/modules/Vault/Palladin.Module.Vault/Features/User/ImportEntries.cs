@@ -123,15 +123,14 @@ internal sealed class ImportEntriesEndpoint(
 
         var missing = transitions.Where(x => !existingById.ContainsKey(x.Item.EntryId)).ToList();
         var missingIds = missing.Select(x => x.Item.EntryId).ToList();
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var lockedVault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var lockedVault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (lockedVault is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-        await domainWriteContext.LockVaultGrantIds(organizationId, req.VaultId).ToListAsync(ct);
         var activeFullGrants = await domainWriteContext.Grants.OfType<FullGrant>()
             .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
             .Where(g => g.OrganizationId == organizationId
@@ -208,7 +207,7 @@ internal sealed class ImportEntriesEndpoint(
         if (entries.Count > 0)
         {
             domainWriteContext.AddRange(entries);
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
         }
 
         foreach (var publisher in eventPublishers.Where(_ => entries.Count > 0))

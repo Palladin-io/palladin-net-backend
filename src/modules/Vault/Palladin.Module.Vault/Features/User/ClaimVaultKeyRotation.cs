@@ -69,8 +69,8 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var vault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
         if (vault is null
             || !await domainWriteContext.VaultMembers.AnyAsync(
@@ -136,14 +136,19 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
         var preparedMaterialReset = false;
         if (!canResume)
         {
-            await domainWriteContext.ResetVaultKeyRotationPreparedItemsAsync(
-                organizationId, req.VaultId, req.RotationId, ct);
             pendingMemberItem = null;
             pendingKeyItems = [];
             preparedMaterialReset = true;
         }
+        // LeaseRevision is an optimistic token: concurrent claim/prepare/commit attempts cannot
+        // all succeed, while the ordinary SaveChanges keeps this transition short.
         await domainWriteContext.CommitAsync(ct);
-        await transaction.CommitAsync(ct);
+        if (preparedMaterialReset)
+        {
+            domainWriteContext.Clear();
+            await domainWriteContext.ResetVaultKeyRotationPreparedItemsAsync(
+                organizationId, req.VaultId, req.RotationId, ct);
+        }
         await Send.OkAsync(new ClaimVaultKeyRotationResponse(
             VaultKeyRotationResponses.Map(rotation),
             fencingToken,

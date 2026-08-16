@@ -32,7 +32,7 @@ internal sealed class VaultKeyRotationConfiguration : IEntityTypeConfiguration<V
         builder.Property(x => x.BaseDiscoverySequence)
             .HasConversion(x => (decimal)x.Value, x => new DiscoverySequence((ulong)x))
             .HasPrecision(20, 0);
-        builder.Property(x => x.LeaseRevision).HasPrecision(20, 0);
+        builder.Property(x => x.LeaseRevision).HasPrecision(20, 0).IsConcurrencyToken();
         builder.Property(x => x.TriggeredBy);
         builder.Property(x => x.TriggeredAt);
         builder.Property(x => x.LeaseOwnerId);

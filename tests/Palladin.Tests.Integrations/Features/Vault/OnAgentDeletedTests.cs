@@ -53,52 +53,6 @@ public sealed class OnAgentDeletedTests(ApiFactory apiFactory) : TestBase
         // Then — no throw; nothing to assert beyond graceful completion.
     }
 
-    [Fact]
-    public async Task When_DependentIsAddedInsideAgentLock_Then_DeletionWaitsAndRemovesIt()
-    {
-        // Given
-        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
-        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
-        var agent = await apiFactory.Services.SeedVaultAgentAsync(organization.Id, AgentStatus.Deactivated);
-        var deleted = new AgentDeletedEvent(
-            agent.Id,
-            organization.Id,
-            user.Id,
-            "Operator",
-            "Agent",
-            apiFactory.FakeClock.GetCurrentInstant());
-
-        await using var provisioningScope = apiFactory.Services.CreateAsyncScope();
-        var writeContext = provisioningScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-        await using var transaction = await writeContext.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        (await writeContext.LockAgent(organization.Id, agent.Id)
-                .SingleAsync(TestContext.Current.CancellationToken))
-            .ShouldNotBeNull();
-
-        // When
-        var deletion = ConsumeAsync(deleted);
-        var completedBeforeProvisioning = await Task.WhenAny(
-            deletion,
-            Task.Delay(100, TestContext.Current.CancellationToken)) == deletion;
-        var concurrentGrant = GrantFaker.CreateGranular(
-            organizationId: organization.Id,
-            vaultId: vault.Id,
-            agentId: agent.Id,
-            createdBy: user.Id,
-            status: GrantStatus.Revoked).Generate();
-        writeContext.Add(concurrentGrant);
-        await writeContext.CommitAsync(TestContext.Current.CancellationToken);
-        await transaction.CommitAsync(TestContext.Current.CancellationToken);
-        await deletion;
-
-        // Then
-        completedBeforeProvisioning.ShouldBeFalse();
-        await using var verifyScope = apiFactory.Services.CreateAsyncScope();
-        var readContext = verifyScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await readContext.Agents.AnyAsync(a => a.Id == agent.Id)).ShouldBeFalse();
-        (await readContext.Grants.AnyAsync(g => g.Id == concurrentGrant.Id)).ShouldBeFalse();
-    }
-
     private async Task ConsumeAsync(AgentDeletedEvent @event)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();

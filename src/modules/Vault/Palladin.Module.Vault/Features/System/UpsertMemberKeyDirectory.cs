@@ -26,9 +26,8 @@ internal sealed class UpsertMemberKeyDirectoryConsumer(VaultDomainWriteContext d
         var msg = context.Message;
         var fingerprint = MemberKeyFingerprint.Compute(msg.RawPublicKey);
         var version = new MemberRecipientKeyVersion(msg.KeyVersion);
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(context.CancellationToken);
-        var existing = await domainWriteContext.LockMemberKeyDirectory([msg.UserId])
-            .SingleOrDefaultAsync(context.CancellationToken);
+        var existing = await domainWriteContext.MemberKeyDirectory
+            .SingleOrDefaultAsync(x => x.UserId == msg.UserId, context.CancellationToken);
 
         if (existing is null)
         {
@@ -44,6 +43,6 @@ internal sealed class UpsertMemberKeyDirectoryConsumer(VaultDomainWriteContext d
             existing.Replace(version, fingerprint, msg.RawPublicKey, msg.UpdatedAt);
         }
 
-        await domainWriteContext.CommitAsync(transaction, context.CancellationToken);
+        await domainWriteContext.CommitAsync(context.CancellationToken);
     }
 }

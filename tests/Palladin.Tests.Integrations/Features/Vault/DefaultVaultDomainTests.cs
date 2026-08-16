@@ -25,7 +25,7 @@ public sealed class DefaultVaultDomainTests
     public void Delete_DefaultVault_Throws()
     {
         var vault = VaultFaker.Create(isDefault: true);
-        Should.Throw<DefaultVaultUndeletableException>(() => vault.Delete(Guid.NewGuid(), "actor", Now));
+        Should.Throw<DefaultVaultUndeletableException>(() => vault.BeginDeletion(Guid.NewGuid(), "actor", Now));
     }
 
     [Fact]

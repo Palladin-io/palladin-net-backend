@@ -43,10 +43,9 @@ internal sealed class OnAgentUpserted(
                 "Agent lifecycle event must carry a valid access epoch exactly when active.");
         }
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(msg.OrganizationId).SingleAsync(ct);
-        var existing = await domainWriteContext.LockAgent(msg.OrganizationId, msg.AgentId)
-            .SingleOrDefaultAsync(ct);
+        var existing = await domainWriteContext.Agents.SingleOrDefaultAsync(
+            x => x.OrganizationId == msg.OrganizationId && x.Id == msg.AgentId,
+            ct);
 
         if (existing is null)
         {
@@ -64,7 +63,6 @@ internal sealed class OnAgentUpserted(
                 accessEpochStartedAt,
                 updatedAt));
             await domainWriteContext.CommitAsync(ct);
-            await transaction.CommitAsync(ct);
             return;
         }
 
@@ -86,6 +84,5 @@ internal sealed class OnAgentUpserted(
             accessEpochStartedAt,
             updatedAt);
         await domainWriteContext.CommitAsync(ct);
-        await transaction.CommitAsync(ct);
     }
 }

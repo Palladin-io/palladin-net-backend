@@ -72,9 +72,9 @@ internal sealed class AppendFullGrantPreparationEntriesEndpoint(
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
         var now = clock.GetCurrentInstant();
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await domainWriteContext.LockOrganizationAgentLifecycle(organizationId).SingleAsync(ct);
-        var vault = await domainWriteContext.LockVault(organizationId, req.VaultId).SingleOrDefaultAsync(ct);
+        var vault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == req.VaultId,
+            ct);
         if (vault is null)
         {
             await Send.NotFoundAsync(ct);
@@ -94,14 +94,15 @@ internal sealed class AppendFullGrantPreparationEntriesEndpoint(
         if (now >= preparation.PreparationExpiresAt)
         {
             domainWriteContext.Remove(preparation);
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
             AddError(ErrorResponses.General("full-grant-preparation-expired"));
             await Send.ErrorsAsync(409, ct);
             return;
         }
 
-        var currentAgent = await domainWriteContext.LockAgent(organizationId, preparation.AgentId)
-            .SingleOrDefaultAsync(ct);
+        var currentAgent = await domainWriteContext.Agents.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == preparation.AgentId,
+            ct);
         if (currentAgent is null
             || currentAgent.Status != AgentStatus.Active
             || currentAgent.AccessEpoch != preparation.AgentAccessEpoch
@@ -120,7 +121,10 @@ internal sealed class AppendFullGrantPreparationEntriesEndpoint(
         }
 
         var entryIds = req.GrantEntries.Select(x => x.EntryId).Order().ToArray();
-        var lockedEntries = await domainWriteContext.LockEntries(organizationId, req.VaultId, entryIds)
+        var lockedEntries = await domainWriteContext.Entries
+            .Where(x => x.OrganizationId == organizationId
+                        && x.VaultId == req.VaultId
+                        && entryIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, ct);
         if (lockedEntries.Count != entryIds.Length
             || lockedEntries.Values.Any(entry => entry.State != EntryState.Active))
@@ -178,7 +182,7 @@ internal sealed class AppendFullGrantPreparationEntriesEndpoint(
             x.OrganizationId == organizationId
             && x.VaultId == req.VaultId
             && x.PreparationId == req.GrantId, ct);
-        await domainWriteContext.CommitAsync(transaction, ct);
+        await domainWriteContext.CommitAsync(ct);
         await Send.OkAsync(new AppendFullGrantPreparationEntriesResponse(
             accepted,
             previousTotal + accepted), ct);

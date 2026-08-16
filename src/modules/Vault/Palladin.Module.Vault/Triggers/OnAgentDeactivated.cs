@@ -32,33 +32,29 @@ internal sealed class OnAgentDeactivated(
         var now = clock.GetCurrentInstant();
         var deactivatedAt = PostgreSqlInstant.Normalize(msg.UpdatedAt);
         string agentName;
-        await using (var transaction = await domainWriteContext.BeginTransactionAsync(ct))
+        var agent = await domainWriteContext.Agents.SingleOrDefaultAsync(
+            x => x.OrganizationId == msg.OrganizationId && x.Id == msg.AgentId,
+            ct);
+        if (agent is null)
         {
-            await domainWriteContext.LockOrganizationAgentLifecycle(msg.OrganizationId).SingleAsync(ct);
-            var agent = await domainWriteContext.LockAgent(msg.OrganizationId, msg.AgentId)
-                .SingleOrDefaultAsync(ct);
-            if (agent is null)
-            {
-                return;
-            }
-
-            var accepted = agent.AcceptDeactivation(msg.AccessEpoch, deactivatedAt);
-            if (!accepted
-                && (agent.LastProcessedDeactivationEpoch != msg.AccessEpoch
-                    || agent.LastProcessedDeactivationAt != deactivatedAt))
-            {
-                return;
-            }
-
-            agentName = agent.Name ?? GrantNames.UnknownAgent;
-            await domainWriteContext.CommitAsync(transaction, ct);
+            return;
         }
+
+        var accepted = agent.AcceptDeactivation(msg.AccessEpoch, deactivatedAt);
+        if (!accepted
+            && (agent.LastProcessedDeactivationEpoch != msg.AccessEpoch
+                || agent.LastProcessedDeactivationAt != deactivatedAt))
+        {
+            return;
+        }
+
+        agentName = agent.Name ?? GrantNames.UnknownAgent;
+        await domainWriteContext.CommitAsync(ct);
+        domainWriteContext.Clear();
 
         Guid? lastGrantId = null;
         while (true)
         {
-            await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-            await domainWriteContext.LockOrganizationAgentLifecycle(msg.OrganizationId).SingleAsync(ct);
             var query = domainWriteContext.Grants
                 .Include(g => g.EncryptedReason)
                 .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
@@ -84,7 +80,7 @@ internal sealed class OnAgentDeactivated(
             }
 
             lastGrantId = grants[^1].Id;
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
             domainWriteContext.Clear();
             if (grants.Count < PageSize)
             {
@@ -95,8 +91,6 @@ internal sealed class OnAgentDeactivated(
         Guid? lastVaultId = null;
         while (true)
         {
-            await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-            await domainWriteContext.LockOrganizationAgentLifecycle(msg.OrganizationId).SingleAsync(ct);
             var query = domainWriteContext.Vaults
                 .Include(x => x.AgentVaultDiscoveryEnvelopes.Where(envelope => envelope.AgentId == msg.AgentId))
                 .Where(x => x.OrganizationId == msg.OrganizationId)
@@ -118,7 +112,7 @@ internal sealed class OnAgentDeactivated(
             }
 
             lastVaultId = vaults[^1].Id;
-            await domainWriteContext.CommitAsync(transaction, ct);
+            await domainWriteContext.CommitAsync(ct);
             domainWriteContext.Clear();
             if (vaults.Count < PageSize)
             {

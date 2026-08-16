@@ -13,9 +13,13 @@ internal sealed class VaultPrincipalDeprovisioningConfiguration
         builder.HasIndex(x => new { x.OrganizationId, x.PrincipalType, x.PrincipalId })
             .IsUnique()
             .HasFilter($"\"Status\" <> {(int)VaultPrincipalDeprovisioningStatus.Completed}");
+        builder.HasIndex(x => x.OrganizationId)
+            .IsUnique()
+            .HasFilter($"\"Status\" = {(int)VaultPrincipalDeprovisioningStatus.WaitingForRotation}");
         builder.HasIndex(x => new { x.OrganizationId, x.RequestedAt, x.Id });
         builder.Property(x => x.PrincipalType);
         builder.Property(x => x.Status);
         builder.Property(x => x.CompletedVaultCount);
+        builder.Property(x => x.UpdatedAt).IsConcurrencyToken();
     }
 }

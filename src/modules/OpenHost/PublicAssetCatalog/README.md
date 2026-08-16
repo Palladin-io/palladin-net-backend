@@ -53,11 +53,12 @@ the aggregate is marked deleted and releases its hostname aliases before ensure 
 acquisition reservations. `PublicAsset.Status` is an optimistic concurrency token, so upload completion
 cannot overwrite that transition. A service upload that loses
 a hostname reservation race is translated to HTTP 409 instead of leaking a database uniqueness error.
-Acquisition reservations persist a dispatch marker. Ensure serializes publication with a row lock
-and sets the marker only after the broker accepts the command. A marked Pending reservation is never
-re-enqueued merely because time elapsed; a transient acquisition failure re-locks the row, clears the
-committed marker, and permits a later explicit ensure to retry without duplicating queued work. A fault
-consumer clears the same marker after broker retries are exhausted. Reservation creation is serialized
+Acquisition reservations persist a dispatch marker. Ensure publishes without a database transaction
+or row lock and sets the marker only after the broker accepts the command. A concurrent request may
+publish the same command, which is safe because acquisition and immutable storage publication are
+idempotent; the marker's optimistic concurrency token has one durable winner. A marked Pending reservation is never
+re-enqueued merely because time elapsed; a transient acquisition failure clears the committed marker,
+and permits a later explicit ensure to retry. A fault consumer clears the same marker after broker retries are exhausted. Reservation creation is serialized
 per Member before hostname permits are charged, so concurrent requests cannot charge the same hostname twice.
 The reserved revision key is written with S3 `If-None-Match: *`,
 and every delivery probes that key before contacting the mutable upstream. A retry after an

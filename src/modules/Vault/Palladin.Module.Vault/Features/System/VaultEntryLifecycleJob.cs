@@ -107,12 +107,20 @@ internal sealed class VaultEntryLifecycleJob(
         while (true)
         {
             var due = await domainWriteContext.Entries
-                .Where(x => x.State == EntryState.Deleted
-                            && x.DeletedAt != null
-                            && x.DeletedAt <= cutoff)
+                .IgnoreQueryFilters()
+                .Where(x => x.IsPurging
+                            || (x.State == EntryState.Deleted
+                                && x.DeletedAt != null
+                                && x.DeletedAt <= cutoff))
                 .OrderBy(x => x.DeletedAt)
                 .Take(lifecycleOptions.Value.BatchSize)
-                .Select(x => new { x.OrganizationId, x.VaultId, EntryId = x.Id, x.UpdatedBy })
+                .Select(x => new
+                {
+                    x.OrganizationId,
+                    x.VaultId,
+                    EntryId = x.Id,
+                    ActorId = x.PurgeRequestedBy ?? x.UpdatedBy,
+                })
                 .ToListAsync(cancellationToken);
             domainWriteContext.Clear();
             if (due.Count == 0)
@@ -124,7 +132,7 @@ internal sealed class VaultEntryLifecycleJob(
             {
                 await purgeService.PurgeAsync(
                     new EntryScope(entry.OrganizationId, entry.VaultId, entry.EntryId),
-                    entry.UpdatedBy,
+                    entry.ActorId,
                     cutoff,
                     appendLedger: true,
                     requireDeleted: true,

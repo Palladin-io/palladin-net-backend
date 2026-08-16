@@ -26,6 +26,7 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
     : EndpointWithoutRequest<ListAgentVaultManifestsResponse>
 {
     private const string ProtocolHeader = "X-Palladin-Vault-Protocol";
+    private const int MaximumAgentVaultManifests = 2048;
 
     public override void Configure()
     {
@@ -82,9 +83,9 @@ internal sealed class ListAgentVaultManifestsEndpoint(VaultDomainReadContext dom
                 && vault.CurrentManifestSigningKeyVersion == x.ManifestSigningKeyVersion
                 && vault.CurrentAgentMessageKeyVersion == x.AgentMessageKeyVersion))
             .OrderBy(x => x.VaultId)
-            .Take(AgentPairingTranscriptService.MaximumCandidateVaults + 1)
+            .Take(MaximumAgentVaultManifests + 1)
             .ToListAsync(ct);
-        if (envelopes.Count > AgentPairingTranscriptService.MaximumCandidateVaults)
+        if (envelopes.Count > MaximumAgentVaultManifests)
         {
             AddError("agent-vault-manifest-limit-exceeded");
             await Send.ErrorsAsync(409, ct);

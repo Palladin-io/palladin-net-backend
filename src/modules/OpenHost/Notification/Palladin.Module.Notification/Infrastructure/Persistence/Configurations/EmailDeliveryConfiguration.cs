@@ -12,5 +12,7 @@ internal sealed class EmailDeliveryConfiguration : IEntityTypeConfiguration<Emai
     {
         builder.HasKey(delivery => delivery.IdempotencyKey);
         builder.Property(delivery => delivery.IdempotencyKey).HasMaxLength(200);
+        builder.Property(delivery => delivery.Status).HasConversion<short>();
+        builder.Property(delivery => delivery.UpdatedAt).IsConcurrencyToken();
     }
 }

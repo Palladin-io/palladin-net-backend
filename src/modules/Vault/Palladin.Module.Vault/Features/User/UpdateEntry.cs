@@ -80,19 +80,20 @@ internal sealed class UpdateEntryEndpoint(
             ? null
             : VaultEnvelopeContractMapper.ToDomain(req.NewEntryKey);
 
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        var lockedVault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+        var vault = await domainWriteContext.Vaults
+            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
             .SingleOrDefaultAsync(ct);
-        if (lockedVault is null)
+        if (vault is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
-        await domainWriteContext.LockVaultGrantIds(organizationId, req.VaultId).ToListAsync(ct);
-        var entry = await domainWriteContext.LockEntry(organizationId, req.VaultId, req.EntryId)
+        var entry = await domainWriteContext.Entries
             .Include(x => x.Keys)
             .Include(x => x.Versions)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(x => x.OrganizationId == organizationId
+                                      && x.VaultId == req.VaultId
+                                      && x.Id == req.EntryId, ct);
         if (entry is null)
         {
             await Send.NotFoundAsync(ct);
@@ -133,8 +134,6 @@ internal sealed class UpdateEntryEndpoint(
             return;
         }
 
-        var vault = await domainWriteContext.Vaults
-            .FirstAsync(x => x.OrganizationId == entry.OrganizationId && x.Id == entry.VaultId, ct);
         var userId = User.GetUserId()!.Value;
         var now = clock.GetCurrentInstant();
         var sequences = vault.AllocateSequences(req.AgentDiscoveryChanged, userId, now);
@@ -190,7 +189,7 @@ internal sealed class UpdateEntryEndpoint(
             return;
         }
 
-        await domainWriteContext.CommitAsync(transaction, ct);
+        await domainWriteContext.CommitAsync(ct);
         await Send.OkAsync(new UpdateEntryResponse(entry.CurrentRevision.Value.ToString()), ct);
     }
 }

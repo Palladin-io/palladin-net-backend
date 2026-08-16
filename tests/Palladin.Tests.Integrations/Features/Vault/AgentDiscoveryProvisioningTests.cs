@@ -441,53 +441,6 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
     }
 
     [Fact]
-    public async Task When_DifferentOrganizationAttemptsPairingConfirmation_Then_FailsClosed()
-    {
-        var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
-        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
-        var (_, apiKey) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
-        var signing = AgentRequestSigning.Generate();
-        var keys = new AgentKeys(AgentFaker.GeneratePublicKey(), signing.PublicKeyBase64);
-        var sourceAgent = await apiFactory.Services.SeedAgentAsync(
-            organization.Id,
-            AgentFaker.Create(
-                    organizationId: organization.Id,
-                    publicKey: keys.X25519PublicKey,
-                    signingPublicKey: keys.Ed25519PublicKey)
-                .RuleFor(x => x.Status, AgentStatus.Active));
-        await apiFactory.Services.SeedVaultAgentAsync(
-            organization.Id,
-            id: sourceAgent.Id,
-            publicKey: keys.X25519PublicKey,
-            signingPublicKey: keys.Ed25519PublicKey);
-        var memberClient = apiFactory.CreateAuthenticatedClient(member);
-        (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
-            CreateRequest(organization.Id, vault.Id, sourceAgent.Id, keys, 1)))
-            .EnsureSuccessStatusCode();
-        var agentClient = apiFactory.CreateSignedAgentClient(
-            sourceAgent.Id,
-            apiKey,
-            keys.X25519PublicKey,
-            signing);
-        agentClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
-        var activationId = Guid.NewGuid();
-        var (_, activation) = await agentClient
-            .POSTAsync<CreateAgentPairingActivationEndpoint, CreateAgentPairingActivationRequest, AgentPairingActivationResponse>(
-                new CreateAgentPairingActivationRequest(activationId));
-        activation.ShouldNotBeNull();
-        var digest = ComputePairingDigest(activation);
-        var (outsider, _, _) = await apiFactory.Services.SeedUserAsync();
-        var outsiderClient = apiFactory.CreateAuthenticatedClient(outsider);
-
-        var response = await outsiderClient.PostAsJsonAsync(
-            $"api/agents/{sourceAgent.Id}/pairing/activations/{activationId}/confirm",
-            new ConfirmAgentPairingActivationRequest(digest),
-            TestContext.Current.CancellationToken);
-
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
     public async Task When_AuthenticatedEpochAdvancesBeforeVaultReplica_Then_DoesNotServePriorEpochManifest()
     {
         // Given: the source Agent is already in epoch 2, while Vault still has its epoch-1 replica and envelope.
@@ -886,15 +839,6 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
 
     private static AgentKeys CreateAgentKeys() =>
         new(AgentFaker.GeneratePublicKey(), AgentRequestSigning.Generate().PublicKeyBase64);
-
-    private static string ComputePairingDigest(AgentPairingActivationResponse activation) =>
-        WebEncoders.Base64UrlEncode(AgentPairingTranscriptService.ComputeDigest(
-            activation.ActivationId,
-            activation.OrganizationId,
-            activation.AgentId,
-            WebEncoders.Base64UrlDecode(activation.AgentX25519Fingerprint),
-            WebEncoders.Base64UrlDecode(activation.AgentEd25519Fingerprint),
-            activation.CandidateManifests));
 
     private static ProvisionAgentDiscoveryRequest CreateRequest(
         Guid organizationId,

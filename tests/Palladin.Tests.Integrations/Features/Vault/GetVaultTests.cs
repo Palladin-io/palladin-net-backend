@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Palladin.Core.Security;
 using Palladin.Module.Vault.Features;
 using Palladin.Tests.Integrations.Shared;
@@ -31,6 +32,8 @@ public sealed class GetVaultTests(ApiFactory apiFactory) : TestBase
         result.Id.ShouldBe(vault.Id);
         result.OrganizationId.ShouldBe(organization.Id);
         result.ProtocolVersion.ShouldBe((ushort)2);
+        result.MetadataRevision.ShouldBe("1");
+        result.MetadataRevision.ShouldBe(result.MemberVaultMetadata.Descriptor.ResourceRevision);
         result.MemberVaultMetadata.VaultId.ShouldBe(vault.Id);
         result.MemberVaultKey.MemberId.ShouldBe(user.Id);
         result.MemberCount.ShouldBe(1);
@@ -55,6 +58,31 @@ public sealed class GetVaultTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         result!.EntryCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task When_VaultMember_GetsVault_Then_SerializesCanonicalMetadataRevisionAtTopLevel()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultCreate);
+
+        // When
+        var response = await client.GetAsync($"api/vaults/{vault.Id}", TestContext.Current.CancellationToken);
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var metadataRevision = body.RootElement.GetProperty("metadataRevision");
+        metadataRevision.ValueKind.ShouldBe(JsonValueKind.String);
+        metadataRevision.GetString().ShouldBe("1");
+        metadataRevision.GetString().ShouldBe(body.RootElement
+            .GetProperty("memberVaultMetadata")
+            .GetProperty("descriptor")
+            .GetProperty("resourceRevision")
+            .GetString());
     }
 
     [Fact]

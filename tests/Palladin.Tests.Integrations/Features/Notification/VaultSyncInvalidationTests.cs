@@ -12,7 +12,9 @@ using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Triggers;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
+using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Mocks;
+using Palladin.Tests.Integrations.Shared.Seeders;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Notification;
@@ -99,27 +101,55 @@ public sealed class VaultSyncInvalidationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task VaultEvent_MapsCanonicalMonotonicWire()
+    public async Task VaultEvent_ResolvesCurrentCommittedMembers_AndMapsCanonicalMonotonicWire()
     {
-        var publish = Substitute.For<IPublishEndpoint>();
-        var consumer = new OnVaultSyncInvalidated(publish);
         var organizationId = Guid.NewGuid();
-        var vaultId = Guid.NewGuid();
-        var memberIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var userId = Guid.NewGuid();
+        var vault = await apiFactory.Services.SeedVaultAsync(
+            organizationId,
+            userId,
+            VaultFaker.Create(organizationId: organizationId, createdBy: userId));
+        var publish = Substitute.For<IPublishEndpoint>();
         var occurredAt = Instant.FromUnixTimeSeconds(123);
 
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var consumer = ActivatorUtilities.CreateInstance<OnVaultSyncInvalidated>(
+            scope.ServiceProvider,
+            publish);
         await consumer.Consume(apiFactory.MockConsumeContext(
-            new VaultSyncInvalidatedEvent(organizationId, vaultId, memberIds, 12, 24, occurredAt)));
+            new VaultSyncInvalidatedEvent(organizationId, vault.Id, 12, 24, occurredAt)));
 
         await publish.Received(1).Publish(
             Arg.Is<BroadcastVaultSyncInvalidationCommand>(command =>
                 command.OrganizationId == organizationId
-                && command.VaultId == vaultId
+                && command.VaultId == vault.Id
                 && command.MemberSequence == "12"
                 && command.MutationVersion == "24"
                 && !command.Removed
-                && command.RecipientUserIds.SequenceEqual(memberIds)),
+                && command.RecipientUserIds.SequenceEqual(new[] { userId })),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task VaultEvent_WithNoCurrentCommittedMembers_DoesNotPublish()
+    {
+        var publish = Substitute.For<IPublishEndpoint>();
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var consumer = ActivatorUtilities.CreateInstance<OnVaultSyncInvalidated>(
+            scope.ServiceProvider,
+            publish);
+
+        await consumer.Consume(apiFactory.MockConsumeContext(
+            new VaultSyncInvalidatedEvent(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                12,
+                24,
+                Instant.FromUnixTimeSeconds(123))));
+
+        await publish.DidNotReceiveWithAnyArgs().Publish(
+            default(BroadcastVaultSyncInvalidationCommand)!,
+            default);
     }
 
     private static BroadcastVaultSyncInvalidationCommand Changed(Guid organizationId, Guid vaultId) =>

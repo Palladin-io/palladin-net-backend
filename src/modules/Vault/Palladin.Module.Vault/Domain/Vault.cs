@@ -684,7 +684,6 @@ internal sealed class Vault : EventEntityBase
         AddOrReplaceEvent(new VaultSyncInvalidatedEvent(
             OrganizationId,
             Id,
-            VaultMembers.Select(member => member.UserId).Distinct().ToArray(),
             MemberSequence.Value,
             MutationVersion,
             occurredAt));

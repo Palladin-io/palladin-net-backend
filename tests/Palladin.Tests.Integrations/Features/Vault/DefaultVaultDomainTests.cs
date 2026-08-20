@@ -22,7 +22,7 @@ public sealed class DefaultVaultDomainTests
     }
 
     [Fact]
-    public void AllocateEntrySequence_EmitsLatestValueFreeSyncInvalidationForEveryMember()
+    public void AllocateEntrySequence_EmitsLatestValueFreeSyncInvalidation()
     {
         var creatorId = Guid.NewGuid();
         var secondMemberId = Guid.NewGuid();
@@ -37,7 +37,6 @@ public sealed class DefaultVaultDomainTests
         invalidation.VaultId.ShouldBe(vault.Id);
         invalidation.MemberSequence.ShouldBe(allocated.MemberSequence.Value);
         invalidation.MutationVersion.ShouldBe(vault.MutationVersion);
-        invalidation.MemberUserIds.ShouldBe([creatorId, secondMemberId], ignoreOrder: true);
         invalidation.OccurredAt.ShouldBe(Now);
     }
 

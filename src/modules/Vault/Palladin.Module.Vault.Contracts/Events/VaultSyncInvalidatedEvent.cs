@@ -12,7 +12,6 @@ namespace Palladin.Module.Vault.Contracts.Events;
 public sealed record VaultSyncInvalidatedEvent(
     Guid OrganizationId,
     Guid VaultId,
-    IReadOnlyList<Guid> MemberUserIds,
     ulong MemberSequence,
     ulong MutationVersion,
     Instant OccurredAt) : IIntegrationEvent;

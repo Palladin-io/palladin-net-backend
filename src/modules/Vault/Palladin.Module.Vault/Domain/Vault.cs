@@ -178,6 +178,7 @@ internal sealed class Vault : EventEntityBase
             vault.KeyMaterialEnvelopes.Add(envelope);
         }
         vault.EmitUpserted(createdBy, actorName, EntityChange.Created, now);
+        vault.EmitSyncInvalidated(now);
 
         return vault;
     }
@@ -220,6 +221,7 @@ internal sealed class Vault : EventEntityBase
 
         var added = AddMemberCore(userId, wrappedVaultKey, now);
         AdvanceMutationVersion();
+        EmitSyncInvalidated(now);
         return added;
     }
 
@@ -250,6 +252,7 @@ internal sealed class Vault : EventEntityBase
         UpdatedAt = now;
         AdvanceMutationVersion();
         EmitUpserted(updatedBy, actorName, EntityChange.Updated, now);
+        EmitSyncInvalidated(now);
     }
 
     internal AllocatedVaultSequences AllocateSequences(
@@ -269,6 +272,7 @@ internal sealed class Vault : EventEntityBase
         UpdatedBy = updatedBy;
         UpdatedAt = now;
         AdvanceMutationVersion();
+        EmitSyncInvalidated(now);
 
         return new AllocatedVaultSequences(MemberSequence, allocatedDiscoverySequence);
     }
@@ -478,6 +482,7 @@ internal sealed class Vault : EventEntityBase
         UpdatedBy = committedBy;
         UpdatedAt = committedAt;
         AdvanceMutationVersion();
+        EmitSyncInvalidated(committedAt);
     }
 
     internal void AddRotatedMemberKeyPage(
@@ -534,7 +539,7 @@ internal sealed class Vault : EventEntityBase
         }
     }
 
-    internal void RemoveMemberForCommittedRotation(Guid userId)
+    internal void RemoveMemberForCommittedRotation(Guid userId, Instant occurredAt)
     {
         foreach (var envelope in VaultMemberKeyEnvelopes.Where(x => x.MemberId == userId).ToArray())
         {
@@ -548,6 +553,13 @@ internal sealed class Vault : EventEntityBase
         }
 
         VaultMembers.Remove(member);
+        AddEvent(new VaultMemberAccessRemovedEvent(
+            OrganizationId,
+            Id,
+            userId,
+            MemberSequence.Value,
+            MutationVersion,
+            occurredAt));
     }
 
     internal void BeginDeletion(Guid deletedBy, string actorName, Instant now)
@@ -586,6 +598,8 @@ internal sealed class Vault : EventEntityBase
             OrganizationId,
             DeletionRequestedByName ?? string.Empty,
             VaultMembers.Select(x => x.UserId).ToList(),
+            MemberSequence.Value,
+            MutationVersion,
             deletedAt));
     }
 
@@ -665,6 +679,15 @@ internal sealed class Vault : EventEntityBase
             IsDefault,
             change,
             updatedAt));
+
+    private void EmitSyncInvalidated(Instant occurredAt) =>
+        AddOrReplaceEvent(new VaultSyncInvalidatedEvent(
+            OrganizationId,
+            Id,
+            VaultMembers.Select(member => member.UserId).Distinct().ToArray(),
+            MemberSequence.Value,
+            MutationVersion,
+            occurredAt));
 
     private static void ValidateMetadata(
         VaultScope scope,

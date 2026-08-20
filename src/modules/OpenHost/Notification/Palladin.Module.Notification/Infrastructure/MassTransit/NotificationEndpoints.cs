@@ -4,6 +4,7 @@ internal static class NotificationEndpoints
 {
     internal const string Self = "notification.events.self";
     internal const string Inbox = "notification.commands.inbox";
+    internal const string Realtime = "notification.commands.realtime";
     internal const string Scope = "notification.events.scope";
     internal const string FromIdentity = "notification.events.identity";
     internal const string Onboarding = "notification.onboarding";

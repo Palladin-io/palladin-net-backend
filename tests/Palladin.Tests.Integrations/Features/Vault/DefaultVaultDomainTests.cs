@@ -22,6 +22,26 @@ public sealed class DefaultVaultDomainTests
     }
 
     [Fact]
+    public void AllocateEntrySequence_EmitsLatestValueFreeSyncInvalidationForEveryMember()
+    {
+        var creatorId = Guid.NewGuid();
+        var secondMemberId = Guid.NewGuid();
+        var vault = VaultFaker.Create(createdBy: creatorId);
+        vault.AddMember(secondMemberId, VaultFaker.CreateMemberKey(vault.Scope, secondMemberId), Now);
+        vault.FetchEvents();
+
+        var allocated = vault.AllocateSequences(false, creatorId, Now);
+
+        var invalidation = vault.FetchEvents().OfType<VaultSyncInvalidatedEvent>().ShouldHaveSingleItem();
+        invalidation.OrganizationId.ShouldBe(vault.OrganizationId);
+        invalidation.VaultId.ShouldBe(vault.Id);
+        invalidation.MemberSequence.ShouldBe(allocated.MemberSequence.Value);
+        invalidation.MutationVersion.ShouldBe(vault.MutationVersion);
+        invalidation.MemberUserIds.ShouldBe([creatorId, secondMemberId], ignoreOrder: true);
+        invalidation.OccurredAt.ShouldBe(Now);
+    }
+
+    [Fact]
     public void Delete_DefaultVault_Throws()
     {
         var vault = VaultFaker.Create(isDefault: true);

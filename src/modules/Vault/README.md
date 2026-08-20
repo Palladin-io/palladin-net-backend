@@ -156,6 +156,8 @@ Member key versions are the directory ordering authority. A higher version repla
 
 Feature mutations load tracked aggregates through `VaultDomainWriteContext`, call domain methods, and commit through `CommitAsync`. Queries use `VaultDomainReadContext`.
 
+Every committed Member-visible Vault mutation also emits one coalesced `VaultSyncInvalidatedEvent` carrying only the Vault id, the committed Member sequence, the aggregate mutation version, the committed Member recipient snapshot and the occurrence time. The Vault trigger maps it after commit to Notification's `BroadcastVaultSyncInvalidationCommand`; it never sends SignalR inline from a feature. Member removal and Vault deletion additionally emit a `removed` tombstone to the exact former Member snapshot. Clients treat the event as an at-least-once hint and fetch the canonical encrypted REST delta.
+
 Vault lifecycle events contain identifiers, actors, structural classification, and timestamps only. Audit metadata never contains Vault display fields or ciphertext. The destructive cutover truncates legacy Audit rows and, before serving non-development traffic, deletes and verifies every current/noncurrent object version and delete marker under the `audit-exports/` prefix. A durable Audit cutover marker prevents that one-off purge from being mistaken for an ongoing compatibility path; startup fails closed when complete external deletion cannot be verified.
 
 Vault and Entry Search publishers, consumers, endpoint registrations, and the Search contract dependency were removed. Vault/Entry matching is exclusively client-local after unlock.

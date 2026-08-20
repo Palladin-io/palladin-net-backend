@@ -30,7 +30,7 @@ EF Core + Postgres, MassTransit, **SignalR** (`NotificationHub`, JWT-authenticat
 
 ## Critical points / invariants
 - `BroadcastNotificationCommand` is the single fan-out path — modules must not deliver notifications themselves.
-- `BroadcastVaultSyncInvalidationCommand` is a separate realtime-only path. It validates canonical decimal versions, targets the exact user groups captured by the committed Vault event, sends `ReceiveVaultSyncInvalidation`, and writes no Inbox item or push notification.
+- `BroadcastVaultSyncInvalidationCommand` is a separate realtime-only path. For ordinary invalidations, Vault resolves the current authorized Members from committed persistence before publishing the command; removal and deletion tombstones carry explicit former-Member snapshots. Notification validates canonical decimal versions, targets those exact user groups, sends `ReceiveVaultSyncInvalidation`, and writes no Inbox item or push notification.
 - SignalR delivers no OS-level notification; clients must show a local notification for foreground SignalR events.
 - Vault-derived commands are validated against a fail-closed metadata allowlist. Vault/Entry names, request reasons, notes, domains, account identity and server-composed deep links are forbidden in Inbox and SignalR payloads.
 - FCM Web and FCM/APNs receive only type, generic category, opaque subject ID and NodaTime `occurredAt`. Visible push copy never interpolates command metadata, so lock-screen/browser notifications remain generic while locked.

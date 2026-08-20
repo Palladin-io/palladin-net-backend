@@ -6,8 +6,8 @@ namespace Palladin.Module.Notification.Contracts.Commands;
 
 /// <summary>
 /// Delivers a value-free Vault synchronization hint to authorized realtime clients.
-/// Recipients are the authoritative Member snapshot captured by the committed
-/// Vault event, or the explicit former Member for an access-removal tombstone.
+/// For an ordinary invalidation, Vault resolves recipients from committed membership
+/// after handling the domain event. Tombstones carry an explicit former-Member snapshot.
 /// </summary>
 [PublicAPI]
 public sealed record BroadcastVaultSyncInvalidationCommand(

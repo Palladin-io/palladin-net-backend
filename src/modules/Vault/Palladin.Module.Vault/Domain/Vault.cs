@@ -581,16 +581,6 @@ internal sealed class Vault : EventEntityBase
         UpdatedBy = deletedBy;
         UpdatedAt = now;
         AdvanceMutationVersion();
-    }
-
-    internal void CompleteDeletion()
-    {
-        if (!IsDeleting
-            || DeletionRequestedBy is not { } deletedBy
-            || DeletionRequestedAt is not { } deletedAt)
-        {
-            throw new DomainException("Vault deletion must be durably requested before completion.");
-        }
 
         AddEvent(new VaultDeletedEvent(
             Id,
@@ -600,7 +590,17 @@ internal sealed class Vault : EventEntityBase
             VaultMembers.Select(x => x.UserId).ToList(),
             MemberSequence.Value,
             MutationVersion,
-            deletedAt));
+            now));
+    }
+
+    internal void CompleteDeletion()
+    {
+        if (!IsDeleting
+            || DeletionRequestedBy is null
+            || DeletionRequestedAt is null)
+        {
+            throw new DomainException("Vault deletion must be durably requested before completion.");
+        }
     }
 
     internal void FenceAccessMutation(Guid updatedBy, Instant now)

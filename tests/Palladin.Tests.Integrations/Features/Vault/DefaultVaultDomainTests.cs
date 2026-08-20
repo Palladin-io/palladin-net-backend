@@ -48,6 +48,27 @@ public sealed class DefaultVaultDomainTests
     }
 
     [Fact]
+    public void BeginDeletion_EmitsFormerMemberTombstoneBeforePhysicalCompletion()
+    {
+        var creatorId = Guid.NewGuid();
+        var secondMemberId = Guid.NewGuid();
+        var vault = VaultFaker.Create(createdBy: creatorId);
+        vault.AddMember(secondMemberId, VaultFaker.CreateMemberKey(vault.Scope, secondMemberId), Now);
+        vault.FetchEvents();
+
+        vault.BeginDeletion(creatorId, "actor", Now);
+
+        var deleted = vault.FetchEvents().OfType<VaultDeletedEvent>().ShouldHaveSingleItem();
+        deleted.MemberUserIds.ShouldBe([creatorId, secondMemberId], ignoreOrder: true);
+        deleted.MemberSequence.ShouldBe(vault.MemberSequence.Value);
+        deleted.MutationVersion.ShouldBe(vault.MutationVersion);
+        deleted.UpdatedAt.ShouldBe(Now);
+
+        vault.CompleteDeletion();
+        vault.FetchEvents().OfType<VaultDeletedEvent>().ShouldBeEmpty();
+    }
+
+    [Fact]
     public void AddMember_DefaultVault_Throws()
     {
         var vault = VaultFaker.Create(isDefault: true);

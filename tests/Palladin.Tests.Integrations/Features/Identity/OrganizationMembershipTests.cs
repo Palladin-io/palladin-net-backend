@@ -7,6 +7,7 @@ using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Shared;
 using Palladin.Module.Identity.Triggers;
 using Palladin.Module.Vault.Contracts.Commands;
 using Palladin.Module.Vault.Contracts.Events;
@@ -851,6 +852,51 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         // Then
         firstResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         secondResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task When_RemovedUserRejoins_Then_MembershipVersionsContinueBeyondHistoricalDispatch()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (invitedUser, _, _) = await apiFactory.Services.SeedUserAsync();
+        await SetSeatLimitAsync(organization.Id, 2);
+        const string token = "rejoin-with-monotonic-membership-versions";
+        var invitation = await SeedInvitationAsync(owner, organization, invitedUser.Email, token);
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = seedScope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            writeContext.OrganizationMemberRoleSetDispatches.Add(OrganizationMemberRoleSetDispatch.Create(
+                organization.Id,
+                invitedUser.Id,
+                [invitation.RoleId!.Value],
+                revision: 7,
+                authorizationVersion: 9,
+                isActive: false,
+                updatedAt: now));
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var client = apiFactory.CreateAuthenticatedClient(invitedUser);
+
+        // When
+        var response = await client.POSTAsync<
+            AcceptOrganizationInvitationEndpoint,
+            AcceptOrganizationInvitationRequest>(new AcceptOrganizationInvitationRequest { Token = token });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var membership = await readContext.OrganizationMembers.SingleAsync(x =>
+            x.OrganizationId == organization.Id && x.UserId == invitedUser.Id);
+        membership.AuthorizationVersion.ShouldBe(10u);
+        membership.VaultAccessRevision.ShouldBe(8ul);
+        var validator = scope.ServiceProvider.GetRequiredService<IOrganizationMembershipValidator>();
+        (await validator.IsActiveAsync(
+            invitedUser.Id, organization.Id, 9u, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await validator.IsActiveAsync(
+            invitedUser.Id, organization.Id, 10u, TestContext.Current.CancellationToken)).ShouldBeTrue();
     }
 
     [Fact]

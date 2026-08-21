@@ -163,12 +163,13 @@ internal sealed class UpdateRoleVaultAccessEndpoint(
             vault.FenceRolePolicyMutation();
         }
 
-        var activeRoleMemberIds = await domainWriteContext.OrganizationMemberRoleSets
+        var activeRoleMembers = await domainWriteContext.OrganizationMemberRoleSets
             .Where(x => x.OrganizationId == organizationId
                         && x.IsActive
                         && x.RoleIds.Contains(req.RoleId))
-            .Select(x => x.UserId)
+            .Select(x => new { x.UserId, x.RoleIds })
             .ToArrayAsync(ct);
+        var activeRoleMemberIds = activeRoleMembers.Select(x => x.UserId).ToArray();
         var affectedVaultIds = change.AddedVaultIds.Concat(change.RemovedVaultIds).Distinct().ToArray();
         var existingMemberships = await domainWriteContext.VaultMembers
             .Where(x => x.OrganizationId == organizationId
@@ -183,9 +184,27 @@ internal sealed class UpdateRoleVaultAccessEndpoint(
             .Where(memberId => change.AddedVaultIds.Any(vaultId =>
                 !existingMembershipSet.Contains((memberId, vaultId))))
             .ToHashSet();
-        var membersWithRemovals = activeRoleMemberIds
-            .Where(memberId => change.RemovedVaultIds.Any(vaultId =>
-                existingMembershipSet.Contains((memberId, vaultId))))
+        var remainingRoleIds = activeRoleMembers
+            .SelectMany(member => member.RoleIds)
+            .Where(roleId => roleId != req.RoleId)
+            .Distinct()
+            .ToArray();
+        var remainingRolePolicies = await domainWriteContext.RoleVaultAccessPolicies
+            .Where(x => x.OrganizationId == organizationId
+                        && remainingRoleIds.Contains(x.RoleId)
+                        && change.RemovedVaultIds.Contains(x.VaultId))
+            .Select(x => new { x.RoleId, x.VaultId })
+            .ToListAsync(ct);
+        var remainingRolePolicySet = remainingRolePolicies
+            .Select(x => (x.RoleId, x.VaultId))
+            .ToHashSet();
+        var membersWithRemovals = activeRoleMembers
+            .Where(member => change.RemovedVaultIds.Any(vaultId =>
+                existingMembershipSet.Contains((member.UserId, vaultId))
+                && member.RoleIds
+                    .Where(roleId => roleId != req.RoleId)
+                    .All(roleId => !remainingRolePolicySet.Contains((roleId, vaultId)))))
+            .Select(member => member.UserId)
             .ToHashSet();
         var impact = new RoleVaultAccessImpact(
             membersWithAdds.Count,

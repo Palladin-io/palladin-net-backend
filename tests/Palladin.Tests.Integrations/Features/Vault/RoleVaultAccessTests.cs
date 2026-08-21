@@ -308,6 +308,73 @@ public sealed class RoleVaultAccessTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_AnotherAssignedRoleStillSelectsVault_Then_RemovalHasNoPendingMemberWork()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var firstRoleId = Guid.NewGuid();
+        var secondRoleId = Guid.NewGuid();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        await SeedDirectoryAsync(organization.Id, firstRoleId, user.Id);
+        await using (var identityScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var identityContext = identityScope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            identityContext.Roles.Add(Role.Create(
+                secondRoleId,
+                organization.Id,
+                $"Vault role {secondRoleId:N}",
+                RequiredPermissions,
+                isSystem: false,
+                apiFactory.FakeClock.GetCurrentInstant()));
+            await identityContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        await using (var vaultScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var vaultContext = vaultScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            vaultContext.OrganizationRoleDirectory.Add(OrganizationRoleDirectoryEntry.Create(
+                organization.Id,
+                secondRoleId,
+                1,
+                isSystem: false,
+                RequiredPermissions,
+                apiFactory.FakeClock.GetCurrentInstant()));
+            var roleSet = await vaultContext.OrganizationMemberRoleSets.SingleAsync(x =>
+                x.OrganizationId == organization.Id && x.UserId == user.Id,
+                TestContext.Current.CancellationToken);
+            roleSet.Apply(
+                [firstRoleId, secondRoleId],
+                revision: 2,
+                authorizationVersion: 1,
+                isActive: true,
+                apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+            await vaultContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var client = apiFactory.CreateAuthenticatedClient(user, RequiredPermissions);
+        foreach (var roleId in new[] { firstRoleId, secondRoleId })
+        {
+            var createResponse = await client.PutAsJsonAsync(
+                $"api/organization/roles/{roleId}/vault-access",
+                new UpdateRoleVaultAccessRequest { RoleId = roleId, VaultIds = [vault.Id] },
+                TestContext.Current.CancellationToken);
+            createResponse.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        }
+
+        // When
+        var response = await client.PutAsJsonAsync(
+            $"api/organization/roles/{firstRoleId}/vault-access",
+            new UpdateRoleVaultAccessRequest { RoleId = firstRoleId, VaultIds = [] },
+            TestContext.Current.CancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<UpdateRoleVaultAccessResponse>(
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        result.ShouldNotBeNull();
+        result.Impact.RemovalsAwaitingSourceReconciliation.ShouldBe(0);
+        result.Impact.Unchanged.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task When_OwnerSubmitsAdministratorPolicy_Then_AcceptsWithoutCryptographicMembershipMutation()
     {
         // Given

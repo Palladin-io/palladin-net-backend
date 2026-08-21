@@ -144,10 +144,23 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
+        var previousMemberState = await domainWriteContext.OrganizationMemberRoleSetDispatches
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == invitation.OrganizationId && x.UserId == user.Id)
+            .Select(x => new { x.Revision, x.AuthorizationVersion })
+            .SingleOrDefaultAsync(ct);
+        var authorizationVersion = previousMemberState is null
+            ? 1u
+            : checked(previousMemberState.AuthorizationVersion + 1u);
+        var vaultAccessRevision = previousMemberState is null
+            ? 1ul
+            : checked(previousMemberState.Revision + 1ul);
+
         invitation.Accept(now);
         domainWriteContext.Add(OrganizationMember.Create(
             invitation.OrganizationId, user.Id, invitation.Role,
-            user.DisplayName, user.Email, now));
+            user.DisplayName, user.Email, now,
+            authorizationVersion, vaultAccessRevision));
         try
         {
             await domainWriteContext.CommitAsync(ct);

@@ -54,15 +54,31 @@ internal sealed class OrganizationMember : EventEntityBase
         Role initialRole,
         string displayName,
         string email,
-        Instant now)
+        Instant now,
+        uint authorizationVersion = 1,
+        ulong vaultAccessRevision = 1)
     {
+        if (authorizationVersion == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(authorizationVersion),
+                "Organization Member versions must be positive.");
+        }
+
+        if (vaultAccessRevision == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(vaultAccessRevision),
+                "Organization Member versions must be positive.");
+        }
+
         var member = new OrganizationMember
         {
             OrganizationId = organizationId,
             UserId = userId,
             Status = OrganizationMemberStatus.Active,
-            AuthorizationVersion = 1,
-            VaultAccessRevision = 1,
+            AuthorizationVersion = authorizationVersion,
+            VaultAccessRevision = vaultAccessRevision,
             JoinedAt = now,
             UpdatedAt = now,
             RoleAssignments = [OrganizationMemberRole.Create(organizationId, userId, initialRole)],

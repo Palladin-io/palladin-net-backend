@@ -83,7 +83,7 @@ public sealed class GlobalSearchTests(ApiFactory apiFactory) : TestBase
             organization.Id, "Removed zqx", "removed@example.test");
         await apiFactory.ConsumeAsync<RemoveSearchItemConsumer, RemoveSearchItemCommand>(
             new(organization.Id, member.Id, SearchItemTypes.Member,
-                apiFactory.FakeClock.GetCurrentInstant() + NodaTime.Duration.FromMinutes(1)),
+                member.UpdatedAt + NodaTime.Duration.FromMinutes(1)),
             TestContext.Current.CancellationToken);
 
         var (_, result) = await SearchAsync(apiFactory.CreateAuthenticatedClient(user), "zqx");

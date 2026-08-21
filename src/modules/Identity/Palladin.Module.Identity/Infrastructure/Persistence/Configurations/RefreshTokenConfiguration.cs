@@ -13,6 +13,7 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
         builder.HasKey(x => new { x.UserId, x.Id });
 
         builder.HasIndex(x => x.TokenHash);
+        builder.Property(x => x.AuthorizationVersion).HasDefaultValue(1u);
 
         builder.HasOne(x => x.User)
             .WithMany(x => x.RefreshTokens)

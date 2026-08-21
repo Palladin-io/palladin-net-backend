@@ -41,6 +41,7 @@ internal sealed class UpdateNotificationPreferencesValidator : Validator<UpdateN
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class UpdateNotificationPreferencesEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IClock clock) : Endpoint<UpdateNotificationPreferencesRequest, UpdateNotificationPreferencesResponse>

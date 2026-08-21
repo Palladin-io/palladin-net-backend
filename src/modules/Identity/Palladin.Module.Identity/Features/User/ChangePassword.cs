@@ -50,6 +50,7 @@ internal sealed class ChangePasswordValidator : Validator<ChangePasswordRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class ChangePasswordEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,

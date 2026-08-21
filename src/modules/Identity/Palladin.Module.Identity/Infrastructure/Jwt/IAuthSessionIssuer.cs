@@ -14,5 +14,6 @@ internal interface IAuthSessionIssuer
         Guid organizationId,
         Permission permissions,
         PlanType plan,
+        uint authorizationVersion,
         Instant now);
 }

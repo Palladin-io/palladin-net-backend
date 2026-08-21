@@ -339,6 +339,96 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_OrganizationInvitationCancelledConsumed_Then_WritesNoRecipientData()
+    {
+        // Given
+        var orgId = Guid.NewGuid();
+        var cancelledBy = Guid.NewGuid();
+        var evt = new OrganizationInvitationCancelledEvent(
+            Guid.NewGuid(),
+            orgId,
+            cancelledBy,
+            "Bob",
+            "User",
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        // When
+        await RunAsync(p => new OnOrganizationInvitationCancelledAudit(p), evt);
+
+        // Then
+        var entry = await FindAsync(AuditEventType.OrganizationInvitationCancelled, orgId);
+        entry.ShouldNotBeNull();
+        entry.ActorType.ShouldBe(AuditActorType.User);
+        entry.UserId.ShouldBe(cancelledBy);
+        entry.ActorName.ShouldBe("Bob");
+        entry.Metadata.ShouldBe(new Dictionary<string, string> { ["role"] = "User" });
+    }
+
+    [Fact]
+    public async Task When_OrganizationInvitationRoleChangedConsumed_Then_WritesRolesWithoutRecipientData()
+    {
+        // Given
+        var orgId = Guid.NewGuid();
+        var changedBy = Guid.NewGuid();
+        var evt = new OrganizationInvitationRoleChangedEvent(
+            Guid.NewGuid(),
+            orgId,
+            changedBy,
+            "Bob",
+            "User",
+            "Vault operator",
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        // When
+        await RunAsync(p => new OnOrganizationInvitationRoleChangedAudit(p), evt);
+
+        // Then
+        var entry = await FindAsync(AuditEventType.OrganizationInvitationRoleChanged, orgId);
+        entry.ShouldNotBeNull();
+        entry.ActorType.ShouldBe(AuditActorType.User);
+        entry.UserId.ShouldBe(changedBy);
+        entry.ActorName.ShouldBe("Bob");
+        entry.Metadata.Count.ShouldBe(2);
+        entry.Metadata["previousRole"].ShouldBe("User");
+        entry.Metadata["role"].ShouldBe("Vault operator");
+    }
+
+    [Fact]
+    public async Task When_OrganizationInvitationResentConsumed_Then_WritesNoRecipientOrTokenData()
+    {
+        // Given
+        var orgId = Guid.NewGuid();
+        var resentBy = Guid.NewGuid();
+        var evt = new OrganizationInvitationResentEvent(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            orgId,
+            "Example",
+            resentBy,
+            "Bob",
+            "recipient@example.com",
+            "en",
+            "User",
+            "plaintext-token-must-not-reach-audit",
+            72,
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        // When
+        await RunAsync(p => new OnOrganizationInvitationResentAudit(p), evt);
+
+        // Then
+        var entry = await FindAsync(AuditEventType.OrganizationInvitationResent, orgId);
+        entry.ShouldNotBeNull();
+        entry.ActorType.ShouldBe(AuditActorType.User);
+        entry.UserId.ShouldBe(resentBy);
+        entry.ActorName.ShouldBe("Bob");
+        entry.Metadata.ShouldBe(new Dictionary<string, string> { ["role"] = "User" });
+        var serializedMetadata = string.Join('|', entry.Metadata.Select(pair => $"{pair.Key}:{pair.Value}"));
+        serializedMetadata.ShouldNotContain("recipient@example.com");
+        serializedMetadata.ShouldNotContain("plaintext-token-must-not-reach-audit");
+    }
+
+    [Fact]
     public async Task When_UserSignedUpConsumed_Then_WritesEntryAttributedToTheUser()
     {
         // Given

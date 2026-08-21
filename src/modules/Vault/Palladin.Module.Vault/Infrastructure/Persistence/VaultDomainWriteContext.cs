@@ -1,7 +1,9 @@
 using Palladin.Core.Events;
 using Palladin.Core.Persistence;
 using Palladin.Core.Types;
+using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Domain;
+using Microsoft.EntityFrameworkCore;
 
 namespace Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -37,6 +39,56 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<EncryptedPresentationAsset> EncryptedPresentationAssets => Track<EncryptedPresentationAsset>();
     public IQueryable<VaultPresentationAssetCutoverState> VaultPresentationAssetCutoverStates =>
         Track<VaultPresentationAssetCutoverState>();
+    public IQueryable<OrganizationRoleDirectoryEntry> OrganizationRoleDirectory => Track<OrganizationRoleDirectoryEntry>();
+    public IQueryable<OrganizationMemberRoleSet> OrganizationMemberRoleSets => Track<OrganizationMemberRoleSet>();
+    public IQueryable<RoleVaultAccessPolicySet> RoleVaultAccessPolicySets => Track<RoleVaultAccessPolicySet>();
+    public IQueryable<RoleVaultAccessPolicy> RoleVaultAccessPolicies => Track<RoleVaultAccessPolicy>();
+    public IQueryable<RoleVaultAccessOperation> RoleVaultAccessOperations => Track<RoleVaultAccessOperation>();
+    public IQueryable<RoleVaultAccessPolicyDispatch> RoleVaultAccessPolicyDispatches =>
+        Track<RoleVaultAccessPolicyDispatch>();
+
+    protected override async Task PrepareEventsAsync(
+        IReadOnlyCollection<IEvent> events,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var policyChanged in events.OfType<RoleVaultAccessPolicyChangedEvent>())
+        {
+            var dispatch = Tracked<RoleVaultAccessPolicyDispatch>().FirstOrDefault(
+                x => x.OrganizationId == policyChanged.OrganizationId
+                     && x.RoleId == policyChanged.RoleId)
+                ?? await RoleVaultAccessPolicyDispatches.FirstOrDefaultAsync(
+                    x => x.OrganizationId == policyChanged.OrganizationId
+                         && x.RoleId == policyChanged.RoleId,
+                    cancellationToken);
+            if (dispatch is null)
+            {
+                Add(RoleVaultAccessPolicyDispatch.Create(
+                    policyChanged.OrganizationId,
+                    policyChanged.RoleId,
+                    policyChanged.OperationId,
+                    policyChanged.Revision,
+                    policyChanged.ChangedBy,
+                    policyChanged.SelectedVaultIds,
+                    policyChanged.OccurredAt));
+            }
+            else
+            {
+                dispatch.Apply(
+                    policyChanged.OperationId,
+                    policyChanged.Revision,
+                    policyChanged.ChangedBy,
+                    policyChanged.SelectedVaultIds,
+                    policyChanged.OccurredAt);
+            }
+        }
+    }
+
+    protected override Task HandleEventAsync(
+        IEvent @event,
+        CancellationToken cancellationToken = default) =>
+        @event is RoleVaultAccessPolicyChangedEvent
+            ? Task.CompletedTask
+            : base.HandleEventAsync(@event, cancellationToken);
 
     public IQueryable<Agent> LockAgent(Guid organizationId, Guid agentId) =>
         FromSqlInterpolated<Agent>(

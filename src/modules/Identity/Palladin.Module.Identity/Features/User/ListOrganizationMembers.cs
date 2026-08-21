@@ -19,7 +19,8 @@ public sealed record OrganizationMemberItem(
     int EffectivePermissions,
     bool IsOwner,
     Instant JoinedAt,
-    string Status);
+    string Status,
+    uint AuthorizationVersion);
 
 [PublicAPI]
 public sealed record ListOrganizationMembersResponse(IReadOnlyList<OrganizationMemberItem> Items);
@@ -74,7 +75,8 @@ internal sealed class ListOrganizationMembersEndpoint(IdentityDomainReadContext 
                 (int)m.EffectivePermissions(),
                 m.IsOwner,
                 m.JoinedAt,
-                m.Status.ToString()))
+                m.Status.ToString(),
+                m.AuthorizationVersion))
             .ToList();
 
         await Send.OkAsync(new ListOrganizationMembersResponse(items), ct);

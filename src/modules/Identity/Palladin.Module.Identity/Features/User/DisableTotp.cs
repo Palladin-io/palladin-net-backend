@@ -27,6 +27,7 @@ internal sealed class DisableTotpValidator : Validator<DisableTotpRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class DisableTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,

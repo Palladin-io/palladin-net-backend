@@ -54,12 +54,37 @@ internal sealed class RemoveOrganizationMemberEndpoint(
             return;
         }
 
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == organizationId, ct);
+        organization.FenceMembershipMutation();
+
+        var actor = await domainWriteContext.OrganizationMembers
+            .Include(m => m.RoleAssignments)
+                .ThenInclude(assignment => assignment.Role)
+            .SingleAsync(m => m.OrganizationId == organizationId && m.UserId == removedBy, ct);
+        if (actor.Status != OrganizationMemberStatus.Active)
+        {
+            AddError(ErrorResponses.General("organization-membership-inactive"));
+            await Send.ErrorsAsync(403, ct);
+            return;
+        }
+
         var member = await domainWriteContext.OrganizationMembers
             .Include(m => m.User)
+            .Include(m => m.RoleAssignments)
+                .ThenInclude(assignment => assignment.Role)
             .FirstOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == req.UserId, ct);
         if (member is null)
         {
             await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        if (!actor.IsOwner && !OrganizationRoleAuthorization.IsSubsetOf(
+                member.EffectivePermissions(), actor.EffectivePermissions()))
+        {
+            AddError(ErrorResponses.General("organization-role-assignment-forbidden"));
+            await Send.ErrorsAsync(403, ct);
             return;
         }
 

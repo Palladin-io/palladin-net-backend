@@ -11,6 +11,7 @@ namespace Palladin.Module.Notification.Features;
 public sealed record MarkAllNotificationsReadResponse(int MarkedCount);
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class MarkAllNotificationsReadEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     NodaTime.IClock clock) : EndpointWithoutRequest<MarkAllNotificationsReadResponse>

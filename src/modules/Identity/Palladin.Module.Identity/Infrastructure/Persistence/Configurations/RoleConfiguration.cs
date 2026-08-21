@@ -11,10 +11,16 @@ internal sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
     public void Configure(EntityTypeBuilder<Role> builder)
     {
         builder.HasKey(x => new { x.OrganizationId, x.Id });
-        builder.HasIndex(x => new { x.OrganizationId, x.Name }).IsUnique();
+        builder.Property(x => x.Name).HasMaxLength(100);
+        builder.Property(x => x.NormalizedName).HasMaxLength(100);
+        builder.Property(x => x.VaultAccessRevision)
+            .HasConversion(x => (decimal)x, x => (ulong)x)
+            .HasPrecision(20, 0);
+        builder.HasIndex(x => new { x.OrganizationId, x.NormalizedName }).IsUnique();
 
         builder.HasOne(x => x.Organization)
             .WithMany(x => x.Roles)
             .HasForeignKey(x => x.OrganizationId);
+
     }
 }

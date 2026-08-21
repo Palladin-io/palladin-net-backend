@@ -27,6 +27,7 @@ internal sealed class RemovePushTokenValidator : Validator<RemovePushTokenReques
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class RemovePushTokenEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IEnumerable<IEventPublisher> eventPublishers,

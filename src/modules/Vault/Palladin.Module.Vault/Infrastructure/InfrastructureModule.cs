@@ -75,10 +75,19 @@ internal static class InfrastructureModule
             configuration.GetSection(CleanupFullGrantPreparationsJobOptions.Position));
         services.AddScopedCronJob<VaultEntryLifecycleJob, VaultEntryLifecycleOptions>(
             configuration.GetSection(VaultEntryLifecycleOptions.Position));
+        services.AddOptions<DispatchRoleVaultAccessPoliciesJobOptions>()
+            .Bind(configuration.GetSection(DispatchRoleVaultAccessPoliciesJobOptions.Position))
+            .Validate(options => options.BatchSize is > 0 and <= 1000
+                                 && !string.IsNullOrWhiteSpace(options.Expression),
+                "Role Vault-access policy dispatch settings are outside the supported bounds.")
+            .ValidateOnStart();
+        services.AddScopedCronJob<DispatchRoleVaultAccessPoliciesJob, DispatchRoleVaultAccessPoliciesJobOptions>(
+            configuration.GetSection(DispatchRoleVaultAccessPoliciesJobOptions.Position));
 
         services.AddScoped<IVaultDirectory, VaultDirectory>();
         services.AddScoped<CredentialDeliveryService>();
         services.AddScoped<VaultPrincipalDeprovisioningCoordinator>();
+        services.AddScoped<RoleVaultAccessReconciler>();
         services.AddScoped<EntryLifecycleService>();
         services.AddScoped<EntryPurgeService>();
         services.AddScoped<IEntryAssetPurger, CdnEntryAssetPurger>();

@@ -7,6 +7,9 @@ using Microsoft.Extensions.Options;
 using NodaTime;
 using NSubstitute;
 using Palladin.Core.Types;
+using Palladin.Module.Identity.Domain;
+using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Search.Features;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -22,6 +25,67 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 [Collection<ApiFactoryCollection>]
 public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_OrganizationMembershipIsRemoving_Then_AllEntryMutationsFailClosed()
+    {
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var activeClient = apiFactory.CreateAuthenticatedClient(member);
+        var entryId = await CreateEntryAsync(activeClient, organization.Id, vault.Id);
+
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            var membership = await writeContext.OrganizationMembers.SingleAsync(x =>
+                x.OrganizationId == organization.Id && x.UserId == member.Id);
+            membership.RequestRemoval(
+                Guid.NewGuid(), owner.Id, apiFactory.FakeClock.GetCurrentInstant());
+            membership.FetchEvents();
+            await writeContext.SaveChangesAsync();
+        }
+
+        var removingClient = apiFactory.CreateAuthenticatedClient(member);
+        removingClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+        removingClient.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "1");
+        var snapshot = await removingClient.POSTAsync<
+            GetMemberSnapshotEndpoint,
+            GetMemberSnapshotRequest>(new GetMemberSnapshotRequest { VaultId = vault.Id });
+        var delta = await removingClient.POSTAsync<
+            GetMemberDeltaEndpoint,
+            GetMemberDeltaRequest>(new GetMemberDeltaRequest
+            {
+                VaultId = vault.Id,
+                AfterSequence = "0",
+            });
+        var search = await removingClient.POSTAsync<GlobalSearchEndpoint, GlobalSearchRequest>(
+            new GlobalSearchRequest { Q = "member" });
+        var archive = await removingClient.POSTAsync<
+            ArchiveEntryEndpoint,
+            ChangeEntryStateRequest>(EntryEnvelopeFaker.CreateStateChangeRequest(
+            organization.Id, vault.Id, entryId, 1, EntryOperation.Archived));
+        var delete = await removingClient.POSTAsync<
+            DeleteEntryEndpoint,
+            ChangeEntryStateRequest>(EntryEnvelopeFaker.CreateStateChangeRequest(
+            organization.Id, vault.Id, entryId, 1, EntryOperation.Deleted));
+        var restore = await removingClient.POSTAsync<
+            RestoreEntryEndpoint,
+            ChangeEntryStateRequest>(EntryEnvelopeFaker.CreateStateChangeRequest(
+            organization.Id, vault.Id, entryId, 1, EntryOperation.Restored));
+        var destroy = await removingClient.POSTAsync<DestroyEntryEndpoint, DestroyEntryRequest>(
+            new DestroyEntryRequest { VaultId = vault.Id, EntryId = entryId });
+
+        new[] { snapshot, delta, search }
+            .ShouldAllBe(response => response.StatusCode == HttpStatusCode.OK);
+        new[] { archive, delete, restore, destroy }
+            .ShouldAllBe(response => response.StatusCode == HttpStatusCode.Forbidden);
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await verificationScope.ServiceProvider
+            .GetRequiredService<VaultDbReadContext>()
+            .Entries.SingleAsync(x => x.Id == entryId);
+        persisted.State.ShouldBe(EntryState.Active);
+    }
+
     [Fact]
     public async Task When_EntryIsArchivedAndRestored_Then_EachTransitionAppendsOneCanonicalVersion()
     {

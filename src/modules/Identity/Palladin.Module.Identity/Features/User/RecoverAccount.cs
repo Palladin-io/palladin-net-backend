@@ -52,6 +52,7 @@ internal sealed class RecoverAccountValidator : Validator<RecoverAccountRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class RecoverAccountEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,

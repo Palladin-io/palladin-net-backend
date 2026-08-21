@@ -37,6 +37,7 @@ internal sealed class RegisterPushTokenValidator : Validator<RegisterPushTokenRe
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class RegisterPushTokenEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,

@@ -225,6 +225,8 @@ internal sealed class Vault : EventEntityBase
         return added;
     }
 
+    internal void FenceRolePolicyMutation() => AdvanceMutationVersion();
+
     internal void ReplaceMetadata(
         Guid updatedBy,
         string actorName,

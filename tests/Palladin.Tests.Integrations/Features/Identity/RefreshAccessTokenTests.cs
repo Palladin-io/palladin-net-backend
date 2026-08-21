@@ -5,6 +5,9 @@ using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
+using Palladin.Module.Identity.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Seeders;
@@ -16,6 +19,37 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class RefreshAccessTokenTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_RefreshTokenSurvivesBulkRevocationRace_Then_AuthorizationVersionFenceRejectsIt()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var rawToken = Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray());
+        var staleToken = await apiFactory.Services.SeedRefreshTokenAsync(user.Id, rawToken);
+
+        await using (var mutationScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = mutationScope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            var membership = await writeContext.OrganizationMembers.SingleAsync(member =>
+                member.OrganizationId == organization.Id && member.UserId == user.Id);
+            membership.InvalidateAuthorization(apiFactory.FakeClock.GetCurrentInstant());
+            membership.FetchEvents();
+            await writeContext.SaveChangesAsync();
+        }
+
+        var response = await apiFactory.CreateClient().PostAsJsonAsync(
+            "api/auth/refresh",
+            new { RefreshToken = rawToken },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var persistedToken = await verificationScope.ServiceProvider
+            .GetRequiredService<IdentityDbReadContext>()
+            .RefreshTokens.SingleAsync(token => token.Id == staleToken.Id);
+        persistedToken.AuthorizationVersion.ShouldBe(1u);
+        persistedToken.RevokedAt.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task When_RefreshingForProOrg_Then_AccessTokenCarriesProPlanClaim()
     {

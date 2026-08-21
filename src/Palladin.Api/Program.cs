@@ -146,7 +146,8 @@ builder.Services
             {
                 var userId = context.Principal?.GetUserId();
                 var organizationId = context.Principal?.GetOrganizationId();
-                if (userId is null || organizationId is null)
+                var authorizationVersion = context.Principal?.GetAuthorizationVersion();
+                if (userId is null || organizationId is null || authorizationVersion is null)
                 {
                     context.Fail("organization-membership-invalid");
                     return;
@@ -154,7 +155,11 @@ builder.Services
 
                 var validator = context.HttpContext.RequestServices
                     .GetRequiredService<IOrganizationMembershipValidator>();
-                if (!await validator.IsActiveAsync(userId.Value, organizationId.Value, context.HttpContext.RequestAborted))
+                if (!await validator.IsCurrentAsync(
+                        userId.Value,
+                        organizationId.Value,
+                        authorizationVersion.Value,
+                        context.HttpContext.RequestAborted))
                 {
                     context.Fail("organization-membership-invalid");
                 }
@@ -182,7 +187,12 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "https://palladin.io")
+        policy.WithOrigins(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:5174",
+                "http://127.0.0.1:5174",
+                "https://palladin.io")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -262,6 +272,24 @@ app.UseFastEndpoints(config =>
     config.Endpoints.Configurator = endpointDefinition =>
     {
         endpointDefinition.PostProcessor<ExceptionGlobalPostProcessor>(Order.Before);
+        if (endpointDefinition.EndpointType.GetCustomAttributes(
+                typeof(RequireAssignableOrganizationRoleAttribute), inherit: true).Length > 0)
+        {
+            endpointDefinition.PreProcessor<RequireAssignableOrganizationRolePreProcessor>(Order.Before);
+        }
+
+        var requiresActiveMembershipForAllVerbs = endpointDefinition.EndpointType.GetCustomAttributes(
+            typeof(RequireActiveOrganizationMembershipAttribute), inherit: true).Length > 0;
+        if (requiresActiveMembershipForAllVerbs)
+        {
+            endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipForAllVerbsPreProcessor>(Order.Before);
+        }
+        else if (endpointDefinition.EndpointType.GetCustomAttributes(
+                     typeof(AllowNonActiveOrganizationMembershipAttribute), inherit: true).Length == 0)
+        {
+            endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipPreProcessor>(Order.Before);
+        }
+
         if (app.Configuration.GetValue("KillSwitch:RestApi", false))
         {
             endpointDefinition.PreProcessor<KillSwitchGlobalPreProcessor>(Order.Before);

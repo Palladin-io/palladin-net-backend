@@ -15,6 +15,7 @@ namespace Palladin.Module.Identity.Features;
 public sealed record EnrollTotpResponse(string Secret, string OtpauthUri);
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class EnrollTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,

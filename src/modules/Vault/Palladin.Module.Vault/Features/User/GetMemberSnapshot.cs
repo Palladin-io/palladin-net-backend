@@ -33,6 +33,7 @@ internal sealed class GetMemberSnapshotValidator : Validator<GetMemberSnapshotRe
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class GetMemberSnapshotEndpoint(
     VaultDomainReadContext readContext,
     VaultSyncCursorProtector cursorProtector) : Endpoint<GetMemberSnapshotRequest, MemberSnapshotResponse>

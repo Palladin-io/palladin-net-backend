@@ -41,6 +41,7 @@ internal sealed class GetMemberDeltaValidator : Validator<GetMemberDeltaRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class GetMemberDeltaEndpoint(
     VaultDomainReadContext readContext,
     VaultSyncCursorProtector cursorProtector) : Endpoint<GetMemberDeltaRequest, MemberDeltaResponse>

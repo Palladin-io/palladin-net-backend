@@ -136,6 +136,9 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Instant?>("AcceptedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Instant?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -149,11 +152,19 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("InvitedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Instant>("LastSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("RoleId")
+                    b.Property<Guid?>("RoleId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("RoleName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -179,6 +190,12 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<long>("AuthorizationVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
                     b.Property<bool>("IsOwner")
                         .HasColumnType("boolean");
 
@@ -201,6 +218,10 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<Instant>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("VaultAccessRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
 
                     b.HasKey("OrganizationId", "UserId");
 
@@ -225,6 +246,130 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "RoleId");
 
                     b.ToTable("OrganizationMemberRoles");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberRoleSetDispatch", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AuthorizationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DispatchKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Instant?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Instant>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PublishAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Instant?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("PublishedRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<decimal>("Revision")
+                        .IsConcurrencyToken()
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.PrimitiveCollection<Guid[]>("RoleIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OrganizationId", "UserId");
+
+                    b.HasIndex("DispatchKey")
+                        .IsUnique();
+
+                    b.HasIndex("NextAttemptAt", "OrganizationId", "UserId");
+
+                    b.ToTable("OrganizationMemberRoleSetDispatches");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationRoleVaultAccessDispatch", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Change")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DispatchKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean");
+
+                    b.Property<Instant?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Instant>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Permissions")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PublishAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Instant?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("PublishedRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<decimal>("Revision")
+                        .IsConcurrencyToken()
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.HasKey("OrganizationId", "RoleId");
+
+                    b.HasIndex("DispatchKey")
+                        .IsUnique();
+
+                    b.HasIndex("NextAttemptAt", "OrganizationId", "RoleId");
+
+                    b.ToTable("OrganizationRoleVaultAccessDispatches");
                 });
 
             modelBuilder.Entity("Palladin.Module.Identity.Domain.PasswordCredential", b =>
@@ -263,6 +408,11 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
+
+                    b.Property<long>("AuthorizationVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
 
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -306,14 +456,24 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<int>("Permissions")
                         .HasColumnType("integer");
 
+                    b.Property<decimal>("VaultAccessRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
                     b.HasKey("OrganizationId", "Id");
 
-                    b.HasIndex("OrganizationId", "Name")
+                    b.HasIndex("OrganizationId", "NormalizedName")
                         .IsUnique();
 
                     b.ToTable("Roles");
@@ -573,8 +733,7 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("Palladin.Module.Identity.Domain.Role", "Role")
                         .WithMany()
                         .HasForeignKey("OrganizationId", "RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Organization");
 
@@ -605,7 +764,7 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("Palladin.Module.Identity.Domain.Role", "Role")
                         .WithMany("MemberAssignments")
                         .HasForeignKey("OrganizationId", "RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Palladin.Module.Identity.Domain.OrganizationMember", "Member")

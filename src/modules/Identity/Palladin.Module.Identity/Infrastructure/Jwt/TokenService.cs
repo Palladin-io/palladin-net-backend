@@ -20,7 +20,12 @@ internal sealed class TokenService(
     IClock clock,
     IGuidProvider guidProvider) : ITokenService
 {
-    public string GenerateAccessToken(User user, Guid organizationId, Permission permissions, PlanType plan)
+    public string GenerateAccessToken(
+        User user,
+        Guid organizationId,
+        Permission permissions,
+        PlanType plan,
+        uint authorizationVersion)
     {
         var options = jwtOptions.Value;
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.Secret));
@@ -34,6 +39,7 @@ internal sealed class TokenService(
             new Claim(JwtRegisteredClaimNames.Jti, guidProvider.Generate().ToString()),
             new Claim(JwtClaimNames.OrganizationId, organizationId.ToString()),
             new Claim(JwtClaimNames.Permissions, ((int)permissions).ToString()),
+            new Claim(JwtClaimNames.AuthorizationVersion, authorizationVersion.ToString()),
             new Claim(JwtClaimNames.Plan, plan.ToString()),
             new Claim(JwtClaimNames.DisplayName, user.DisplayName),
             new Claim(JwtClaimNames.EmailVerified, user.EmailVerified.ToString().ToLowerInvariant()),

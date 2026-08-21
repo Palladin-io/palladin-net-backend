@@ -17,6 +17,7 @@ using NodaTime;
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class ResendVerificationEmailEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,

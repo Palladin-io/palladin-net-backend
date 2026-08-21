@@ -51,6 +51,7 @@ internal sealed class SetupAccountValidator : Validator<SetupAccountRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class SetupAccountEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,

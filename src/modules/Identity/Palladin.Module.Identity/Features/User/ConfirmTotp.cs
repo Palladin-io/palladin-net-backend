@@ -32,6 +32,7 @@ internal sealed class ConfirmTotpValidator : Validator<ConfirmTotpRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class ConfirmTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,

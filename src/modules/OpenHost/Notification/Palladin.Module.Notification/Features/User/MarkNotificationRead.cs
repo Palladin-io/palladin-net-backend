@@ -9,6 +9,7 @@ using NodaTime;
 namespace Palladin.Module.Notification.Features;
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class MarkNotificationReadEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IClock clock) : EndpointWithoutRequest

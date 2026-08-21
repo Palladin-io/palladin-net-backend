@@ -26,6 +26,7 @@ internal sealed class LogoutValidator : Validator<LogoutRequest>
 }
 
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class LogoutEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IClock clock) : Endpoint<LogoutRequest>

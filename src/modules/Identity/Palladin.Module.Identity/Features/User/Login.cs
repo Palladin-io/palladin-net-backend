@@ -131,6 +131,14 @@ internal sealed class LoginEndpoint(
             .Include(u => u.TotpCredential)
             .FirstAsync(u => u.Id == credential.UserId, ct);
 
+        var membership = user.OrganizationMemberships.SingleOrDefault(
+            x => x.OrganizationId == user.OrganizationId);
+        if (membership is null || membership.Status != OrganizationMemberStatus.Active)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+
         await loginThrottle.ResetAsync(email, ip, now, ct);
 
         if (user.TotpCredential is { IsEnabled: true })
@@ -146,7 +154,12 @@ internal sealed class LoginEndpoint(
         }
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
-            user, user.OrganizationId, user.EffectivePermissions(user.OrganizationId), user.Organization.PlanType, now);
+            user,
+            user.OrganizationId,
+            membership.EffectivePermissions(),
+            user.Organization.PlanType,
+            membership.AuthorizationVersion,
+            now);
         await domainWriteContext.CommitAsync(ct);
 
         await Send.OkAsync(

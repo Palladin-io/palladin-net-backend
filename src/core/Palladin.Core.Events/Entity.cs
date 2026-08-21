@@ -2,6 +2,7 @@ namespace Palladin.Core.Events;
 
 public interface IEventEntity
 {
+    IReadOnlyCollection<IEvent> PeekEvents();
     ICollection<IEvent> FetchEvents();
 }
 
@@ -30,4 +31,6 @@ public abstract class EventEntityBase : IEventEntity
 
         return events;
     }
+
+    public IReadOnlyCollection<IEvent> PeekEvents() => _events.ToArray();
 }

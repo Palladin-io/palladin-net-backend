@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Text.Json;
 using Bogus;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
@@ -18,6 +19,7 @@ using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using NodaTime.Text;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Identity;
@@ -25,6 +27,26 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_OrdinaryMemberListsMembers_Then_ReturnsOnlyActiveOrganization()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        var (otherOwner, _, _) = await apiFactory.Services.SeedUserAsync();
+        var client = apiFactory.CreateAuthenticatedClient(member, Permission.GrantManage);
+
+        // When
+        var (response, result) = await client.GETAsync<
+            ListOrganizationMembersEndpoint,
+            ListOrganizationMembersResponse>();
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        result.Items.Select(x => x.UserId).ShouldBe([owner.Id, member.Id], ignoreOrder: true);
+        result.Items.Select(x => x.UserId).ShouldNotContain(otherOwner.Id);
+    }
+
     [Fact]
     public async Task When_ListingOrganizations_Then_ReturnsHomeOrganizationAsOwnerAndActive()
     {
@@ -51,7 +73,8 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     public async Task When_InvitingMember_Then_StoresOnlyTokenHash()
     {
         // Given
-        var (user, organization, role) = await apiFactory.Services.SeedUserAsync();
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var role = await CreateRoleAsync(organization.Id, "Invited Member", Permission.None);
         await SetSeatLimitAsync(organization.Id, 2);
         var client = apiFactory.CreateAuthenticatedClient(user, Permission.AddUser);
 
@@ -73,7 +96,8 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     public async Task When_OrganizationHasNoAvailableSeat_Then_InviteReturns409()
     {
         // Given
-        var (owner, organization, role) = await apiFactory.Services.SeedUserAsync();
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var role = await CreateRoleAsync(organization.Id, "Invited Member", Permission.None);
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
 
         // When
@@ -94,7 +118,8 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     public async Task When_PendingInvitationReservesLastSeat_Then_NextInviteReturns409()
     {
         // Given
-        var (owner, organization, role) = await apiFactory.Services.SeedUserAsync();
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var role = await CreateRoleAsync(organization.Id, "Invited Member", Permission.None);
         await SetSeatLimitAsync(organization.Id, 2);
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
 
@@ -116,10 +141,406 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
+    public async Task When_ListingInvitations_Then_ReturnsOnlyPendingInvitationsFromActiveOrganization()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var role = await CreateRoleAsync(organization.Id, "Invited Member", Permission.None);
+        await SetSeatLimitAsync(organization.Id, 3);
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+        var (otherOwner, otherOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        await SeedInvitationAsync(
+            otherOwner,
+            otherOrganization,
+            "other-tenant@example.com",
+            "other-tenant-invitation-token");
+        await SeedInvitationAsync(
+            owner,
+            organization,
+            "expired@example.com",
+            "expired-list-invitation-token",
+            Duration.FromHours(-1));
+        var inviteResponse = await client.POSTAsync<
+            InviteOrganizationMemberEndpoint,
+            InviteOrganizationMemberRequest>(new InviteOrganizationMemberRequest
+            {
+                Email = "pending@example.com",
+                RoleId = role.Id,
+            });
+
+        // When
+        var (response, result) = await client.GETAsync<
+            ListOrganizationInvitationsEndpoint,
+            ListOrganizationInvitationsResponse>();
+
+        // Then
+        inviteResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var invitation = result.Items.ShouldHaveSingleItem();
+        invitation.Email.ShouldBe("pending@example.com");
+        invitation.RoleId.ShouldBe(role.Id);
+        invitation.RoleName.ShouldBe(role.Name);
+        invitation.InvitedByName.ShouldBe(owner.DisplayName);
+        invitation.ExpiresAt.ShouldBeGreaterThan(invitation.CreatedAt);
+        invitation.SentAt.ShouldBe(invitation.CreatedAt);
+        invitation.ResendAvailableAt.ShouldBeGreaterThan(invitation.SentAt);
+    }
+
+    [Fact]
+    public async Task When_ResendingPendingInvitation_Then_RotatesTokenAndRenewsExpiryWithoutUsingAnotherSeat()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (invitedUser, _, _) = await apiFactory.Services.SeedUserAsync();
+        await SetSeatLimitAsync(organization.Id, 2);
+        const string oldToken = "organization-invitation-token-before-resend";
+        var issuedAt = apiFactory.FakeClock.GetCurrentInstant() - Duration.FromMinutes(2);
+        var invitation = await SeedInvitationAsync(
+            owner,
+            organization,
+            invitedUser.Email,
+            oldToken,
+            issuedAt: issuedAt);
+        var oldTokenHash = invitation.TokenHash;
+        var oldExpiry = invitation.ExpiresAt;
+        var ownerClient = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+        var invitedUserClient = apiFactory.CreateAuthenticatedClient(invitedUser);
+
+        // When
+        var response = await ownerClient.PostAsync(
+            $"api/organization/invitations/{invitation.Id}/resend",
+            content: null);
+        using var responseDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = responseDocument.RootElement;
+        var sentAt = InstantPattern.ExtendedIso.Parse(result.GetProperty("sentAt").GetString()!).Value;
+        var expiresAt = InstantPattern.ExtendedIso.Parse(result.GetProperty("expiresAt").GetString()!).Value;
+        var resendAvailableAt = InstantPattern.ExtendedIso
+            .Parse(result.GetProperty("resendAvailableAt").GetString()!).Value;
+        var oldLinkResponse = await invitedUserClient.POSTAsync<
+            AcceptOrganizationInvitationEndpoint,
+            AcceptOrganizationInvitationRequest>(new AcceptOrganizationInvitationRequest { Token = oldToken });
+        var (_, organizationDetails) = await ownerClient.GETAsync<GetOrgEndpoint, GetOrgResponse>();
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        sentAt.ShouldBe(apiFactory.FakeClock.GetCurrentInstant());
+        expiresAt.ShouldBeGreaterThan(oldExpiry);
+        resendAvailableAt.ShouldBeGreaterThan(sentAt);
+        oldLinkResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        organizationDetails.SeatUsage.ShouldBe(2);
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
+        persisted.TokenHash.ShouldNotBe(oldTokenHash);
+        persisted.TokenHash.ShouldNotContain(oldToken);
+        persisted.CreatedAt.ShouldBe(issuedAt);
+        persisted.LastSentAt.ShouldBe(sentAt);
+        persisted.ExpiresAt.ShouldBe(expiresAt);
+        persisted.AcceptedAt.ShouldBeNull();
+        persisted.CancelledAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_ResendingInvitationInsideCooldown_Then_Returns429WithoutRotatingToken()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var invitation = await SeedInvitationAsync(
+            owner,
+            organization,
+            "cooldown@example.com",
+            "organization-invitation-cooldown-token");
+        var originalTokenHash = invitation.TokenHash;
+        var originalExpiry = invitation.ExpiresAt;
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.PostAsync(
+            $"api/organization/invitations/{invitation.Id}/resend",
+            content: null);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        (await response.Content.ReadAsStringAsync())
+            .ShouldContain("organization-invitation-resend-too-soon");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
+        persisted.TokenHash.ShouldBe(originalTokenHash);
+        persisted.ExpiresAt.ShouldBe(originalExpiry);
+        persisted.LastSentAt.ShouldBe(invitation.LastSentAt);
+    }
+
+    [Fact]
+    public async Task When_ResendingInvitationFromAnotherOrganization_Then_Returns404WithoutMutation()
+    {
+        // Given
+        var (owner, _, _) = await apiFactory.Services.SeedUserAsync();
+        var (otherOwner, otherOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        var invitation = await SeedInvitationAsync(
+            otherOwner,
+            otherOrganization,
+            "foreign-resend@example.com",
+            "foreign-resend-invitation-token",
+            issuedAt: apiFactory.FakeClock.GetCurrentInstant() - Duration.FromMinutes(2));
+        var originalTokenHash = invitation.TokenHash;
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.PostAsync(
+            $"api/organization/invitations/{invitation.Id}/resend",
+            content: null);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
+        persisted.TokenHash.ShouldBe(originalTokenHash);
+        persisted.LastSentAt.ShouldBe(invitation.LastSentAt);
+    }
+
+    [Fact]
+    public async Task When_ResendingInvitationWhoseRoleNowHasGrantManage_Then_Returns409WithoutRotatingToken()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        await CreateRoleAsync(organization.Id, "Unsafe invitation role", Permission.GrantManage);
+        var invitation = await SeedInvitationAsync(
+            owner,
+            organization,
+            "unsafe-resend@example.com",
+            "unsafe-resend-invitation-token",
+            issuedAt: apiFactory.FakeClock.GetCurrentInstant() - Duration.FromMinutes(2));
+        var originalTokenHash = invitation.TokenHash;
+        var originalExpiry = invitation.ExpiresAt;
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.PostAsync(
+            $"api/organization/invitations/{invitation.Id}/resend",
+            content: null);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync())
+            .ShouldContain("organization-role-grant-manage-cutover-unavailable");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
+        persisted.TokenHash.ShouldBe(originalTokenHash);
+        persisted.ExpiresAt.ShouldBe(originalExpiry);
+        persisted.LastSentAt.ShouldBe(invitation.LastSentAt);
+    }
+
+    [Fact]
+    public async Task When_CancellingInvitation_Then_ReleasesSeatAndInvalidatesToken()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (invitedUser, _, _) = await apiFactory.Services.SeedUserAsync();
+        await SetSeatLimitAsync(organization.Id, 2);
+        const string token = "cancelled-organization-invitation-token";
+        var invitation = await SeedInvitationAsync(owner, organization, invitedUser.Email, token);
+        var ownerClient = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+        var invitedUserClient = apiFactory.CreateAuthenticatedClient(invitedUser);
+
+        // When
+        var cancelResponse = await ownerClient.DELETEAsync<
+            CancelOrganizationInvitationEndpoint,
+            CancelOrganizationInvitationRequest>(new CancelOrganizationInvitationRequest
+            {
+                InvitationId = invitation.Id,
+            });
+        var repeatedCancelResponse = await ownerClient.DELETEAsync<
+            CancelOrganizationInvitationEndpoint,
+            CancelOrganizationInvitationRequest>(new CancelOrganizationInvitationRequest
+            {
+                InvitationId = invitation.Id,
+            });
+        var acceptResponse = await invitedUserClient.POSTAsync<
+            AcceptOrganizationInvitationEndpoint,
+            AcceptOrganizationInvitationRequest>(new AcceptOrganizationInvitationRequest { Token = token });
+        var (_, organizationDetails) = await ownerClient.GETAsync<GetOrgEndpoint, GetOrgResponse>();
+
+        // Then
+        cancelResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        repeatedCancelResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        acceptResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        organizationDetails.MemberCount.ShouldBe(1);
+        organizationDetails.SeatUsage.ShouldBe(1);
+        organizationDetails.SeatLimit.ShouldBe(2);
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persistedInvitation = await scope.ServiceProvider
+            .GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(
+                candidate => candidate.Id == invitation.Id,
+                TestContext.Current.CancellationToken);
+        persistedInvitation.CancelledAt.ShouldNotBeNull();
+        persistedInvitation.AcceptedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_CancellingInvitationFromAnotherOrganization_Then_Returns404WithoutMutation()
+    {
+        // Given
+        var (owner, _, _) = await apiFactory.Services.SeedUserAsync();
+        var (otherOwner, otherOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        var invitation = await SeedInvitationAsync(
+            otherOwner,
+            otherOrganization,
+            "foreign-invitation@example.com",
+            "foreign-organization-invitation-token");
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.DELETEAsync<
+            CancelOrganizationInvitationEndpoint,
+            CancelOrganizationInvitationRequest>(new CancelOrganizationInvitationRequest
+            {
+                InvitationId = invitation.Id,
+            });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persistedInvitation = await scope.ServiceProvider
+            .GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(
+                candidate => candidate.Id == invitation.Id,
+                TestContext.Current.CancellationToken);
+        persistedInvitation.CancelledAt.ShouldBeNull();
+        persistedInvitation.AcceptedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_UpdatingPendingInvitationRole_Then_ReplacesItsInitialRoleWithoutChangingSeatUsage()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var originalRole = await CreateRoleAsync(organization.Id, "Original invitation role", Permission.None);
+        var replacementRole = await CreateRoleAsync(
+            organization.Id,
+            "Replacement invitation role",
+            Permission.VaultCreate | Permission.VaultManage);
+        await SetSeatLimitAsync(organization.Id, 2);
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+        var inviteResponse = await client.POSTAsync<
+            InviteOrganizationMemberEndpoint,
+            InviteOrganizationMemberRequest>(new InviteOrganizationMemberRequest
+            {
+                Email = "role-update@example.com",
+                RoleId = originalRole.Id,
+            });
+        await using var lookupScope = apiFactory.Services.CreateAsyncScope();
+        var invitationId = await lookupScope.ServiceProvider
+            .GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations
+            .Where(invitation => invitation.OrganizationId == organization.Id
+                                 && invitation.Email == "role-update@example.com")
+            .Select(invitation => invitation.Id)
+            .SingleAsync();
+
+        // When
+        var response = await client.PUTAsync<
+            UpdateOrganizationInvitationRoleEndpoint,
+            UpdateOrganizationInvitationRoleRequest>(new UpdateOrganizationInvitationRoleRequest
+            {
+                InvitationId = invitationId,
+                RoleId = replacementRole.Id,
+            });
+        var (_, organizationDetails) = await client.GETAsync<GetOrgEndpoint, GetOrgResponse>();
+
+        // Then
+        inviteResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        organizationDetails.SeatUsage.ShouldBe(2);
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await verificationScope.ServiceProvider
+            .GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(invitation => invitation.Id == invitationId);
+        persisted.RoleId.ShouldBe(replacementRole.Id);
+        persisted.RoleName.ShouldBe(replacementRole.Name);
+        persisted.AcceptedAt.ShouldBeNull();
+        persisted.CancelledAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_UpdatingPendingInvitationToGrantManageRole_Then_Returns409WithoutMutation()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var invitation = await SeedInvitationAsync(
+            owner,
+            organization,
+            "unsafe-role-update@example.com",
+            "unsafe-role-update-token");
+        var unsafeRole = await CreateRoleAsync(
+            organization.Id,
+            "Unsafe invitation role",
+            Permission.GrantManage);
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.PUTAsync<
+            UpdateOrganizationInvitationRoleEndpoint,
+            UpdateOrganizationInvitationRoleRequest>(new UpdateOrganizationInvitationRoleRequest
+            {
+                InvitationId = invitation.Id,
+                RoleId = unsafeRole.Id,
+            });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync())
+            .ShouldContain("organization-role-grant-manage-cutover-unavailable");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
+        persisted.RoleId.ShouldBe(invitation.RoleId);
+        persisted.RoleName.ShouldBe(invitation.RoleName);
+    }
+
+    [Fact]
+    public async Task When_UpdatingInvitationFromAnotherOrganization_Then_Returns404WithoutMutation()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (otherOwner, otherOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        var invitation = await SeedInvitationAsync(
+            otherOwner,
+            otherOrganization,
+            "foreign-role-update@example.com",
+            "foreign-role-update-token");
+        var localRole = await CreateRoleAsync(organization.Id, "Local role", Permission.None);
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.PUTAsync<
+            UpdateOrganizationInvitationRoleEndpoint,
+            UpdateOrganizationInvitationRoleRequest>(new UpdateOrganizationInvitationRoleRequest
+            {
+                InvitationId = invitation.Id,
+                RoleId = localRole.Id,
+            });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
+        persisted.RoleId.ShouldBe(invitation.RoleId);
+        persisted.RoleName.ShouldBe(invitation.RoleName);
+    }
+
+    [Fact]
     public async Task When_ConcurrentInvitesCompeteForLastSeat_Then_OnlyOneIsCreated()
     {
         // Given
-        var (owner, organization, role) = await apiFactory.Services.SeedUserAsync();
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var role = await CreateRoleAsync(organization.Id, "Invited Member", Permission.None);
         await SetSeatLimitAsync(organization.Id, 2);
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
 
@@ -155,9 +576,41 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        result.Items.Count.ShouldBe(2);
+        result.Items.Count.ShouldBe(3);
         result.Items.Single(role => role.Id == administratorRole.Id).Permissions.ShouldBe(int.MaxValue);
+        var defaultUserRole = result.Items.Single(role => role.Name == Role.DefaultUserName);
+        defaultUserRole.Permissions.ShouldBe((int)Role.DefaultUserPermissions);
+        defaultUserRole.IsSystem.ShouldBeTrue();
         result.Items.Single(role => role.Id == customRole.Id).Permissions.ShouldBe((int)Permission.AuditView);
+    }
+
+    [Fact]
+    public async Task When_InvitingMemberWithDefaultUserRole_Then_StoresSystemRoleInvitation()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var defaultUserRole = await GetRoleAsync(organization.Id, Role.DefaultUserName);
+        await SetSeatLimitAsync(organization.Id, 2);
+        var client = apiFactory.CreateAuthenticatedClient(owner, Permission.AddUser);
+
+        // When
+        var response = await client.POSTAsync<InviteOrganizationMemberEndpoint, InviteOrganizationMemberRequest>(
+            new InviteOrganizationMemberRequest
+            {
+                Email = "default-user-invite@example.com",
+                RoleId = defaultUserRole.Id,
+            });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var invitation = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationInvitations.SingleAsync(candidate =>
+                candidate.OrganizationId == organization.Id
+                && candidate.Email == "default-user-invite@example.com",
+                TestContext.Current.CancellationToken);
+        invitation.RoleId.ShouldBe(defaultUserRole.Id);
+        invitation.RoleName.ShouldBe(Role.DefaultUserName);
     }
 
     [Fact]
@@ -296,7 +749,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
             });
 
         // Then
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
         var persistedMember = await readContext.OrganizationMembers
@@ -344,12 +797,15 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
-    public async Task When_ReplacingRoles_Then_RemovesUnselectedAssignments()
+    public async Task When_ReplacingRolesWithoutGrantManageDelta_Then_RemovesUnselectedAssignments()
     {
         // Given
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
         var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
-        var replacementRole = await CreateRoleAsync(organization.Id, "Replacement Role", Permission.VaultManage);
+        var replacementRole = await CreateRoleAsync(
+            organization.Id,
+            "Replacement Role",
+            Permission.GrantManage | Permission.VaultManage);
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.OrganizationManagement);
 
         // When
@@ -362,7 +818,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
             });
 
         // Then
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
         var assignedRoles = await readContext.OrganizationMemberRoles
@@ -417,11 +873,15 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
-    public async Task When_RemovingMember_Then_MembershipRemainsEffectiveUntilVaultSagaCompletes()
+    public async Task When_RemovingMember_Then_ReadsRemainCurrentButSwitchCannotIssueSession()
     {
         // Given
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
         var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        // Keep the staged removal open deterministically. Without an affected Vault the asynchronous
+        // workflow may complete and delete the membership before the switch request, correctly
+        // changing the response from inactive-membership 403 to missing-membership 401.
+        await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.OrganizationManagement);
         var removedMemberClient = apiFactory.CreateAuthenticatedClient(member);
 
@@ -440,6 +900,12 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
 
         var stillAuthorizedResponse = await removedMemberClient.GetAsync("api/org");
         stillAuthorizedResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var switchResponse = await removedMemberClient.POSTAsync<
+            SwitchOrganizationEndpoint,
+            SwitchOrganizationRequest>(new SwitchOrganizationRequest { OrganizationId = organization.Id });
+        switchResponse.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await readContext.RefreshTokens.CountAsync(token =>
+            token.OrganizationId == organization.Id && token.UserId == member.Id)).ShouldBe(0);
     }
 
     [Fact]
@@ -458,6 +924,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
                 member.Id,
                 organization.Id,
                 $"member-removal-token-hash-{index}-{id}",
+                authorizationVersion: 1,
                 now + Duration.FromDays(30),
                 now)));
             await writeContext.SaveChangesAsync();
@@ -550,28 +1017,39 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
-    private async Task SeedInvitationAsync(
+    private async Task<OrganizationInvitation> SeedInvitationAsync(
         User owner,
         Organization organization,
         string email,
         string token,
-        Duration? ttl = null)
+        Duration? ttl = null,
+        Instant? issuedAt = null)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
-        var role = await writeContext.Roles.FirstAsync(r => r.OrganizationId == organization.Id);
-        var now = scope.ServiceProvider.GetRequiredService<IClock>().GetCurrentInstant();
+        var role = await writeContext.Roles.FirstOrDefaultAsync(
+            r => r.OrganizationId == organization.Id && !r.IsSystem);
+        if (role is null)
+        {
+            role = Role.Create(
+                Guid.NewGuid(), organization.Id, "Invitation Member", Permission.None,
+                isSystem: false, apiFactory.FakeClock.GetCurrentInstant());
+            writeContext.Roles.Add(role);
+        }
+        var now = issuedAt ?? scope.ServiceProvider.GetRequiredService<IClock>().GetCurrentInstant();
         var tokenHash = TokenService.HashToken(token);
 
         await writeContext.OrganizationInvitations
             .Where(i => i.TokenHash == tokenHash)
             .ExecuteDeleteAsync();
 
-        writeContext.OrganizationInvitations.Add(OrganizationInvitation.Create(
+        var invitation = OrganizationInvitation.Create(
             Guid.NewGuid(), organization.Id, organization.Name, role.Id, role.Name,
             owner.Id, owner.DisplayName, email, "en", token, tokenHash,
-            ttl ?? Duration.FromHours(72), now));
+            ttl ?? Duration.FromHours(72), now);
+        writeContext.OrganizationInvitations.Add(invitation);
         await writeContext.SaveChangesAsync();
+        return invitation;
     }
 
     private async Task<Role> CreateRoleAsync(Guid organizationId, string name, Permission permissions)

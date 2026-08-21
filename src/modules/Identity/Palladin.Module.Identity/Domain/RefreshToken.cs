@@ -10,6 +10,7 @@ internal sealed class RefreshToken : EventEntityBase
     public Guid OrganizationId { get; private set; }
     public Guid Id { get; private set; }
     public string TokenHash { get; private set; } = string.Empty;
+    public uint AuthorizationVersion { get; private set; }
     public Instant ExpiresAt { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant? RevokedAt { get; private set; }
@@ -31,6 +32,7 @@ internal sealed class RefreshToken : EventEntityBase
         Guid userId,
         Guid organizationId,
         string tokenHash,
+        uint authorizationVersion,
         Instant expiresAt,
         Instant now) =>
         new()
@@ -39,6 +41,7 @@ internal sealed class RefreshToken : EventEntityBase
             UserId = userId,
             OrganizationId = organizationId,
             TokenHash = tokenHash,
+            AuthorizationVersion = authorizationVersion,
             ExpiresAt = expiresAt,
             CreatedAt = now,
         };

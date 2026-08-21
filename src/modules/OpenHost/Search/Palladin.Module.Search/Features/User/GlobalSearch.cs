@@ -50,6 +50,7 @@ internal sealed class GlobalSearchValidator : Validator<GlobalSearchRequest>
 // Reads only the command-fed Agent/Member administrative catalog. The body query is ephemeral: it is
 // used in this parameterized SELECT and is never logged, tagged, published, cached or persisted.
 [PublicAPI]
+[AllowNonActiveOrganizationMembership]
 internal sealed class GlobalSearchEndpoint(SearchDomainReadContext domainReadContext)
     : Endpoint<GlobalSearchRequest, GlobalSearchResponse>
 {

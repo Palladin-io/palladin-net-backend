@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NodaTime;
+using Npgsql;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -65,13 +66,43 @@ internal sealed class InviteOrganizationMemberEndpoint(
 
         var email = req.Email.Trim().ToLowerInvariant();
         var now = clock.GetCurrentInstant();
-        var inviter = await domainWriteContext.Users.FirstAsync(u => u.Id == invitedBy, ct);
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == organizationId.Value, ct);
+        organization.FenceMembershipMutation();
+
+        var inviterMembership = await domainWriteContext.OrganizationMembers
+            .Include(member => member.User)
+            .Include(member => member.RoleAssignments)
+                .ThenInclude(assignment => assignment.Role)
+            .SingleAsync(member => member.OrganizationId == organizationId && member.UserId == invitedBy, ct);
         var role = await domainWriteContext.Roles.FirstOrDefaultAsync(
             r => r.OrganizationId == organizationId && r.Id == req.RoleId, ct);
         if (role is null)
         {
             AddError(ErrorResponses.General("organization-role-invalid"));
             await Send.ErrorsAsync(400, ct);
+            return;
+        }
+
+        if (role.IsSystem && !role.IsDefaultUser)
+        {
+            AddError(ErrorResponses.General("organization-role-assignment-forbidden"));
+            await Send.ErrorsAsync(403, ct);
+            return;
+        }
+
+        if (OrganizationRolePermissions.HasGrantManage(role.Permissions))
+        {
+            AddError(ErrorResponses.General("organization-role-grant-manage-cutover-unavailable"));
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+
+        if (!OrganizationRoleAuthorization.CanAssignRole(
+                inviterMembership, role, allowAdministratorForOwner: false))
+        {
+            AddError(ErrorResponses.General("organization-role-assignment-forbidden"));
+            await Send.ErrorsAsync(403, ct);
             return;
         }
 
@@ -86,27 +117,8 @@ internal sealed class InviteOrganizationMemberEndpoint(
 
         var pendingInvitation = await domainWriteContext.OrganizationInvitations.AnyAsync(
             i => i.OrganizationId == organizationId && i.Email == email
-                && i.AcceptedAt == null && i.ExpiresAt > now, ct);
+                && i.AcceptedAt == null && i.CancelledAt == null && i.ExpiresAt > now, ct);
         if (pendingInvitation)
-        {
-            AddError(ErrorResponses.General("organization-invitation-pending"));
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
-        var organization = await domainWriteContext.Organizations
-            .SingleAsync(x => x.Id == organizationId.Value, ct);
-        if (await domainWriteContext.OrganizationMembers.AnyAsync(
-                m => m.OrganizationId == organizationId && m.User.Email == email, ct))
-        {
-            AddError(ErrorResponses.General("organization-member-exists"));
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
-        if (await domainWriteContext.OrganizationInvitations.AnyAsync(
-                i => i.OrganizationId == organizationId && i.Email == email
-                    && i.AcceptedAt == null && i.ExpiresAt > now, ct))
         {
             AddError(ErrorResponses.General("organization-invitation-pending"));
             await Send.ErrorsAsync(409, ct);
@@ -117,7 +129,7 @@ internal sealed class InviteOrganizationMemberEndpoint(
             m => m.OrganizationId == organizationId, ct);
         var reservedSeats = await domainWriteContext.OrganizationInvitations.CountAsync(
             i => i.OrganizationId == organizationId
-                && i.AcceptedAt == null && i.ExpiresAt > now, ct);
+                && i.AcceptedAt == null && i.CancelledAt == null && i.ExpiresAt > now, ct);
         if (occupiedSeats + reservedSeats >= organization.SeatLimit)
         {
             AddError(ErrorResponses.General("organization-seat-limit-reached"));
@@ -130,10 +142,21 @@ internal sealed class InviteOrganizationMemberEndpoint(
         var invitationId = guidProvider.Generate();
         domainWriteContext.Add(OrganizationInvitation.Create(
             invitationId, organizationId.Value, organization.Name, role.Id, role.Name,
-            invitedBy.Value, inviter.DisplayName, email, inviter.PreferredLanguage.Code,
+            invitedBy.Value, inviterMembership.User.DisplayName, email,
+            inviterMembership.User.PreferredLanguage.Code,
             token, tokenHash, ttl, now));
-        organization.FenceMembershipMutation();
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+               { SqlState: Npgsql.PostgresErrorCodes.ForeignKeyViolation })
+        {
+            domainWriteContext.Clear();
+            AddError(ErrorResponses.General("organization-role-invalid"));
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
 
         await Send.NoContentAsync(ct);
     }

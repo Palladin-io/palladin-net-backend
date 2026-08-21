@@ -31,6 +31,9 @@ public static class AuditEventType
     public const string OrganizationCreated = "org.created";
     public const string OrganizationUpdated = "org.updated";
     public const string OrganizationMemberInvited = "org.member-invited";
+    public const string OrganizationInvitationResent = "org.invitation-resent";
+    public const string OrganizationInvitationCancelled = "org.invitation-cancelled";
+    public const string OrganizationInvitationRoleChanged = "org.invitation-role-changed";
     public const string OrganizationMemberJoined = "org.member-joined";
     public const string OrganizationMemberRoleChanged = "org.member-role-changed";
     public const string OrganizationMemberRemoved = "org.member-removed";

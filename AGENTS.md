@@ -7,7 +7,7 @@ This file provides guidance to Codex when working with code in this repository.
 GitHub Actions workflow at `.github/workflows/test.yml` runs on PRs to `main`:
 1. `dotnet restore`
 2. `dotnet build --no-restore`
-3. `dotnet test --no-build` (xUnit + Testcontainers — Docker required)
+3. `dotnet test --no-build` (xUnit + configured Docker-backed infrastructure — Docker required locally)
 
 **All changes must go through PRs** — CI must pass before merging.
 
@@ -412,7 +412,7 @@ internal sealed class OnVaultCreated(IAnalyticsService analyticsService)
 - **Shouldly** — fluent assertions
 - **NSubstitute** — mocking
 - **Bogus** — fake data generation (`PrivateCtorFaker` for entities with private constructors)
-- **Testcontainers** — PostgreSQL + LocalStack containers
+- **PostgreSQL / LocalStack-compatible test infrastructure** — provisioned outside `ApiFactory` (CI services or the local Docker environment)
 - **WireMock** — external API mocking
 
 ## Structure
@@ -423,12 +423,14 @@ internal sealed class OnVaultCreated(IAnalyticsService analyticsService)
 
 ## ApiFactory
 `ApiFactory` (extends `AppFixture<Program>`) provides:
-- PostgreSQL + LocalStack test containers
+- configured PostgreSQL databases and LocalStack-compatible endpoints; it does **not** start a container per test process
 - Per-module database isolation
 - WireMock servers for all external APIs
 - `FakeClock` for time-based testing
 - NSubstitute mocks (OAuth, GuidProvider, Notifier, Logger, etc.)
 - `LoginAs(ApplicationUserType)` → returns `(user, client)` for authenticated requests
+
+The current integration suite uses fixed testing connection strings on `localhost`. Do not assume the referenced Testcontainers package provides per-run isolation, and do not run several full suites concurrently against the same local PostgreSQL instance. In CI, `.github/workflows/test.yml` provisions one PostgreSQL service and initializes the module databases before `dotnet test`.
 
 ## Test Data
 - Fakers: static `Create` methods with meaningful parameters, `RuleFor` for specific values

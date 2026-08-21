@@ -96,7 +96,7 @@ Shared enums and exceptions referenced across module boundaries (see `CLAUDE.MD`
 | Building block | File | Purpose |
 |---|---|---|
 | `ICronJob` / `ICronJobOptions` | `Palladin.Core.Hangfire/CronJobs/ICronJob.cs` | Scheduled-job contract: `Name`, `Expression`, `Enabled`, `ExecuteAsync` |
-| `HangfireModule` | `Palladin.Core.Hangfire/HangfireModule.cs` | `AddHangfireModule` + `AddScopedCronJob<T,TOptions>` + `UseHangfireModule`; Postgres-backed + dashboard |
+| `HangfireModule` | `Palladin.Core.Hangfire/HangfireModule.cs` | `AddHangfireModule` + `AddScopedCronJob<T,TOptions>` + `UseHangfireModule`; Postgres-backed + dashboard when enabled. `Hangfire.Enabled=false` binds options but registers no persistence hook, storage, server or cron initializer, so disabled test/runtime hosts do not reserve a Hangfire connection pool |
 | `HangfireCronJobsInitializer` | `Palladin.Core.Hangfire/CronJobs/HangfireCronJobsInitializer.cs` | Hosted service registering all `ICronJob` impls into Hangfire's recurring registry at startup |
 
 ## `Palladin.Core.Cdn` (legacy; removal in progress)

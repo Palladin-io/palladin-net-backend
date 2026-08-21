@@ -41,6 +41,7 @@ internal sealed class GetMemberSnapshotEndpoint(
     {
         Post("api/vaults/{vaultId:guid}/sync/snapshot");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequirePermission(Permission.VaultManage);
         this.RequireEmailVerified();
         this.RequireVaultMembership();

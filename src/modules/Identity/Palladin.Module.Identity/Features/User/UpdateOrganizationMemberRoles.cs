@@ -1,6 +1,8 @@
 using Palladin.Core.Api;
 using Palladin.Core.Security;
+using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -17,6 +19,13 @@ public sealed record UpdateOrganizationMemberRolesRequest
     public IReadOnlyCollection<Guid> RoleIds { get; init; } = [];
 }
 
+[PublicAPI]
+public sealed record UpdateOrganizationMemberRolesResponse(
+    Guid UserId,
+    IReadOnlyList<OrganizationRoleItem> Roles,
+    int EffectivePermissions,
+    uint AuthorizationVersion);
+
 [UsedImplicitly]
 internal sealed class UpdateOrganizationMemberRolesValidator : Validator<UpdateOrganizationMemberRolesRequest>
 {
@@ -24,6 +33,8 @@ internal sealed class UpdateOrganizationMemberRolesValidator : Validator<UpdateO
     {
         RuleFor(x => x.UserId).NotEmpty();
         RuleFor(x => x.RoleIds)
+            .Cascade(CascadeMode.Stop)
+            .NotNull()
             .NotEmpty()
             .Must(roleIds => roleIds.Distinct().Count() == roleIds.Count);
     }
@@ -32,7 +43,7 @@ internal sealed class UpdateOrganizationMemberRolesValidator : Validator<UpdateO
 [PublicAPI]
 internal sealed class UpdateOrganizationMemberRolesEndpoint(
     IdentityDomainWriteContext domainWriteContext,
-    IClock clock) : Endpoint<UpdateOrganizationMemberRolesRequest>
+    IClock clock) : Endpoint<UpdateOrganizationMemberRolesRequest, UpdateOrganizationMemberRolesResponse>
 {
     public override void Configure()
     {
@@ -58,6 +69,21 @@ internal sealed class UpdateOrganizationMemberRolesEndpoint(
             return;
         }
 
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == organizationId, ct);
+        organization.FenceMembershipMutation();
+
+        var actor = await domainWriteContext.OrganizationMembers
+            .Include(m => m.RoleAssignments)
+                .ThenInclude(assignment => assignment.Role)
+            .SingleAsync(m => m.OrganizationId == organizationId && m.UserId == changedBy, ct);
+        if (actor.Status != OrganizationMemberStatus.Active)
+        {
+            AddError(ErrorResponses.General("organization-membership-inactive"));
+            await Send.ErrorsAsync(403, ct);
+            return;
+        }
+
         var member = await domainWriteContext.OrganizationMembers
             .Include(m => m.RoleAssignments)
                 .ThenInclude(assignment => assignment.Role)
@@ -76,6 +102,13 @@ internal sealed class UpdateOrganizationMemberRolesEndpoint(
             return;
         }
 
+        if (member.Status != OrganizationMemberStatus.Active)
+        {
+            AddError(ErrorResponses.General("organization-member-removal-in-progress"));
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+
         var requestedRoleIds = req.RoleIds.ToHashSet();
         var roles = await domainWriteContext.Roles
             .Where(role => role.OrganizationId == organizationId && requestedRoleIds.Contains(role.Id))
@@ -87,10 +120,56 @@ internal sealed class UpdateOrganizationMemberRolesEndpoint(
             return;
         }
 
-        member.ReplaceRoles(
-            roles, member.User.DisplayName, changedBy.Value, User.GetDisplayName(), clock.GetCurrentInstant());
-        await domainWriteContext.CommitAsync(ct);
+        var currentPermissions = member.EffectivePermissions();
+        var proposedPermissions = roles.Aggregate(
+            Permission.None,
+            (permissions, role) => permissions | role.Permissions);
+        if ((!actor.IsOwner
+             && (!OrganizationRoleAuthorization.IsSubsetOf(currentPermissions, actor.EffectivePermissions())
+                 || !OrganizationRoleAuthorization.IsSubsetOf(proposedPermissions, actor.EffectivePermissions())))
+            || roles.Any(role => !OrganizationRoleAuthorization.CanAssignRole(
+                actor, role, allowAdministratorForOwner: true)))
+        {
+            AddError(ErrorResponses.General("organization-role-assignment-forbidden"));
+            await Send.ErrorsAsync(403, ct);
+            return;
+        }
 
-        await Send.NoContentAsync(ct);
+        if (OrganizationRoleAuthorization.ChangesGrantManage(currentPermissions, proposedPermissions))
+        {
+            AddError(ErrorResponses.General("organization-role-grant-manage-cutover-unavailable"));
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+
+        var now = clock.GetCurrentInstant();
+        var changed = member.ReplaceRoles(
+            roles, member.User.DisplayName, changedBy.Value, User.GetDisplayName(), now);
+        if (changed)
+        {
+            await OrganizationRoleAuthorization.RevokeRefreshTokensAsync(
+                domainWriteContext,
+                organizationId.Value,
+                [member.UserId],
+                now,
+                ct);
+            await domainWriteContext.CommitAsync(ct);
+        }
+
+        await Send.OkAsync(ToResponse(member), ct);
     }
+
+    private static UpdateOrganizationMemberRolesResponse ToResponse(OrganizationMember member) => new(
+        member.UserId,
+        member.RoleAssignments
+            .Select(assignment => new OrganizationRoleItem(
+                assignment.Role.Id,
+                assignment.Role.Name,
+                (int)assignment.Role.Permissions,
+                assignment.Role.IsSystem,
+                CanAssign: true))
+            .OrderBy(role => role.Name)
+            .ToArray(),
+        (int)member.EffectivePermissions(),
+        member.AuthorizationVersion);
 }

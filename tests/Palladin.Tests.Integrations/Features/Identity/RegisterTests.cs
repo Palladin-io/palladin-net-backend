@@ -1,5 +1,6 @@
 using System.Net;
 using Palladin.Module.Identity.Contracts.ValueObjects;
+using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Domain.Enums;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Persistence;
@@ -45,6 +46,23 @@ public sealed class RegisterTests(ApiFactory apiFactory) : TestBase
         user.EmailVerified.ShouldBeFalse();
         user.IsOnboarded.ShouldBeTrue();
         user.MemberKeyVersion.ShouldBe((uint)1);
+
+        var roles = await readContext.Roles
+            .Where(role => role.OrganizationId == user.OrganizationId)
+            .OrderBy(role => role.Name)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        roles.Select(role => role.Name).ShouldBe([Role.AdministratorName, Role.DefaultUserName]);
+        var defaultUserRole = roles.Single(role => role.IsDefaultUser);
+        defaultUserRole.IsSystem.ShouldBeTrue();
+        defaultUserRole.Permissions.ShouldBe(Role.DefaultUserPermissions);
+
+        var owner = await readContext.OrganizationMembers
+            .Include(member => member.RoleAssignments)
+                .ThenInclude(assignment => assignment.Role)
+            .SingleAsync(
+                member => member.OrganizationId == user.OrganizationId && member.UserId == user.Id,
+                TestContext.Current.CancellationToken);
+        owner.RoleAssignments.ShouldHaveSingleItem().Role.IsAdministrator.ShouldBeTrue();
 
         (await readContext.PasswordCredentials.AnyAsync(c => c.UserId == user.Id, TestContext.Current.CancellationToken))
             .ShouldBeTrue();

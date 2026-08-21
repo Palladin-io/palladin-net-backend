@@ -47,6 +47,7 @@ internal sealed class RegisterPushTokenEndpoint(
     {
         Post("api/push-tokens");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Register a device push token";

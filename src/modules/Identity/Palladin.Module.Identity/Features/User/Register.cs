@@ -111,6 +111,7 @@ internal sealed class RegisterEndpoint(
 
         var adminRole = Role.CreateAdministrator(guidProvider.Generate(), orgId, now);
         domainWriteContext.Add(adminRole);
+        domainWriteContext.Add(Role.CreateDefaultUser(guidProvider.Generate(), orgId, now));
 
         var user = Domain.User.RegisterWithPassword(
             userId, email, req.DisplayName, req.PreferredLanguage, orgId, adminRole.Permissions,
@@ -134,7 +135,7 @@ internal sealed class RegisterEndpoint(
             Duration.FromMinutes(emailVerificationOptions.Value.TokenTtlMinutes), now));
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
-            user, orgId, adminRole.Permissions, PlanType.Basic, now);
+            user, orgId, adminRole.Permissions, PlanType.Basic, authorizationVersion: 1, now);
 
         try
         {

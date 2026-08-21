@@ -33,6 +33,7 @@ internal sealed class LogoutEndpoint(
     public override void Configure()
     {
         Post("api/auth/logout");
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Logout";

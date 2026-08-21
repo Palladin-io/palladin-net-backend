@@ -24,6 +24,7 @@ internal sealed class EnrollTotpEndpoint(
     {
         Post("api/auth/totp/enroll");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Begin TOTP enrollment";

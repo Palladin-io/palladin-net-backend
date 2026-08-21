@@ -36,6 +36,7 @@ internal sealed class RemovePushTokenEndpoint(
     {
         Delete("api/push-tokens/{tokenId:guid}");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Remove a device push token";

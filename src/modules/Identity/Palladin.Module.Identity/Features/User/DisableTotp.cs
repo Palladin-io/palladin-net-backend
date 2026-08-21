@@ -36,6 +36,7 @@ internal sealed class DisableTotpEndpoint(
     {
         Post("api/auth/totp/disable");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Disable TOTP";

@@ -117,9 +117,18 @@ internal sealed class OAuthAuthenticateEndpoint(
             .FirstOrDefaultAsync(ct);
 
         bool isNewUser;
+        OrganizationMember? activeMembership = null;
 
         if (user is not null)
         {
+            activeMembership = user.OrganizationMemberships.SingleOrDefault(
+                membership => membership.OrganizationId == user.OrganizationId);
+            if (activeMembership is null || activeMembership.Status != OrganizationMemberStatus.Active)
+            {
+                await Send.UnauthorizedAsync(ct);
+                return;
+            }
+
             EnsureOAuthConnectionExists(user, provider.Provider, externalUser, now);
             user.RecordLogin(provider.Provider.ToString(), platform);
             isNewUser = false;
@@ -132,16 +141,21 @@ internal sealed class OAuthAuthenticateEndpoint(
 
         var permissions = isNewUser
             ? (Permission)int.MaxValue
-            : user.EffectivePermissions(user.OrganizationId);
+            : activeMembership!.EffectivePermissions();
+        var authorizationVersion = isNewUser
+            ? 1u
+            : activeMembership!.AuthorizationVersion;
 
         var plan = isNewUser ? PlanType.Basic : user.Organization.PlanType;
-        var accessToken = tokenService.GenerateAccessToken(user, user.OrganizationId, permissions, plan);
+        var accessToken = tokenService.GenerateAccessToken(
+            user, user.OrganizationId, permissions, plan, authorizationVersion);
         var (rawRefreshToken, refreshTokenHash) = tokenService.GenerateRefreshToken();
 
         var refreshTokenId = guidProvider.Generate();
         var refreshTokenExpiresAt = now.Plus(Duration.FromDays(jwtOptions.Value.RefreshTokenExpiryDays));
         var refreshToken = RefreshToken.Create(
-            refreshTokenId, user.Id, user.OrganizationId, refreshTokenHash, refreshTokenExpiresAt, now);
+            refreshTokenId, user.Id, user.OrganizationId, refreshTokenHash,
+            authorizationVersion, refreshTokenExpiresAt, now);
         domainWriteContext.Add(refreshToken);
 
         await domainWriteContext.CommitAsync(ct);
@@ -161,6 +175,7 @@ internal sealed class OAuthAuthenticateEndpoint(
         var roleId = guidProvider.Generate();
         var adminRole = Role.CreateAdministrator(roleId, orgId, now);
         domainWriteContext.Add(adminRole);
+        domainWriteContext.Add(Role.CreateDefaultUser(guidProvider.Generate(), orgId, now));
 
         var user = Domain.User.Create(userId, externalUser.Email, displayName, externalUser.Picture, orgId, now, authProvider.ToString(), platform, adminRole.Permissions);
         domainWriteContext.Add(user);

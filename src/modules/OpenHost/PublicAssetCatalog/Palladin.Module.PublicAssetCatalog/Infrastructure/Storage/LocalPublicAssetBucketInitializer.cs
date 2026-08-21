@@ -34,7 +34,21 @@ internal sealed class LocalPublicAssetBucketInitializer(IOptions<PublicAssetStor
             BucketName = options.BucketName,
             Configuration = new CORSConfiguration
             {
-                Rules = [new CORSRule { AllowedMethods = ["PUT"], AllowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"], AllowedHeaders = ["*"] }],
+                Rules =
+                [
+                    new CORSRule
+                    {
+                        AllowedMethods = ["PUT"],
+                        AllowedOrigins =
+                        [
+                            "http://localhost:5173",
+                            "http://127.0.0.1:5173",
+                            "http://localhost:5174",
+                            "http://127.0.0.1:5174",
+                        ],
+                        AllowedHeaders = ["*"],
+                    },
+                ],
             },
         }, ct);
     }

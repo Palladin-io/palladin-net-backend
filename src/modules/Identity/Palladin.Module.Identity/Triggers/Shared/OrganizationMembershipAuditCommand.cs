@@ -22,8 +22,8 @@ internal static class OrganizationMembershipAuditCommand
             null,
             null,
             null,
-            actorName,
             null,
+            actorName,
             null,
             metadata);
 }

@@ -52,7 +52,9 @@ internal sealed class GetOrgEndpoint(IdentityDomainReadContext domainReadContext
                 o.PlanType,
                 o.Members.Count,
                 o.Members.Count + o.Invitations.Count(invitation =>
-                    invitation.AcceptedAt == null && invitation.ExpiresAt > now),
+                    invitation.AcceptedAt == null
+                    && invitation.CancelledAt == null
+                    && invitation.ExpiresAt > now),
                 o.SeatLimit))
             .FirstOrDefaultAsync(ct);
 

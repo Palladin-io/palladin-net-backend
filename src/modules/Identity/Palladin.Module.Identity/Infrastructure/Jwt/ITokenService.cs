@@ -6,6 +6,11 @@ namespace Palladin.Module.Identity.Infrastructure.Jwt;
 
 internal interface ITokenService
 {
-    string GenerateAccessToken(User user, Guid organizationId, Permission permissions, PlanType plan);
+    string GenerateAccessToken(
+        User user,
+        Guid organizationId,
+        Permission permissions,
+        PlanType plan,
+        uint authorizationVersion);
     (string rawToken, string tokenHash) GenerateRefreshToken();
 }

@@ -12,6 +12,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Palladin.Module.Identity.Domain;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -84,6 +85,14 @@ internal sealed class LoginTotpEndpoint(
             return;
         }
 
+        var membership = user.OrganizationMemberships.SingleOrDefault(
+            x => x.OrganizationId == user.OrganizationId);
+        if (membership is null || membership.Status != OrganizationMemberStatus.Active)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         if (await loginThrottle.IsLockedAsync(user.Email, ip, now, ct))
         {
@@ -110,7 +119,12 @@ internal sealed class LoginTotpEndpoint(
         await loginThrottle.ResetAsync(user.Email, ip, now, ct);
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
-            user, user.OrganizationId, user.EffectivePermissions(user.OrganizationId), user.Organization.PlanType, now);
+            user,
+            user.OrganizationId,
+            membership.EffectivePermissions(),
+            user.Organization.PlanType,
+            membership.AuthorizationVersion,
+            now);
         await domainWriteContext.CommitAsync(ct);
 
         await Send.OkAsync(

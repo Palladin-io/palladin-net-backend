@@ -3,7 +3,9 @@ using Palladin.Core.Persistence;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
+using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -29,12 +31,14 @@ internal sealed class AcceptOrganizationInvitationValidator : Validator<AcceptOr
 [PublicAPI]
 internal sealed class AcceptOrganizationInvitationEndpoint(
     IdentityDomainWriteContext domainWriteContext,
-    IClock clock) : Endpoint<AcceptOrganizationInvitationRequest>
+    IAuthSessionIssuer sessionIssuer,
+    IClock clock) : Endpoint<AcceptOrganizationInvitationRequest, AuthSessionResponse>
 {
     public override void Configure()
     {
         Post("api/organization/invitations/accept");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequireEmailVerified();
         Tags("Identity/Organization");
         Summary(summary =>
@@ -54,13 +58,53 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
         }
 
         var now = clock.GetCurrentInstant();
-        var invitation = await domainWriteContext.OrganizationInvitations
-            .Include(i => i.Role)
-            .FirstOrDefaultAsync(i => i.TokenHash == SecureToken.Hash(req.Token), ct);
-        if (invitation is null || invitation.AcceptedAt is not null)
+        var tokenHash = SecureToken.Hash(req.Token);
+        var organizationId = await domainWriteContext.OrganizationInvitations
+            .AsNoTracking()
+            .Where(invitation => invitation.TokenHash == tokenHash)
+            .Select(invitation => (Guid?)invitation.OrganizationId)
+            .FirstOrDefaultAsync(ct);
+        if (organizationId is null)
         {
             AddError(ErrorResponses.General("organization-invitation-invalid"));
             await Send.ErrorsAsync(400, ct);
+            return;
+        }
+
+        var organization = await domainWriteContext.Organizations
+            .SingleAsync(x => x.Id == organizationId.Value, ct);
+        organization.FenceMembershipMutation();
+
+        var invitation = await domainWriteContext.OrganizationInvitations
+            .Include(i => i.Role)
+            .FirstOrDefaultAsync(i => i.TokenHash == tokenHash, ct);
+        if (invitation is null || invitation.AcceptedAt is not null || invitation.CancelledAt is not null)
+        {
+            AddError(ErrorResponses.General("organization-invitation-invalid"));
+            await Send.ErrorsAsync(400, ct);
+            return;
+        }
+
+        if (OrganizationRolePermissions.HasGrantManage(invitation.Role.Permissions))
+        {
+            AddError(ErrorResponses.General("organization-role-grant-manage-cutover-unavailable"));
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+
+        var inviter = await domainWriteContext.OrganizationMembers
+            .Include(member => member.RoleAssignments)
+                .ThenInclude(assignment => assignment.Role)
+            .FirstOrDefaultAsync(member => member.OrganizationId == invitation.OrganizationId
+                                           && member.UserId == invitation.InvitedBy,
+                ct);
+        if (inviter is null
+            || (inviter.EffectivePermissions() & Permission.AddUser) != Permission.AddUser
+            || !OrganizationRoleAuthorization.CanAssignRole(
+                inviter, invitation.Role, allowAdministratorForOwner: false))
+        {
+            AddError(ErrorResponses.General("organization-invitation-role-unassignable"));
+            await Send.ErrorsAsync(409, ct);
             return;
         }
 
@@ -87,8 +131,6 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
-        var organization = await domainWriteContext.Organizations
-            .SingleAsync(x => x.Id == invitation.OrganizationId, ct);
         var occupiedSeats = await domainWriteContext.OrganizationMembers.CountAsync(
             m => m.OrganizationId == invitation.OrganizationId, ct);
         if (occupiedSeats >= organization.SeatLimit)
@@ -98,11 +140,24 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
+        var previousAuthorizationVersion = await domainWriteContext.RefreshTokens
+            .AsNoTracking()
+            .Where(token => token.OrganizationId == invitation.OrganizationId && token.UserId == user.Id)
+            .MaxAsync(token => (uint?)token.AuthorizationVersion, ct) ?? 0u;
+        var authorizationVersion = checked(previousAuthorizationVersion + 1u);
+
         invitation.Accept(now);
-        domainWriteContext.Add(OrganizationMember.Create(
+        var member = OrganizationMember.Create(
             invitation.OrganizationId, user.Id, invitation.Role,
-            user.DisplayName, user.Email, now));
-        organization.FenceMembershipMutation();
+            user.DisplayName, user.Email, now, authorizationVersion);
+        domainWriteContext.Add(member);
+        var (accessToken, refreshToken) = sessionIssuer.Issue(
+            user,
+            organization.Id,
+            member.EffectivePermissions(),
+            organization.PlanType,
+            member.AuthorizationVersion,
+            now);
         try
         {
             await domainWriteContext.CommitAsync(ct);
@@ -110,11 +165,25 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException
         { SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation })
         {
+            domainWriteContext.Clear();
             AddError(ErrorResponses.General("organization-member-exists"));
             await Send.ErrorsAsync(409, ct);
             return;
         }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+        { SqlState: Npgsql.PostgresErrorCodes.ForeignKeyViolation })
+        {
+            domainWriteContext.Clear();
+            AddError(ErrorResponses.General("organization-invitation-role-unassignable"));
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
 
-        await Send.NoContentAsync(ct);
+        await Send.OkAsync(new AuthSessionResponse(
+            accessToken,
+            refreshToken,
+            user.Id,
+            user.IsOnboarded,
+            user.EmailVerified), ct);
     }
 }

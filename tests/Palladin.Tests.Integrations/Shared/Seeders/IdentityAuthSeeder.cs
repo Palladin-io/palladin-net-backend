@@ -35,6 +35,7 @@ internal static class IdentityAuthSeeder
 
         var role = Role.CreateAdministrator(Guid.NewGuid(), organization.Id, now);
         writeContext.Roles.Add(role);
+        writeContext.Roles.Add(Role.CreateDefaultUser(Guid.NewGuid(), organization.Id, now));
 
         var user = UserFaker.Create(userId, organization.Id, email)
             .RuleFor(x => x.EmailVerified, emailVerified)

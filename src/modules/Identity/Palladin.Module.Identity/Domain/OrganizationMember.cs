@@ -14,6 +14,7 @@ internal sealed class OrganizationMember : EventEntityBase
     public Guid? RemovalRequestId { get; private set; }
     public Guid? RemovalRequestedBy { get; private set; }
     public Instant? RemovalRequestedAt { get; private set; }
+    public uint AuthorizationVersion { get; private set; }
     public Instant JoinedAt { get; private set; }
     public Instant UpdatedAt { get; private set; }
 
@@ -27,17 +28,21 @@ internal sealed class OrganizationMember : EventEntityBase
         Guid organizationId,
         Guid userId,
         Role administratorRole,
-        Instant now) =>
-        new()
+        Instant now)
+    {
+        var member = new OrganizationMember
         {
             OrganizationId = organizationId,
             UserId = userId,
             IsOwner = true,
             Status = OrganizationMemberStatus.Active,
+            AuthorizationVersion = 1,
             JoinedAt = now,
             UpdatedAt = now,
             RoleAssignments = [OrganizationMemberRole.Create(organizationId, userId, administratorRole)],
         };
+        return member;
+    }
 
     internal static OrganizationMember Create(
         Guid organizationId,
@@ -45,13 +50,22 @@ internal sealed class OrganizationMember : EventEntityBase
         Role initialRole,
         string displayName,
         string email,
-        Instant now)
+        Instant now,
+        uint authorizationVersion = 1)
     {
+        if (authorizationVersion == 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(authorizationVersion),
+                "Organization Member versions must be positive.");
+        }
+
         var member = new OrganizationMember
         {
             OrganizationId = organizationId,
             UserId = userId,
             Status = OrganizationMemberStatus.Active,
+            AuthorizationVersion = authorizationVersion,
             JoinedAt = now,
             UpdatedAt = now,
             RoleAssignments = [OrganizationMemberRole.Create(organizationId, userId, initialRole)],
@@ -67,7 +81,7 @@ internal sealed class OrganizationMember : EventEntityBase
         RoleAssignments.Aggregate(Permission.None, (permissions, assignment) =>
             permissions | assignment.Role.Permissions);
 
-    internal void ReplaceRoles(
+    internal bool ReplaceRoles(
         IReadOnlyCollection<Role> roles,
         string userDisplayName,
         Guid changedBy,
@@ -76,15 +90,23 @@ internal sealed class OrganizationMember : EventEntityBase
     {
         if (IsOwner)
         {
-            return;
+            return false;
+        }
+
+        if (roles.Count == 0)
+        {
+            throw new InvalidOperationException("An organization member must have at least one role.");
+        }
+
+        var oldRoleIds = RoleAssignments.Select(assignment => assignment.RoleId).Order().ToArray();
+        var newRoleIds = roles.Select(role => role.Id).Order().ToArray();
+        if (oldRoleIds.SequenceEqual(newRoleIds))
+        {
+            return false;
         }
 
         var oldRoleNames = RoleAssignments.Select(assignment => assignment.Role.Name).Order().ToArray();
         var newRoleNames = roles.Select(role => role.Name).Order().ToArray();
-        if (oldRoleNames.SequenceEqual(newRoleNames, StringComparer.Ordinal))
-        {
-            return;
-        }
 
         var requestedRoleIds = roles.Select(role => role.Id).ToHashSet();
         foreach (var assignment in RoleAssignments.Where(assignment => !requestedRoleIds.Contains(assignment.RoleId)).ToList())
@@ -98,10 +120,23 @@ internal sealed class OrganizationMember : EventEntityBase
             RoleAssignments.Add(OrganizationMemberRole.Create(OrganizationId, UserId, role));
         }
 
-        UpdatedAt = now;
+        InvalidateAuthorization(now);
         AddEvent(new OrganizationMemberRoleChangedEvent(
             OrganizationId, UserId, userDisplayName, changedBy, changedByName,
             oldRoleNames, newRoleNames, now));
+
+        return true;
+    }
+
+    internal void InvalidateAuthorization(Instant now)
+    {
+        if (AuthorizationVersion == uint.MaxValue)
+        {
+            throw new InvalidOperationException("Organization Member authorization version namespace is exhausted.");
+        }
+
+        AuthorizationVersion++;
+        UpdatedAt = now;
     }
 
     internal void RequestRemoval(Guid requestId, Guid requestedBy, Instant now)
@@ -141,4 +176,5 @@ internal sealed class OrganizationMember : EventEntityBase
         AddEvent(new OrganizationMemberRemovedEvent(
             OrganizationId, UserId, userDisplayName, RemovalRequestedBy.Value, removedByName, now));
     }
+
 }

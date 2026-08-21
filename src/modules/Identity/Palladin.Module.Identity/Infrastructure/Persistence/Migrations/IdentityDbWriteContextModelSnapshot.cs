@@ -136,6 +136,9 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Instant?>("AcceptedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Instant?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -149,11 +152,19 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("InvitedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Instant>("LastSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("RoleId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("RoleName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -178,6 +189,12 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
+
+                    b.Property<long>("AuthorizationVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
 
                     b.Property<bool>("IsOwner")
                         .HasColumnType("boolean");
@@ -264,6 +281,11 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<long>("AuthorizationVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -306,14 +328,20 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<int>("Permissions")
                         .HasColumnType("integer");
 
                     b.HasKey("OrganizationId", "Id");
 
-                    b.HasIndex("OrganizationId", "Name")
+                    b.HasIndex("OrganizationId", "NormalizedName")
                         .IsUnique();
 
                     b.ToTable("Roles");
@@ -573,7 +601,7 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("Palladin.Module.Identity.Domain.Role", "Role")
                         .WithMany()
                         .HasForeignKey("OrganizationId", "RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Organization");
@@ -605,7 +633,7 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("Palladin.Module.Identity.Domain.Role", "Role")
                         .WithMany("MemberAssignments")
                         .HasForeignKey("OrganizationId", "RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Palladin.Module.Identity.Domain.OrganizationMember", "Member")

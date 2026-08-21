@@ -17,6 +17,7 @@ internal sealed class MarkNotificationReadEndpoint(
     {
         Put("api/notifications/{id:guid}/read");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Mark a notification as read";

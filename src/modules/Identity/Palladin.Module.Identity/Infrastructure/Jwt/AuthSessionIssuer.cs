@@ -22,14 +22,17 @@ internal sealed class AuthSessionIssuer(
         Guid organizationId,
         Permission permissions,
         PlanType plan,
+        uint authorizationVersion,
         Instant now)
     {
-        var accessToken = tokenService.GenerateAccessToken(user, organizationId, permissions, plan);
+        var accessToken = tokenService.GenerateAccessToken(
+            user, organizationId, permissions, plan, authorizationVersion);
         var (rawRefreshToken, refreshTokenHash) = tokenService.GenerateRefreshToken();
 
         var expiresAt = now.Plus(Duration.FromDays(jwtOptions.Value.RefreshTokenExpiryDays));
         var refreshToken = RefreshToken.Create(
-            guidProvider.Generate(), user.Id, organizationId, refreshTokenHash, expiresAt, now);
+            guidProvider.Generate(), user.Id, organizationId, refreshTokenHash,
+            authorizationVersion, expiresAt, now);
         domainWriteContext.Add(refreshToken);
 
         return (accessToken, rawRefreshToken);

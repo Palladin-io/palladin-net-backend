@@ -61,6 +61,7 @@ internal sealed class RecoverAccountEndpoint(
     {
         Put("api/account/recovery");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Recover the account using pre-encrypted key material";

@@ -13,6 +13,7 @@ internal sealed class OrganizationInvitationConfiguration : IEntityTypeConfigura
         builder.HasKey(x => x.Id);
         builder.HasIndex(x => x.TokenHash).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.Email });
+        builder.Property(x => x.RoleName).HasMaxLength(100);
 
         builder.HasOne(x => x.Organization)
             .WithMany(x => x.Invitations)
@@ -21,6 +22,7 @@ internal sealed class OrganizationInvitationConfiguration : IEntityTypeConfigura
         builder.HasOne(x => x.Role)
             .WithMany()
             .HasForeignKey(x => new { x.OrganizationId, x.RoleId })
-            .HasPrincipalKey(x => new { x.OrganizationId, x.Id });
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

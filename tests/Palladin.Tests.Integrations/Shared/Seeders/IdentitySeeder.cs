@@ -32,6 +32,8 @@ internal static class IdentitySeeder
 
         var role = Role.CreateAdministrator(Guid.NewGuid(), organization.Id, SystemClock.Instance.GetCurrentInstant());
         writeContext.Roles.Add(role);
+        writeContext.Roles.Add(Role.CreateDefaultUser(
+            Guid.NewGuid(), organization.Id, SystemClock.Instance.GetCurrentInstant()));
 
         var effectiveUserFaker = userFaker ?? UserFaker.Create().RuleFor(x => x.EmailVerified, true);
         var user = effectiveUserFaker
@@ -131,9 +133,13 @@ internal static class IdentitySeeder
             .Where(u => u.Id == userId)
             .Select(u => u.OrganizationId)
             .FirstAsync();
+        var authorizationVersion = await writeContext.OrganizationMembers
+            .Where(m => m.OrganizationId == organizationId && m.UserId == userId)
+            .Select(m => m.AuthorizationVersion)
+            .SingleAsync();
         var refreshToken = RefreshToken.Create(
             id ?? Guid.NewGuid(), userId, organizationId, tokenHash,
-            expiresAt ?? now.Plus(Duration.FromDays(30)), now);
+            authorizationVersion, expiresAt ?? now.Plus(Duration.FromDays(30)), now);
 
         if (revokedAt is not null)
         {

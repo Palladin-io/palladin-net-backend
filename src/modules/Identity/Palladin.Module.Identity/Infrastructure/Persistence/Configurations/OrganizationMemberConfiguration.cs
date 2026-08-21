@@ -12,6 +12,9 @@ internal sealed class OrganizationMemberConfiguration : IEntityTypeConfiguration
     {
         builder.HasKey(x => new { x.OrganizationId, x.UserId });
         builder.Property(x => x.Status).HasDefaultValue(OrganizationMemberStatus.Active);
+        builder.Property(x => x.AuthorizationVersion)
+            .HasDefaultValue(1u)
+            .IsConcurrencyToken();
 
         builder.HasOne(x => x.Organization)
             .WithMany(x => x.Members)

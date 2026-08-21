@@ -27,6 +27,7 @@ internal sealed class ResendVerificationEmailEndpoint(
     {
         Post("api/auth/verify-email/resend");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Resend the email-verification link";

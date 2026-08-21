@@ -49,6 +49,7 @@ internal sealed class GetMemberDeltaEndpoint(
     {
         Post("api/vaults/{vaultId:guid}/sync/delta");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequirePermission(Permission.VaultManage);
         this.RequireEmailVerified();
         this.RequireVaultMembership();

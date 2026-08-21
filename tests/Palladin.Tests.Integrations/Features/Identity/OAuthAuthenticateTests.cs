@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using Palladin.Module.Identity.Contracts.ValueObjects;
+using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Domain.Enums;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.OAuth;
+using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Mocks;
@@ -11,6 +13,8 @@ using Palladin.Tests.Integrations.Shared.Seeders;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Palladin.Tests.Integrations.Features.Identity;
 
@@ -38,6 +42,15 @@ public sealed class OAuthAuthenticateTests(ApiFactory apiFactory) : TestBase
         result.AccessToken.ShouldNotBeNullOrWhiteSpace();
         result.RefreshToken.ShouldNotBeNullOrWhiteSpace();
         result.IsOnboarded.ShouldBeFalse();
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var roles = await readContext.Roles
+            .Where(role => role.Organization.Members.Any(member => member.UserId == result.UserId))
+            .OrderBy(role => role.Name)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        roles.Select(role => role.Name).ShouldBe([Role.AdministratorName, Role.DefaultUserName]);
+        roles.Single(role => role.IsDefaultUser).Permissions.ShouldBe(Role.DefaultUserPermissions);
     }
 
     [Fact]

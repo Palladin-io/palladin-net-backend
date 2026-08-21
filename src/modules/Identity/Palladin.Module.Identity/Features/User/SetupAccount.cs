@@ -60,6 +60,7 @@ internal sealed class SetupAccountEndpoint(
     {
         Post("api/account/setup");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Complete account setup with key material";

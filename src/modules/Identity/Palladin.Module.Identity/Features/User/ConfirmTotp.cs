@@ -42,6 +42,7 @@ internal sealed class ConfirmTotpEndpoint(
     {
         Post("api/auth/totp/confirm");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Confirm and enable TOTP";

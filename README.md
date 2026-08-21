@@ -49,13 +49,13 @@ Prerequisites:
 - .NET 10 SDK
 - Docker Engine with Docker Compose
 
-Start PostgreSQL and RabbitMQ:
+Start PostgreSQL, RabbitMQ, and the local S3-compatible storage used by presentation assets:
 
 ```bash
-docker compose up -d
+docker compose up -d --wait
 ```
 
-The compose stack binds both services to loopback only and initializes isolated development and test databases. Storage-dependent features also expect an S3-compatible development endpoint; configure one through an ignored `src/Palladin.Api/appsettings.Local.json` file or environment variables.
+The compose stack binds every service to loopback only and initializes isolated development and test databases. The committed development configuration points storage-dependent features at the LocalStack S3 endpoint on `http://localhost:4566`; the API creates the required public-asset bucket when it starts.
 
 Restore, build, and run the API:
 

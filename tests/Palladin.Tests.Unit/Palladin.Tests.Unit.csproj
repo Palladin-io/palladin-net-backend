@@ -16,6 +16,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\core\Palladin.Core.Analytics\Palladin.Core.Analytics.csproj" />
+        <ProjectReference Include="..\..\src\core\Palladin.Core.Hangfire\Palladin.Core.Hangfire.csproj" />
         <ProjectReference Include="..\..\src\core\Palladin.Core.Json\Palladin.Core.Json.csproj" />
         <ProjectReference Include="..\..\src\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
         <ProjectReference Include="..\..\src\modules\Agents\Palladin.Module.Agents\Palladin.Module.Agents.csproj" />

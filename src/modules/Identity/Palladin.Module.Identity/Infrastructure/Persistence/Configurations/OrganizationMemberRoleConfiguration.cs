@@ -19,6 +19,7 @@ internal sealed class OrganizationMemberRoleConfiguration : IEntityTypeConfigura
         builder.HasOne(x => x.Role)
             .WithMany(x => x.MemberAssignments)
             .HasForeignKey(x => new { x.OrganizationId, x.RoleId })
-            .HasPrincipalKey(x => new { x.OrganizationId, x.Id });
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

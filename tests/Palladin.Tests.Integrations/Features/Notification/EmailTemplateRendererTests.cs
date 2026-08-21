@@ -23,6 +23,9 @@ public sealed class EmailTemplateRendererTests
         ["expiryMinutes"] = 60,
         ["expiryHours"] = 24,
         ["invitationUrl"] = "https://palladin.io/beta?token=xyz",
+        ["organizationName"] = "Ada's Organization",
+        ["invitedByName"] = "Grace Hopper",
+        ["role"] = "User",
         ["optOutUrl"] = "https://palladin.io/unsubscribe?token=xyz",
         ["eventTitle"] = "New sign-in",
         ["eventDescription"] = "A new device signed in.",
@@ -33,6 +36,7 @@ public sealed class EmailTemplateRendererTests
     [
         EmailTemplates.EmailVerification,
         EmailTemplates.BetaInvitation,
+        EmailTemplates.OrganizationInvitation,
         EmailTemplates.SecurityAlert,
         EmailTemplates.WaitlistVerification,
     ];
@@ -54,6 +58,32 @@ public sealed class EmailTemplateRendererTests
         pl.HtmlBody.ShouldContain("Potwierdź swój e-mail");
         en.HtmlBody.ShouldContain("https://palladin.io/verify?token=abc");
         en.TextBody.ShouldContain("https://palladin.io/verify?token=abc");
+    }
+
+    [Fact]
+    public void When_OrganizationInvitationRendered_Then_CenteredCallToActionPrecedesCompactNote()
+    {
+        // Given
+        var renderer = CreateRenderer();
+
+        // When
+        var english = renderer.Render(EmailTemplates.OrganizationInvitation, "en", Model);
+        var polish = renderer.Render(EmailTemplates.OrganizationInvitation, "pl", Model);
+
+        // Then
+        foreach (var rendered in new[] { english, polish })
+        {
+            rendered.HtmlBody.ShouldContain("font-size:11px;line-height:1.45");
+            rendered.HtmlBody.ShouldContain("margin:4px 0 20px;text-align:center");
+            rendered.HtmlBody.ShouldContain("padding:10px 20px");
+            rendered.HtmlBody.ShouldContain("font-size:14px");
+            rendered.HtmlBody.ShouldNotContain("margin:0 0 16px;font-size:13px");
+            rendered.HtmlBody.IndexOf("text-align:center", StringComparison.Ordinal)
+                .ShouldBeLessThan(rendered.HtmlBody.IndexOf("font-size:11px", StringComparison.Ordinal));
+        }
+
+        english.TextBody.ShouldContain("before accepting. If you were not expecting");
+        polish.TextBody.ShouldContain("adresu e-mail. Jeśli nie oczekujesz");
     }
 
     [Fact]

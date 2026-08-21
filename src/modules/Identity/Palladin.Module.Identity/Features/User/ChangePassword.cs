@@ -59,6 +59,7 @@ internal sealed class ChangePasswordEndpoint(
     {
         Put("api/account/password");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Change the master password";

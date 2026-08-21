@@ -95,13 +95,25 @@ internal sealed class RefreshAccessTokenEndpoint(
             return;
         }
 
+        if (existingToken.AuthorizationVersion != membership.AuthorizationVersion)
+        {
+            existingToken.Revoke(now);
+            await domainWriteContext.CommitAsync(ct);
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+
         var plan = await domainWriteContext.Organizations
             .Where(o => o.Id == existingToken.OrganizationId)
             .Select(o => o.PlanType)
             .FirstAsync(ct);
         var permissions = membership.EffectivePermissions();
         var accessToken = tokenService.GenerateAccessToken(
-            user, existingToken.OrganizationId, permissions, plan);
+            user,
+            existingToken.OrganizationId,
+            permissions,
+            plan,
+            membership.AuthorizationVersion);
 
         var rawRefreshToken = req.RefreshToken;
 
@@ -115,7 +127,8 @@ internal sealed class RefreshAccessTokenEndpoint(
             domainWriteContext.Update(existingToken);
 
             var newRefreshToken = RefreshToken.Create(
-                newId, user.Id, existingToken.OrganizationId, newHash, newExpiresAt, now);
+                newId, user.Id, existingToken.OrganizationId, newHash,
+                membership.AuthorizationVersion, newExpiresAt, now);
             domainWriteContext.Add(newRefreshToken);
 
             rawRefreshToken = newRawToken;

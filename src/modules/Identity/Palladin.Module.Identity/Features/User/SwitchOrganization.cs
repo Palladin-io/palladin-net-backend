@@ -8,6 +8,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Palladin.Module.Identity.Domain;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -33,6 +34,7 @@ internal sealed class SwitchOrganizationEndpoint(
     {
         Post("api/auth/switch-organization");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequireEmailVerified();
         Tags("Identity/Auth");
         Summary(summary =>
@@ -57,7 +59,7 @@ internal sealed class SwitchOrganizationEndpoint(
                 .ThenInclude(assignment => assignment.Role)
             .Include(m => m.Organization)
             .FirstOrDefaultAsync(m => m.OrganizationId == req.OrganizationId && m.UserId == userId, ct);
-        if (member is null)
+        if (member is null || member.Status != OrganizationMemberStatus.Active)
         {
             await Send.ForbiddenAsync(ct);
             return;
@@ -65,7 +67,12 @@ internal sealed class SwitchOrganizationEndpoint(
 
         var permissions = member.EffectivePermissions();
         var (accessToken, refreshToken) = sessionIssuer.Issue(
-            member.User, member.OrganizationId, permissions, member.Organization.PlanType, clock.GetCurrentInstant());
+            member.User,
+            member.OrganizationId,
+            permissions,
+            member.Organization.PlanType,
+            member.AuthorizationVersion,
+            clock.GetCurrentInstant());
         await domainWriteContext.CommitAsync(ct);
 
         await Send.OkAsync(new AuthSessionResponse(

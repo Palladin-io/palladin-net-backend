@@ -9,8 +9,13 @@ internal static class OrganizationInvitationsModule
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<OrganizationInvitationOptions>(
-            configuration.GetSection(OrganizationInvitationOptions.Position));
+        services.AddOptions<OrganizationInvitationOptions>()
+            .Bind(configuration.GetSection(OrganizationInvitationOptions.Position))
+            .Validate(options => options.TokenTtlHours > 0,
+                "Organization invitation token TTL must be positive.")
+            .Validate(options => options.ResendCooldownSeconds >= 0,
+                "Organization invitation resend cooldown cannot be negative.")
+            .ValidateOnStart();
 
         return services;
     }

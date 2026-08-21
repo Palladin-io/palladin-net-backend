@@ -5,6 +5,7 @@ using Palladin.Module.Identity.Infrastructure.Persistence;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 
@@ -33,6 +34,7 @@ internal sealed class LogoutEndpoint(
     public override void Configure()
     {
         Post("api/auth/logout");
+        AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
         Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {

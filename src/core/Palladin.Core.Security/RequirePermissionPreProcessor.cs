@@ -4,9 +4,11 @@ namespace Palladin.Core.Security;
 
 public sealed class RequirePermissionPreProcessor<TRequest>(Permission required) : IPreProcessor<TRequest>
 {
+    public Permission RequiredPermission { get; } = required;
+
     public async Task PreProcessAsync(IPreProcessorContext<TRequest> context, CancellationToken ct)
     {
-        if (required == Permission.None)
+        if (RequiredPermission == Permission.None)
         {
             return;
         }
@@ -19,7 +21,7 @@ public sealed class RequirePermissionPreProcessor<TRequest>(Permission required)
         }
 
         var granted = user.GetPermissions();
-        if ((granted & required) != required)
+        if ((granted & RequiredPermission) != RequiredPermission)
         {
             await context.HttpContext.Response.SendForbiddenAsync(ct);
         }

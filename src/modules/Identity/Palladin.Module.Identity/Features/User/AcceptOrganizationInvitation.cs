@@ -29,7 +29,6 @@ internal sealed class AcceptOrganizationInvitationValidator : Validator<AcceptOr
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class AcceptOrganizationInvitationEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IAuthSessionIssuer sessionIssuer,
@@ -39,6 +38,7 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
     {
         Post("api/organization/invitations/accept");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequireEmailVerified();
         Tags("Identity/Organization");
         Summary(summary =>
@@ -79,13 +79,6 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             .Include(i => i.Role)
             .FirstOrDefaultAsync(i => i.TokenHash == tokenHash, ct);
         if (invitation is null || invitation.AcceptedAt is not null || invitation.CancelledAt is not null)
-        {
-            AddError(ErrorResponses.General("organization-invitation-invalid"));
-            await Send.ErrorsAsync(400, ct);
-            return;
-        }
-
-        if (invitation.Role is null)
         {
             AddError(ErrorResponses.General("organization-invitation-invalid"));
             await Send.ErrorsAsync(400, ct);
@@ -147,23 +140,16 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
-        var previousMemberState = await domainWriteContext.OrganizationMemberRoleSetDispatches
+        var previousAuthorizationVersion = await domainWriteContext.RefreshTokens
             .AsNoTracking()
-            .Where(x => x.OrganizationId == invitation.OrganizationId && x.UserId == user.Id)
-            .Select(x => new { x.Revision, x.AuthorizationVersion })
-            .SingleOrDefaultAsync(ct);
-        var authorizationVersion = previousMemberState is null
-            ? 1u
-            : checked(previousMemberState.AuthorizationVersion + 1u);
-        var vaultAccessRevision = previousMemberState is null
-            ? 1ul
-            : checked(previousMemberState.Revision + 1ul);
+            .Where(token => token.OrganizationId == invitation.OrganizationId && token.UserId == user.Id)
+            .MaxAsync(token => (uint?)token.AuthorizationVersion, ct) ?? 0u;
+        var authorizationVersion = checked(previousAuthorizationVersion + 1u);
 
         invitation.Accept(now);
         var member = OrganizationMember.Create(
             invitation.OrganizationId, user.Id, invitation.Role,
-            user.DisplayName, user.Email, now,
-            authorizationVersion, vaultAccessRevision);
+            user.DisplayName, user.Email, now, authorizationVersion);
         domainWriteContext.Add(member);
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,

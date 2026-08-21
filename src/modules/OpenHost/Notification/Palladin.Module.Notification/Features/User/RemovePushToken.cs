@@ -27,7 +27,6 @@ internal sealed class RemovePushTokenValidator : Validator<RemovePushTokenReques
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class RemovePushTokenEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IEnumerable<IEventPublisher> eventPublishers,
@@ -37,6 +36,7 @@ internal sealed class RemovePushTokenEndpoint(
     {
         Delete("api/push-tokens/{tokenId:guid}");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Remove a device push token";

@@ -11,7 +11,6 @@ namespace Palladin.Module.Notification.Features;
 public sealed record MarkAllNotificationsReadResponse(int MarkedCount);
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class MarkAllNotificationsReadEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     NodaTime.IClock clock) : EndpointWithoutRequest<MarkAllNotificationsReadResponse>
@@ -20,6 +19,7 @@ internal sealed class MarkAllNotificationsReadEndpoint(
     {
         Put("api/notifications/read-all");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Mark all unread notifications as read";

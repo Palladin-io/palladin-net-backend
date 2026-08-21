@@ -14,7 +14,7 @@ namespace Palladin.Module.Identity.Features;
 public sealed record OrganizationInvitationItem(
     Guid Id,
     string Email,
-    Guid? RoleId,
+    Guid RoleId,
     string RoleName,
     string? InvitedByName,
     Instant CreatedAt,

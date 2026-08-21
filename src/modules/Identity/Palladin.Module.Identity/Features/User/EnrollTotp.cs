@@ -15,7 +15,6 @@ namespace Palladin.Module.Identity.Features;
 public sealed record EnrollTotpResponse(string Secret, string OtpauthUri);
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class EnrollTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
@@ -25,6 +24,7 @@ internal sealed class EnrollTotpEndpoint(
     {
         Post("api/auth/totp/enroll");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Begin TOTP enrollment";

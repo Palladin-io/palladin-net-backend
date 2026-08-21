@@ -32,13 +32,6 @@ internal sealed class VaultDbReadContext(DbContextOptions<VaultDbReadContext> op
     public DbSet<CredentialFailureReport> CredentialFailureReports => Set<CredentialFailureReport>();
     public DbSet<EncryptedPresentationAsset> EncryptedPresentationAssets => Set<EncryptedPresentationAsset>();
     public DbSet<VaultPresentationAssetCutoverState> VaultPresentationAssetCutoverStates => Set<VaultPresentationAssetCutoverState>();
-    public DbSet<OrganizationRoleDirectoryEntry> OrganizationRoleDirectory => Set<OrganizationRoleDirectoryEntry>();
-    public DbSet<OrganizationMemberRoleSet> OrganizationMemberRoleSets => Set<OrganizationMemberRoleSet>();
-    public DbSet<RoleVaultAccessPolicySet> RoleVaultAccessPolicySets => Set<RoleVaultAccessPolicySet>();
-    public DbSet<RoleVaultAccessPolicy> RoleVaultAccessPolicies => Set<RoleVaultAccessPolicy>();
-    public DbSet<RoleVaultAccessOperation> RoleVaultAccessOperations => Set<RoleVaultAccessOperation>();
-    public DbSet<RoleVaultAccessPolicyDispatch> RoleVaultAccessPolicyDispatches =>
-        Set<RoleVaultAccessPolicyDispatch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

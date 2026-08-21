@@ -272,23 +272,7 @@ app.UseFastEndpoints(config =>
     config.Endpoints.Configurator = endpointDefinition =>
     {
         endpointDefinition.PostProcessor<ExceptionGlobalPostProcessor>(Order.Before);
-        if (endpointDefinition.EndpointType.GetCustomAttributes(
-                typeof(RequireAssignableOrganizationRoleAttribute), inherit: true).Length > 0)
-        {
-            endpointDefinition.PreProcessor<RequireAssignableOrganizationRolePreProcessor>(Order.Before);
-        }
-
-        var requiresActiveMembershipForAllVerbs = endpointDefinition.EndpointType.GetCustomAttributes(
-            typeof(RequireActiveOrganizationMembershipAttribute), inherit: true).Length > 0;
-        if (requiresActiveMembershipForAllVerbs)
-        {
-            endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipForAllVerbsPreProcessor>(Order.Before);
-        }
-        else if (endpointDefinition.EndpointType.GetCustomAttributes(
-                     typeof(AllowNonActiveOrganizationMembershipAttribute), inherit: true).Length == 0)
-        {
-            endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipPreProcessor>(Order.Before);
-        }
+        endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipPreProcessor>(Order.Before);
 
         if (app.Configuration.GetValue("KillSwitch:RestApi", false))
         {

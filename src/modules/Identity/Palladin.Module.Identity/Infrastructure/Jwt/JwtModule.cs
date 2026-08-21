@@ -24,7 +24,6 @@ internal static class JwtModule
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthSessionIssuer, AuthSessionIssuer>();
         services.AddScoped<IOrganizationMembershipValidator, OrganizationMembershipValidator>();
-        services.AddScoped<IOrganizationRoleAuthorizationValidator, OrganizationRoleAuthorizationValidator>();
 
         return services;
     }

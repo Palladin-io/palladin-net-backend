@@ -13,8 +13,8 @@ using Palladin.Module.Identity.Infrastructure.Persistence;
 namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(IdentityDbWriteContext))]
-    [Migration("20260818164244_AddDefaultUserOrganizationRole")]
-    partial class AddDefaultUserOrganizationRole
+    [Migration("20260821193406_AddOrganizationRolesAndInvitationManagement")]
+    partial class AddOrganizationRolesAndInvitationManagement
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -139,6 +139,9 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Instant?>("AcceptedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Instant?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -152,10 +155,13 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("InvitedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Instant>("LastSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("RoleId")
+                    b.Property<Guid>("RoleId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("RoleName")
@@ -598,7 +604,8 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasOne("Palladin.Module.Identity.Domain.Role", "Role")
                         .WithMany()
                         .HasForeignKey("OrganizationId", "RoleId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Organization");
 

@@ -406,7 +406,7 @@ public sealed class OrganizationRoleTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_ClearingRolesWithoutGrantManageDelta_Then_AllowsEmptyRoleSet()
+    public async Task When_ClearingAllRoles_Then_Returns400WithoutMutation()
     {
         // Given
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -415,20 +415,23 @@ public sealed class OrganizationRoleTests(ApiFactory apiFactory) : TestBase
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.OrganizationManagement);
 
         // When
-        var (response, result) = await client.PUTAsync<
+        var response = await client.PUTAsync<
             UpdateOrganizationMemberRolesEndpoint,
-            UpdateOrganizationMemberRolesRequest,
-            UpdateOrganizationMemberRolesResponse>(new UpdateOrganizationMemberRolesRequest
+            UpdateOrganizationMemberRolesRequest>(new UpdateOrganizationMemberRolesRequest
             {
                 UserId = member.Id,
                 RoleIds = [],
             });
 
         // Then
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        result.Roles.ShouldBeEmpty();
-        result.EffectivePermissions.ShouldBe(0);
-        result.AuthorizationVersion.ShouldBe(2u);
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .OrganizationMembers
+            .Include(candidate => candidate.RoleAssignments)
+            .SingleAsync(candidate => candidate.OrganizationId == organization.Id && candidate.UserId == member.Id);
+        persisted.RoleAssignments.ShouldHaveSingleItem().RoleId.ShouldBe(auditRole.Id);
+        persisted.AuthorizationVersion.ShouldBe(1u);
     }
 
     [Fact]
@@ -781,7 +784,7 @@ public sealed class OrganizationRoleTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_DeletingRoleReferencedOnlyByHistoricalInvitations_Then_PreservesRoleNameHistory()
+    public async Task When_DeletingRoleReferencedByHistoricalInvitations_Then_Returns409()
     {
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
         var role = await CreateRoleAsync(organization.Id, "Historical Role", Permission.AuditView);
@@ -806,16 +809,16 @@ public sealed class OrganizationRoleTests(ApiFactory apiFactory) : TestBase
             .DELETEAsync<DeleteOrganizationRoleEndpoint, DeleteOrganizationRoleRequest>(
                 new DeleteOrganizationRoleRequest { RoleId = role.Id });
 
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         await using var verificationScope = apiFactory.Services.CreateAsyncScope();
         var readContext = verificationScope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
-        (await readContext.Roles.AnyAsync(candidate => candidate.Id == role.Id)).ShouldBeFalse();
+        (await readContext.Roles.AnyAsync(candidate => candidate.Id == role.Id)).ShouldBeTrue();
         var invitations = await readContext.OrganizationInvitations
             .Where(invitation => invitation.OrganizationId == organization.Id
                                  && invitation.RoleName == role.Name)
             .ToListAsync();
         invitations.Count.ShouldBe(2);
-        invitations.ShouldAllBe(invitation => invitation.RoleId == null);
+        invitations.ShouldAllBe(invitation => invitation.RoleId == role.Id);
     }
 
     [Fact]

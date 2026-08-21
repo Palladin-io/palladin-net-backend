@@ -14,9 +14,6 @@ public abstract class DomainWriteContextBase(
 
     protected IQueryable<TEntity> Track<TEntity>() where TEntity : class => writeContext.Set<TEntity>();
 
-    protected IEnumerable<TEntity> Tracked<TEntity>() where TEntity : class =>
-        writeContext.ChangeTracker.Entries<TEntity>().Select(x => x.Entity);
-
     public void Add(object entity) => writeContext.Add(entity);
 
     public void AddRange(IEnumerable<object> entity) => writeContext.AddRange(entity);
@@ -52,11 +49,8 @@ public abstract class DomainWriteContextBase(
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         var changes = writeContext.ChangeTracker.Entries().ToList();
-        var events = PeekEvents(changes);
-        await PrepareEventsAsync(events, cancellationToken);
         await writeContext.SaveChangesAsync(cancellationToken);
-        events = GetEvents(changes);
-        events.InsertRange(0, DrainPendingEvents());
+        var events = DrainEvents(changes);
 
         await PublishEventsAsync(events, cancellationToken);
     }
@@ -66,11 +60,8 @@ public abstract class DomainWriteContextBase(
         CancellationToken cancellationToken = default)
     {
         var changes = writeContext.ChangeTracker.Entries().ToList();
-        var events = PeekEvents(changes);
-        await PrepareEventsAsync(events, cancellationToken);
         await writeContext.SaveChangesAsync(cancellationToken);
-        events = GetEvents(changes);
-        events.InsertRange(0, DrainPendingEvents());
+        var events = DrainEvents(changes);
         await transaction.CommitAsync(cancellationToken);
 
         await PublishEventsAsync(events, cancellationToken);
@@ -79,11 +70,8 @@ public abstract class DomainWriteContextBase(
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         var changes = writeContext.ChangeTracker.Entries().ToList();
-        var events = PeekEvents(changes);
-        await PrepareEventsAsync(events, cancellationToken);
         await writeContext.SaveChangesAsync(cancellationToken);
-        events = GetEvents(changes);
-        _pendingEvents.AddRange(events);
+        _pendingEvents.AddRange(GetEvents(changes));
     }
 
     private async Task PublishEventsAsync(
@@ -110,21 +98,13 @@ public abstract class DomainWriteContextBase(
             )
             .ToList();
 
-    private static List<IEvent> PeekEvents(List<EntityEntry> changes) =>
-        changes.Where(x => x.Entity is IEventEntity)
-            .SelectMany(x => ((IEventEntity)x.Entity).PeekEvents())
-            .ToList();
-
-    private List<IEvent> DrainPendingEvents()
+    private List<IEvent> DrainEvents(List<EntityEntry> changes)
     {
         var events = new List<IEvent>(_pendingEvents);
+        events.AddRange(GetEvents(changes));
         _pendingEvents.Clear();
         return events;
     }
-
-    protected virtual Task PrepareEventsAsync(
-        IReadOnlyCollection<IEvent> events,
-        CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     protected virtual async Task HandleEventAsync(IEvent @event, CancellationToken cancellationToken = default)
     {

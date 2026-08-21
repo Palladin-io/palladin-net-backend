@@ -8,7 +8,7 @@ internal sealed class OrganizationInvitation : EventEntityBase
 {
     public Guid Id { get; private set; }
     public Guid OrganizationId { get; private set; }
-    public Guid? RoleId { get; private set; }
+    public Guid RoleId { get; private set; }
     public string RoleName { get; private set; } = string.Empty;
     public Guid InvitedBy { get; private set; }
     public string Email { get; private set; } = string.Empty;
@@ -20,7 +20,7 @@ internal sealed class OrganizationInvitation : EventEntityBase
     public Instant CreatedAt { get; private set; }
 
     public Organization Organization { get; private set; } = null!;
-    public Role? Role { get; private set; }
+    public Role Role { get; private set; } = null!;
 
     private OrganizationInvitation() { }
 
@@ -148,17 +148,5 @@ internal sealed class OrganizationInvitation : EventEntityBase
             roleName,
             now));
         return true;
-    }
-
-    internal void DetachHistoricalRole(string roleName, Instant now)
-    {
-        if (CanAccept(now))
-        {
-            throw new InvalidOperationException("An active organization invitation must retain its role.");
-        }
-
-        RoleName = roleName;
-        RoleId = null;
-        Role = null;
     }
 }

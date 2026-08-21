@@ -41,7 +41,6 @@ internal sealed class UpdateNotificationPreferencesValidator : Validator<UpdateN
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class UpdateNotificationPreferencesEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IClock clock) : Endpoint<UpdateNotificationPreferencesRequest, UpdateNotificationPreferencesResponse>
@@ -50,6 +49,7 @@ internal sealed class UpdateNotificationPreferencesEndpoint(
     {
         Put("api/notifications/preferences");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Update the current user's notification preferences";

@@ -20,10 +20,6 @@ internal sealed class IdentityDbReadContext(DbContextOptions<IdentityDbReadConte
     public DbSet<TotpRecoveryCode> TotpRecoveryCodes => Set<TotpRecoveryCode>();
     public DbSet<VerificationToken> VerificationTokens => Set<VerificationToken>();
     public DbSet<LoginLockout> LoginLockouts => Set<LoginLockout>();
-    public DbSet<OrganizationRoleVaultAccessDispatch> OrganizationRoleVaultAccessDispatches =>
-        Set<OrganizationRoleVaultAccessDispatch>();
-    public DbSet<OrganizationMemberRoleSetDispatch> OrganizationMemberRoleSetDispatches =>
-        Set<OrganizationMemberRoleSetDispatch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

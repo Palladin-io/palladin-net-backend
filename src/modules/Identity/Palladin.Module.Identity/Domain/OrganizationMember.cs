@@ -15,7 +15,6 @@ internal sealed class OrganizationMember : EventEntityBase
     public Guid? RemovalRequestedBy { get; private set; }
     public Instant? RemovalRequestedAt { get; private set; }
     public uint AuthorizationVersion { get; private set; }
-    public ulong VaultAccessRevision { get; private set; }
     public Instant JoinedAt { get; private set; }
     public Instant UpdatedAt { get; private set; }
 
@@ -38,13 +37,10 @@ internal sealed class OrganizationMember : EventEntityBase
             IsOwner = true,
             Status = OrganizationMemberStatus.Active,
             AuthorizationVersion = 1,
-            VaultAccessRevision = 1,
             JoinedAt = now,
             UpdatedAt = now,
             RoleAssignments = [OrganizationMemberRole.Create(organizationId, userId, administratorRole)],
         };
-
-        member.EmitRoleSet(isActive: true, now);
         return member;
     }
 
@@ -55,20 +51,12 @@ internal sealed class OrganizationMember : EventEntityBase
         string displayName,
         string email,
         Instant now,
-        uint authorizationVersion = 1,
-        ulong vaultAccessRevision = 1)
+        uint authorizationVersion = 1)
     {
         if (authorizationVersion == 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(authorizationVersion),
-                "Organization Member versions must be positive.");
-        }
-
-        if (vaultAccessRevision == 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(vaultAccessRevision),
                 "Organization Member versions must be positive.");
         }
 
@@ -78,7 +66,6 @@ internal sealed class OrganizationMember : EventEntityBase
             UserId = userId,
             Status = OrganizationMemberStatus.Active,
             AuthorizationVersion = authorizationVersion,
-            VaultAccessRevision = vaultAccessRevision,
             JoinedAt = now,
             UpdatedAt = now,
             RoleAssignments = [OrganizationMemberRole.Create(organizationId, userId, initialRole)],
@@ -86,7 +73,6 @@ internal sealed class OrganizationMember : EventEntityBase
 
         member.AddEvent(new OrganizationMemberJoinedEvent(
             organizationId, userId, displayName, email, initialRole.Name, now));
-        member.EmitRoleSet(isActive: true, now);
 
         return member;
     }
@@ -105,6 +91,11 @@ internal sealed class OrganizationMember : EventEntityBase
         if (IsOwner)
         {
             return false;
+        }
+
+        if (roles.Count == 0)
+        {
+            throw new InvalidOperationException("An organization member must have at least one role.");
         }
 
         var oldRoleIds = RoleAssignments.Select(assignment => assignment.RoleId).Order().ToArray();
@@ -130,8 +121,6 @@ internal sealed class OrganizationMember : EventEntityBase
         }
 
         InvalidateAuthorization(now);
-        AdvanceVaultAccessRevision();
-        EmitRoleSet(isActive: true, now);
         AddEvent(new OrganizationMemberRoleChangedEvent(
             OrganizationId, UserId, userDisplayName, changedBy, changedByName,
             oldRoleNames, newRoleNames, now));
@@ -173,8 +162,6 @@ internal sealed class OrganizationMember : EventEntityBase
         RemovalRequestedBy = requestedBy;
         RemovalRequestedAt = now;
         UpdatedAt = now;
-        AdvanceVaultAccessRevision();
-        EmitRoleSet(isActive: false, now);
         AddEvent(new OrganizationMemberRemovalRequestedEvent(
             requestId, OrganizationId, UserId, requestedBy, now));
     }
@@ -190,23 +177,4 @@ internal sealed class OrganizationMember : EventEntityBase
             OrganizationId, UserId, userDisplayName, RemovalRequestedBy.Value, removedByName, now));
     }
 
-    private void EmitRoleSet(bool isActive, Instant now) =>
-        AddOrReplaceEvent(new OrganizationMemberRolesUpsertedEvent(
-            OrganizationId,
-            UserId,
-            RoleAssignments.Select(assignment => assignment.RoleId).Order().ToArray(),
-            VaultAccessRevision,
-            AuthorizationVersion,
-            isActive,
-            now));
-
-    private void AdvanceVaultAccessRevision()
-    {
-        if (VaultAccessRevision == ulong.MaxValue)
-        {
-            throw new InvalidOperationException("Organization Member Vault-access revision namespace is exhausted.");
-        }
-
-        VaultAccessRevision++;
-    }
 }

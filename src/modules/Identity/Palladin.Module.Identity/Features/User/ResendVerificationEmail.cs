@@ -17,7 +17,6 @@ using NodaTime;
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class ResendVerificationEmailEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,
@@ -28,6 +27,7 @@ internal sealed class ResendVerificationEmailEndpoint(
     {
         Post("api/auth/verify-email/resend");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Resend the email-verification link";

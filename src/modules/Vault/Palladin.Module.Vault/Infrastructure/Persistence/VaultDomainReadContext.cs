@@ -31,13 +31,6 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
     public IQueryable<User> Users => Query<User>();
     public IQueryable<CredentialFailureReport> CredentialFailureReports => Query<CredentialFailureReport>();
     public IQueryable<EncryptedPresentationAsset> EncryptedPresentationAssets => Query<EncryptedPresentationAsset>();
-    public IQueryable<OrganizationRoleDirectoryEntry> OrganizationRoleDirectory => Query<OrganizationRoleDirectoryEntry>();
-    public IQueryable<OrganizationMemberRoleSet> OrganizationMemberRoleSets => Query<OrganizationMemberRoleSet>();
-    public IQueryable<RoleVaultAccessPolicySet> RoleVaultAccessPolicySets => Query<RoleVaultAccessPolicySet>();
-    public IQueryable<RoleVaultAccessPolicy> RoleVaultAccessPolicies => Query<RoleVaultAccessPolicy>();
-    public IQueryable<RoleVaultAccessOperation> RoleVaultAccessOperations => Query<RoleVaultAccessOperation>();
-    public IQueryable<RoleVaultAccessPolicyDispatch> RoleVaultAccessPolicyDispatches =>
-        Query<RoleVaultAccessPolicyDispatch>();
 
     public IQueryable<RotationEntryKeyRow> GetRotationEntryKeyPage(
         Guid organizationId,

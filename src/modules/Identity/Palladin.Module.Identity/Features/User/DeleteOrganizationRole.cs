@@ -8,7 +8,6 @@ using Palladin.Core.Api;
 using Palladin.Core.Persistence;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Persistence;
-using NodaTime;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -26,8 +25,7 @@ internal sealed class DeleteOrganizationRoleValidator : Validator<DeleteOrganiza
 
 [PublicAPI]
 internal sealed class DeleteOrganizationRoleEndpoint(
-    IdentityDomainWriteContext domainWriteContext,
-    IClock clock)
+    IdentityDomainWriteContext domainWriteContext)
     : Endpoint<DeleteOrganizationRoleRequest>
 {
     public override void Configure()
@@ -86,17 +84,13 @@ internal sealed class DeleteOrganizationRoleEndpoint(
             return;
         }
 
-        var now = clock.GetCurrentInstant();
         var isInUse = await domainWriteContext.OrganizationMemberRoles.AnyAsync(
                           assignment => assignment.OrganizationId == organizationId
                                         && assignment.RoleId == role.Id,
                           ct)
                       || await domainWriteContext.OrganizationInvitations.AnyAsync(
                           invitation => invitation.OrganizationId == organizationId
-                                        && invitation.RoleId == role.Id
-                                        && invitation.AcceptedAt == null
-                                        && invitation.CancelledAt == null
-                                        && invitation.ExpiresAt > now,
+                                        && invitation.RoleId == role.Id,
                           ct);
         if (isInUse)
         {
@@ -105,19 +99,6 @@ internal sealed class DeleteOrganizationRoleEndpoint(
             return;
         }
 
-        var historicalInvitations = await domainWriteContext.OrganizationInvitations
-            .Where(invitation => invitation.OrganizationId == organizationId
-                                 && invitation.RoleId == role.Id
-                                 && (invitation.AcceptedAt != null
-                                     || invitation.CancelledAt != null
-                                     || invitation.ExpiresAt < now))
-            .ToListAsync(ct);
-        foreach (var invitation in historicalInvitations)
-        {
-            invitation.DetachHistoricalRole(role.Name, now);
-        }
-
-        role.MarkDeleted(now);
         domainWriteContext.Remove(role);
 
         try

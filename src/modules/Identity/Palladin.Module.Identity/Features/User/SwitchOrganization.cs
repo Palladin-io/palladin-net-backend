@@ -25,7 +25,6 @@ internal sealed class SwitchOrganizationValidator : Validator<SwitchOrganization
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class SwitchOrganizationEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IAuthSessionIssuer sessionIssuer,
@@ -35,6 +34,7 @@ internal sealed class SwitchOrganizationEndpoint(
     {
         Post("api/auth/switch-organization");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequireEmailVerified();
         Tags("Identity/Auth");
         Summary(summary =>

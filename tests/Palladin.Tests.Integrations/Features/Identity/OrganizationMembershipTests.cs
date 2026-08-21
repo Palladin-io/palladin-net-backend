@@ -851,7 +851,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
-    public async Task When_RemovedUserRejoins_Then_MembershipVersionsContinueBeyondHistoricalDispatch()
+    public async Task When_RemovedUserRejoins_Then_AuthorizationVersionContinuesBeyondHistoricalSession()
     {
         // Given
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -863,14 +863,14 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         await using (var seedScope = apiFactory.Services.CreateAsyncScope())
         {
             var writeContext = seedScope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
-            writeContext.OrganizationMemberRoleSetDispatches.Add(OrganizationMemberRoleSetDispatch.Create(
-                organization.Id,
+            writeContext.RefreshTokens.Add(RefreshToken.Create(
+                Guid.NewGuid(),
                 invitedUser.Id,
-                [invitation.RoleId!.Value],
-                revision: 7,
+                organization.Id,
+                TokenService.HashToken("historical-revoked-refresh-token"),
                 authorizationVersion: 9,
-                isActive: false,
-                updatedAt: now));
+                now + Duration.FromDays(1),
+                now));
             await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
         var client = apiFactory.CreateAuthenticatedClient(invitedUser);
@@ -887,7 +887,6 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         var membership = await readContext.OrganizationMembers.SingleAsync(x =>
             x.OrganizationId == organization.Id && x.UserId == invitedUser.Id);
         membership.AuthorizationVersion.ShouldBe(10u);
-        membership.VaultAccessRevision.ShouldBe(8ul);
         var validator = scope.ServiceProvider.GetRequiredService<IOrganizationMembershipValidator>();
         (await validator.IsActiveAsync(
             invitedUser.Id, organization.Id, 9u, TestContext.Current.CancellationToken)).ShouldBeFalse();

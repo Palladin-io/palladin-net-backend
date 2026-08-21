@@ -1,8 +1,6 @@
 using Palladin.Core.Security;
 using Palladin.Core.Events;
-using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
-using Palladin.Module.Identity.Contracts.Events;
 using NodaTime;
 
 namespace Palladin.Module.Identity.Domain;
@@ -19,7 +17,6 @@ internal sealed class Role : EventEntityBase
     public string NormalizedName { get; private set; } = string.Empty;
     public Permission Permissions { get; private set; }
     public bool IsSystem { get; private set; }
-    public ulong VaultAccessRevision { get; private set; }
     public Instant CreatedAt { get; private set; }
 
     public Organization Organization { get; private set; } = null!;
@@ -54,18 +51,8 @@ internal sealed class Role : EventEntityBase
             NormalizedName = normalizedName,
             Permissions = permissions,
             IsSystem = isSystem,
-            VaultAccessRevision = 1,
             CreatedAt = now,
         };
-
-        role.AddOrReplaceEvent(new OrganizationRoleUpsertedEvent(
-            organizationId,
-            id,
-            role.VaultAccessRevision,
-            EntityChange.Created,
-            role.IsSystem,
-            role.Permissions,
-            now));
         return role;
     }
 
@@ -101,38 +88,7 @@ internal sealed class Role : EventEntityBase
         Name = trimmedName;
         NormalizedName = normalizedName;
         Permissions = permissions;
-        AdvanceVaultAccessRevision();
-        AddOrReplaceEvent(new OrganizationRoleUpsertedEvent(
-            OrganizationId,
-            Id,
-            VaultAccessRevision,
-            EntityChange.Updated,
-            IsSystem,
-            Permissions,
-            now));
         return true;
-    }
-
-    internal void MarkDeleted(Instant now)
-    {
-        AdvanceVaultAccessRevision();
-        AddEvent(new OrganizationRoleDeletedEvent(
-            OrganizationId,
-            Id,
-            VaultAccessRevision,
-            IsSystem,
-            Permissions,
-            now));
-    }
-
-    private void AdvanceVaultAccessRevision()
-    {
-        if (VaultAccessRevision == ulong.MaxValue)
-        {
-            throw new InvalidOperationException("Organization role Vault-access revision namespace is exhausted.");
-        }
-
-        VaultAccessRevision++;
     }
 
     internal static string NormalizeName(string name) => name.Trim().ToUpperInvariant();

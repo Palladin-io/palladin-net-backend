@@ -27,7 +27,6 @@ internal sealed class DisableTotpValidator : Validator<DisableTotpRequest>
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class DisableTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
@@ -37,6 +36,7 @@ internal sealed class DisableTotpEndpoint(
     {
         Post("api/auth/totp/disable");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Disable TOTP";

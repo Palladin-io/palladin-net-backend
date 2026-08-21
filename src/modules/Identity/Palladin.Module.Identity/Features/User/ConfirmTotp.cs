@@ -32,7 +32,6 @@ internal sealed class ConfirmTotpValidator : Validator<ConfirmTotpRequest>
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class ConfirmTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
@@ -43,6 +42,7 @@ internal sealed class ConfirmTotpEndpoint(
     {
         Post("api/auth/totp/confirm");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Confirm and enable TOTP";

@@ -35,6 +35,7 @@ internal sealed class UpdateOrganizationMemberRolesValidator : Validator<UpdateO
         RuleFor(x => x.RoleIds)
             .Cascade(CascadeMode.Stop)
             .NotNull()
+            .NotEmpty()
             .Must(roleIds => roleIds.Distinct().Count() == roleIds.Count);
     }
 }

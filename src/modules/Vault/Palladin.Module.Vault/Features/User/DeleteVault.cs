@@ -19,7 +19,6 @@ public sealed record DeleteVaultRequest
 internal sealed class DeleteVaultEndpoint(
     VaultDomainWriteContext domainWriteContext,
     IEntryAssetPurger assetPurger,
-    RoleVaultAccessReconciler roleVaultAccessReconciler,
     IClock clock) : Endpoint<DeleteVaultRequest>
 {
     public override void Configure()
@@ -51,26 +50,11 @@ internal sealed class DeleteVaultEndpoint(
             return;
         }
 
-        var now = clock.GetCurrentInstant();
         if (!vault.IsDeleting)
         {
-            vault.BeginDeletion(userId, User.GetDisplayName(), now);
+            vault.BeginDeletion(userId, User.GetDisplayName(), clock.GetCurrentInstant());
+            await domainWriteContext.CommitAsync(ct);
         }
-
-        var policiesReconciled = await roleVaultAccessReconciler.ReconcileVaultDeletionAsync(
-            organizationId,
-            vault.Id,
-            userId,
-            now,
-            ct);
-        if (!policiesReconciled)
-        {
-            AddError(Palladin.Core.Api.ErrorResponses.General("vault-role-access-policy-limit-exceeded"));
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
-        await domainWriteContext.CommitAsync(ct);
 
         // Object storage is outside the database boundary. IsDeleting hides the Vault and makes
         // this phase safely retryable without holding locks during S3 calls.

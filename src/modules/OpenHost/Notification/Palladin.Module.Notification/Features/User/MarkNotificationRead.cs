@@ -9,7 +9,6 @@ using NodaTime;
 namespace Palladin.Module.Notification.Features;
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class MarkNotificationReadEndpoint(
     NotificationDomainWriteContext domainWriteContext,
     IClock clock) : EndpointWithoutRequest
@@ -18,6 +17,7 @@ internal sealed class MarkNotificationReadEndpoint(
     {
         Put("api/notifications/{id:guid}/read");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Mark a notification as read";

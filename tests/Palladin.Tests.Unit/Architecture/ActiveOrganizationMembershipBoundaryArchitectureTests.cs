@@ -42,6 +42,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
             "endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipPreProcessor>(Order.Before)");
         program.ShouldNotContain("DomainWriteEndpointClassifier");
         preProcessor.ShouldContain("HttpMethods.IsGet(method)");
+        preProcessor.ShouldContain("GetMetadata<AllowNonActiveOrganizationMembershipMetadata>()");
         preProcessor.ShouldContain("validator.IsActiveAsync(");
     }
 
@@ -55,8 +56,11 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
                 SearchOption.AllDirectories)
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
                 StringComparison.Ordinal))
-            .SelectMany(path => ExemptEndpointPattern().Matches(File.ReadAllText(path))
-                .Select(match => match.Groups["name"].Value))
+            .Select(path => (Path: path, Source: File.ReadAllText(path)))
+            .Where(file => file.Source.Contains(
+                "builder.AllowNonActiveOrganizationMembership()",
+                StringComparison.Ordinal))
+            .Select(file => EndpointPattern().Match(file.Source).Groups["name"].Value)
             .Order(StringComparer.Ordinal)
             .ToArray();
 
@@ -76,7 +80,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
     }
 
     [GeneratedRegex(
-        "\\[AllowNonActiveOrganizationMembership\\]\\s*internal\\s+sealed\\s+class\\s+(?<name>\\w+Endpoint)",
+        "internal\\s+sealed\\s+class\\s+(?<name>\\w+Endpoint)",
         RegexOptions.CultureInvariant)]
-    private static partial Regex ExemptEndpointPattern();
+    private static partial Regex EndpointPattern();
 }

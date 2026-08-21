@@ -12,6 +12,12 @@ internal sealed class RequireActiveOrganizationMembershipPreProcessor : IGlobalP
 {
     public async Task PreProcessAsync(IPreProcessorContext context, CancellationToken ct)
     {
+        if (context.HttpContext.GetEndpoint()?.Metadata
+                .GetMetadata<AllowNonActiveOrganizationMembershipMetadata>() is not null)
+        {
+            return;
+        }
+
         var method = context.HttpContext.Request.Method;
         if (HttpMethods.IsGet(method)
             || HttpMethods.IsHead(method)
@@ -25,18 +31,10 @@ internal sealed class RequireActiveOrganizationMembershipPreProcessor : IGlobalP
     }
 }
 
-[UsedImplicitly]
-internal sealed class RequireActiveOrganizationMembershipForAllVerbsPreProcessor : IGlobalPreProcessor
-{
-    public Task PreProcessAsync(IPreProcessorContext context, CancellationToken ct) =>
-        ActiveOrganizationMembershipGate.EnforceAsync(context, ct);
-}
-
 internal static class ActiveOrganizationMembershipGate
 {
     internal static async Task EnforceAsync(IPreProcessorContext context, CancellationToken ct)
     {
-
         var user = context.HttpContext.User;
         var userId = user.GetUserId();
         var organizationId = user.GetOrganizationId();

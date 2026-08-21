@@ -33,7 +33,6 @@ internal sealed class GetMemberSnapshotValidator : Validator<GetMemberSnapshotRe
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class GetMemberSnapshotEndpoint(
     VaultDomainReadContext readContext,
     VaultSyncCursorProtector cursorProtector) : Endpoint<GetMemberSnapshotRequest, MemberSnapshotResponse>
@@ -42,6 +41,7 @@ internal sealed class GetMemberSnapshotEndpoint(
     {
         Post("api/vaults/{vaultId:guid}/sync/snapshot");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequirePermission(Permission.VaultManage);
         this.RequireEmailVerified();
         this.RequireVaultMembership();

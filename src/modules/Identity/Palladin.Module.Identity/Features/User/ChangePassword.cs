@@ -50,7 +50,6 @@ internal sealed class ChangePasswordValidator : Validator<ChangePasswordRequest>
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class ChangePasswordEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,
@@ -60,6 +59,7 @@ internal sealed class ChangePasswordEndpoint(
     {
         Put("api/account/password");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Change the master password";

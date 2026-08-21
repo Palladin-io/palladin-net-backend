@@ -91,12 +91,10 @@ internal sealed class ResendOrganizationInvitationEndpoint(
             .SingleAsync(member => member.OrganizationId == organizationId
                                    && member.UserId == userId,
                 ct);
-        var role = invitation.RoleId is null
-            ? null
-            : await domainWriteContext.Roles.FirstOrDefaultAsync(
-                candidate => candidate.OrganizationId == organizationId
-                             && candidate.Id == invitation.RoleId,
-                ct);
+        var role = await domainWriteContext.Roles.FirstOrDefaultAsync(
+            candidate => candidate.OrganizationId == organizationId
+                         && candidate.Id == invitation.RoleId,
+            ct);
         if (role is null)
         {
             AddError(ErrorResponses.General("organization-invitation-role-unassignable"));

@@ -51,7 +51,6 @@ internal sealed class SetupAccountValidator : Validator<SetupAccountRequest>
 }
 
 [PublicAPI]
-[AllowNonActiveOrganizationMembership]
 internal sealed class SetupAccountEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,
@@ -61,6 +60,7 @@ internal sealed class SetupAccountEndpoint(
     {
         Post("api/account/setup");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Complete account setup with key material";

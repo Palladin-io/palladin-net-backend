@@ -23,6 +23,11 @@ public static class HangfireModule
 
         services.Configure<HangfireOptions>(configuration);
 
+        if (!options.Enabled)
+        {
+            return services;
+        }
+
         services.AddApplicationStartingHook<DatabaseCreatorApplicationStartingHook>()
             .AddHangfire(
                 x => x.SetDataCompatibilityLevel(CompatibilityLevel.Version_180)

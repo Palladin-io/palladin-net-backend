@@ -660,6 +660,94 @@ public sealed class RoleVaultAccessTests(ApiFactory apiFactory) : TestBase
             TestContext.Current.CancellationToken)).ShouldBe(envelopeCountBefore);
     }
 
+    [Fact]
+    public async Task When_RoleAuthorizationIsInvalidated_AndAnotherRoleStillSelectsVault_Then_NoRemovalWorkIsReported()
+    {
+        // Given
+        var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var member = await SeedMemberWithPermissionsAsync(organization.Id, RequiredPermissions);
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var invalidatedRoleId = Guid.NewGuid();
+        var remainingRoleId = Guid.NewGuid();
+        await SeedDirectoryAsync(organization.Id, invalidatedRoleId, member.Id);
+        await using (var identityScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var identityContext = identityScope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            identityContext.Roles.Add(Role.Create(
+                remainingRoleId,
+                organization.Id,
+                $"Remaining Vault role {remainingRoleId:N}",
+                RequiredPermissions,
+                isSystem: false,
+                apiFactory.FakeClock.GetCurrentInstant()));
+            await identityContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        await using (var vaultScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var vaultContext = vaultScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            vaultContext.OrganizationRoleDirectory.Add(OrganizationRoleDirectoryEntry.Create(
+                organization.Id,
+                remainingRoleId,
+                1,
+                isSystem: false,
+                RequiredPermissions,
+                apiFactory.FakeClock.GetCurrentInstant()));
+            var roleSet = await vaultContext.OrganizationMemberRoleSets.SingleAsync(x =>
+                x.OrganizationId == organization.Id && x.UserId == member.Id,
+                TestContext.Current.CancellationToken);
+            roleSet.Apply(
+                [invalidatedRoleId, remainingRoleId],
+                revision: 2,
+                authorizationVersion: 1,
+                isActive: true,
+                apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+            await vaultContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var client = apiFactory.CreateAuthenticatedClient(member, RequiredPermissions);
+        foreach (var roleId in new[] { invalidatedRoleId, remainingRoleId })
+        {
+            var createResponse = await client.PutAsJsonAsync(
+                $"api/organization/roles/{roleId}/vault-access",
+                new UpdateRoleVaultAccessRequest { RoleId = roleId, VaultIds = [vault.Id] },
+                TestContext.Current.CancellationToken);
+            createResponse.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        }
+        var elevatedPermissions = RequiredPermissions | Permission.AgentManage;
+        await using (var identityScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var identityContext = identityScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+            var role = await identityContext.Roles.SingleAsync(
+                x => x.OrganizationId == organization.Id && x.Id == invalidatedRoleId,
+                TestContext.Current.CancellationToken);
+            role.UpdateCustom("Elevated Vault role", elevatedPermissions, apiFactory.FakeClock.GetCurrentInstant())
+                .ShouldBeTrue();
+            await identityContext.CommitAsync(TestContext.Current.CancellationToken);
+        }
+        apiFactory.MockId(Guid.NewGuid());
+
+        // When
+        await apiFactory.ConsumeAsync<OnOrganizationRoleUpserted, OrganizationRoleUpsertedEvent>(
+            new OrganizationRoleUpsertedEvent(
+                organization.Id,
+                invalidatedRoleId,
+                2,
+                EntityChange.Updated,
+                IsSystem: false,
+                elevatedPermissions,
+                apiFactory.FakeClock.GetCurrentInstant()),
+            TestContext.Current.CancellationToken);
+
+        // Then
+        await using var assertScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = assertScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var reconciliation = await readContext.RoleVaultAccessOperations
+            .Where(x => x.OrganizationId == organization.Id && x.RoleId == invalidatedRoleId)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstAsync(TestContext.Current.CancellationToken);
+        reconciliation.RemovalsAwaitingSourceReconciliation.ShouldBe(0);
+        reconciliation.Unchanged.ShouldBe(1);
+    }
+
     private async Task<Palladin.Module.Identity.Domain.User> SeedMemberWithPermissionsAsync(
         Guid organizationId,
         Permission permissions)

@@ -42,22 +42,48 @@ internal sealed class RoleVaultAccessReconciler(
         }
 
         var selectedVaultIds = policy.Policies.Select(x => x.VaultId).ToArray();
-        var affectedMembers = await domainWriteContext.OrganizationMemberRoleSets
+        var activeRoleMembers = await domainWriteContext.OrganizationMemberRoleSets
             .Where(x => x.OrganizationId == role.OrganizationId
                         && x.IsActive
                         && x.RoleIds.Contains(role.RoleId))
-            .CountAsync(roleSet => domainWriteContext.VaultMembers.Any(member =>
-                    member.OrganizationId == role.OrganizationId
-                    && member.UserId == roleSet.UserId
-                    && selectedVaultIds.Contains(member.VaultId)),
-                cancellationToken);
+            .Select(x => new { x.UserId, x.RoleIds })
+            .ToArrayAsync(cancellationToken);
+        var activeRoleMemberIds = activeRoleMembers.Select(x => x.UserId).ToArray();
+        var existingMemberships = await domainWriteContext.VaultMembers
+            .Where(x => x.OrganizationId == role.OrganizationId
+                        && activeRoleMemberIds.Contains(x.UserId)
+                        && selectedVaultIds.Contains(x.VaultId))
+            .Select(x => new { x.UserId, x.VaultId })
+            .ToArrayAsync(cancellationToken);
+        var existingMembershipSet = existingMemberships
+            .Select(x => (x.UserId, x.VaultId))
+            .ToHashSet();
+        var remainingRoleIds = activeRoleMembers
+            .SelectMany(member => member.RoleIds)
+            .Where(roleId => roleId != role.RoleId)
+            .Distinct()
+            .ToArray();
+        var remainingRolePolicies = await domainWriteContext.RoleVaultAccessPolicies
+            .Where(x => x.OrganizationId == role.OrganizationId
+                        && remainingRoleIds.Contains(x.RoleId)
+                        && selectedVaultIds.Contains(x.VaultId))
+            .Select(x => new { x.RoleId, x.VaultId })
+            .ToArrayAsync(cancellationToken);
+        var remainingRolePolicySet = remainingRolePolicies
+            .Select(x => (x.RoleId, x.VaultId))
+            .ToHashSet();
+        var affectedMembers = activeRoleMembers.Count(member => selectedVaultIds.Any(vaultId =>
+            existingMembershipSet.Contains((member.UserId, vaultId))
+            && member.RoleIds
+                .Where(roleId => roleId != role.RoleId)
+                .All(roleId => !remainingRolePolicySet.Contains((roleId, vaultId)))));
         var operation = RoleVaultAccessOperation.Create(
             role.OrganizationId,
             guidProvider.Generate(),
             role.RoleId,
             0,
             affectedMembers,
-            0,
+            activeRoleMembers.Length - affectedMembers,
             Guid.Empty,
             now);
         domainWriteContext.Add(operation);

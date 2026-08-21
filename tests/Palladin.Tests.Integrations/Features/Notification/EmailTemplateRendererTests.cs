@@ -61,7 +61,7 @@ public sealed class EmailTemplateRendererTests
     }
 
     [Fact]
-    public void When_OrganizationInvitationRendered_Then_RightAlignedCallToActionPrecedesCompactNote()
+    public void When_OrganizationInvitationRendered_Then_CenteredCallToActionPrecedesCompactNote()
     {
         // Given
         var renderer = CreateRenderer();
@@ -74,11 +74,11 @@ public sealed class EmailTemplateRendererTests
         foreach (var rendered in new[] { english, polish })
         {
             rendered.HtmlBody.ShouldContain("font-size:11px;line-height:1.45");
-            rendered.HtmlBody.ShouldContain("margin:0 0 16px;text-align:right");
+            rendered.HtmlBody.ShouldContain("margin:4px 0 20px;text-align:center");
             rendered.HtmlBody.ShouldContain("padding:10px 20px");
             rendered.HtmlBody.ShouldContain("font-size:14px");
             rendered.HtmlBody.ShouldNotContain("margin:0 0 16px;font-size:13px");
-            rendered.HtmlBody.IndexOf("text-align:right", StringComparison.Ordinal)
+            rendered.HtmlBody.IndexOf("text-align:center", StringComparison.Ordinal)
                 .ShouldBeLessThan(rendered.HtmlBody.IndexOf("font-size:11px", StringComparison.Ordinal));
         }
 

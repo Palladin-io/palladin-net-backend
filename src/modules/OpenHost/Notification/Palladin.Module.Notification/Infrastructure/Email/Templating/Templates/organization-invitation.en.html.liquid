@@ -1,6 +1,6 @@
 {% include '_header.html.liquid' %}
 <h1 style="margin:0 0 16px;font-size:20px;font-weight:700">Join {{ organizationName }}</h1>
 <p style="margin:0 0 16px">{{ invitedByName }} invited you to join {{ organizationName }} as {{ role }}.</p>
-<p style="margin:0 0 16px;text-align:right"><a href="{{ invitationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Accept invitation</a></p>
+<p style="margin:4px 0 20px;text-align:center"><a href="{{ invitationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Accept invitation</a></p>
 <p style="margin:0;font-size:11px;line-height:1.45;color:#6a6a6a">This link expires in {{ expiryHours }} hours. Sign in or create an account using this email address before accepting. If you were not expecting this invitation, you can safely ignore this email.</p>
 {% include '_footer.en.html.liquid' %}

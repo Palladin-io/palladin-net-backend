@@ -653,7 +653,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
-    public async Task When_AcceptingInvitation_Then_AddsMembershipAndAllowsOrganizationSwitch()
+    public async Task When_AcceptingInvitation_Then_AddsMembershipAndIssuesSessionForOrganization()
     {
         // Given
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -664,18 +664,14 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         var client = apiFactory.CreateAuthenticatedClient(invitedUser);
 
         // When
-        var acceptResponse = await client.POSTAsync<
+        var (acceptResponse, session) = await client.POSTAsync<
             AcceptOrganizationInvitationEndpoint,
-            AcceptOrganizationInvitationRequest>(new AcceptOrganizationInvitationRequest { Token = token });
-        var (switchResponse, session) = await client.POSTAsync<
-            SwitchOrganizationEndpoint,
-            SwitchOrganizationRequest,
+            AcceptOrganizationInvitationRequest,
             Palladin.Module.Identity.Shared.AuthSessionResponse>(
-            new SwitchOrganizationRequest { OrganizationId = organization.Id });
+            new AcceptOrganizationInvitationRequest { Token = token });
 
         // Then
-        acceptResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        switchResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        acceptResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         new JwtSecurityTokenHandler().ReadJwtToken(session.AccessToken).Claims
             .Single(c => c.Type == JwtClaimNames.OrganizationId).Value.ShouldBe(organization.Id.ToString());
 
@@ -850,7 +846,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
             AcceptOrganizationInvitationRequest>(request);
 
         // Then
-        firstResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         secondResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
@@ -885,7 +881,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
             AcceptOrganizationInvitationRequest>(new AcceptOrganizationInvitationRequest { Token = token });
 
         // Then
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
         var membership = await readContext.OrganizationMembers.SingleAsync(x =>

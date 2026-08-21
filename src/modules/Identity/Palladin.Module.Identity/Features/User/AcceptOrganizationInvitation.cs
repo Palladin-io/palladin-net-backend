@@ -3,7 +3,9 @@ using Palladin.Core.Persistence;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
+using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -30,7 +32,8 @@ internal sealed class AcceptOrganizationInvitationValidator : Validator<AcceptOr
 [AllowNonActiveOrganizationMembership]
 internal sealed class AcceptOrganizationInvitationEndpoint(
     IdentityDomainWriteContext domainWriteContext,
-    IClock clock) : Endpoint<AcceptOrganizationInvitationRequest>
+    IAuthSessionIssuer sessionIssuer,
+    IClock clock) : Endpoint<AcceptOrganizationInvitationRequest, AuthSessionResponse>
 {
     public override void Configure()
     {
@@ -157,10 +160,18 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             : checked(previousMemberState.Revision + 1ul);
 
         invitation.Accept(now);
-        domainWriteContext.Add(OrganizationMember.Create(
+        var member = OrganizationMember.Create(
             invitation.OrganizationId, user.Id, invitation.Role,
             user.DisplayName, user.Email, now,
-            authorizationVersion, vaultAccessRevision));
+            authorizationVersion, vaultAccessRevision);
+        domainWriteContext.Add(member);
+        var (accessToken, refreshToken) = sessionIssuer.Issue(
+            user,
+            organization.Id,
+            member.EffectivePermissions(),
+            organization.PlanType,
+            member.AuthorizationVersion,
+            now);
         try
         {
             await domainWriteContext.CommitAsync(ct);
@@ -182,6 +193,11 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             return;
         }
 
-        await Send.NoContentAsync(ct);
+        await Send.OkAsync(new AuthSessionResponse(
+            accessToken,
+            refreshToken,
+            user.Id,
+            user.IsOnboarded,
+            user.EmailVerified), ct);
     }
 }

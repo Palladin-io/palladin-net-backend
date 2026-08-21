@@ -234,9 +234,9 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
             .OrganizationInvitations.SingleAsync(candidate => candidate.Id == invitation.Id);
         persisted.TokenHash.ShouldNotBe(oldTokenHash);
         persisted.TokenHash.ShouldNotContain(oldToken);
-        persisted.CreatedAt.ShouldBe(issuedAt);
-        persisted.LastSentAt.ShouldBe(sentAt);
-        persisted.ExpiresAt.ShouldBe(expiresAt);
+        persisted.CreatedAt.ShouldBe(TruncateToMicroseconds(issuedAt));
+        persisted.LastSentAt.ShouldBe(TruncateToMicroseconds(sentAt));
+        persisted.ExpiresAt.ShouldBe(TruncateToMicroseconds(expiresAt));
         persisted.AcceptedAt.ShouldBeNull();
         persisted.CancelledAt.ShouldBeNull();
     }
@@ -1036,7 +1036,8 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
                 isSystem: false, apiFactory.FakeClock.GetCurrentInstant());
             writeContext.Roles.Add(role);
         }
-        var now = issuedAt ?? scope.ServiceProvider.GetRequiredService<IClock>().GetCurrentInstant();
+        var now = TruncateToMicroseconds(
+            issuedAt ?? scope.ServiceProvider.GetRequiredService<IClock>().GetCurrentInstant());
         var tokenHash = TokenService.HashToken(token);
 
         await writeContext.OrganizationInvitations
@@ -1080,5 +1081,11 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
             .Where(organization => organization.Id == organizationId)
             .ExecuteUpdateAsync(setters => setters.SetProperty(
                 organization => organization.SeatLimit, seatLimit));
+    }
+
+    private static Instant TruncateToMicroseconds(Instant value)
+    {
+        var ticks = value.ToUnixTimeTicks();
+        return Instant.FromUnixTimeTicks(ticks - ticks % 10);
     }
 }

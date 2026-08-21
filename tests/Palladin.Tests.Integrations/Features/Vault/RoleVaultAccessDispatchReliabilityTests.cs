@@ -24,7 +24,7 @@ public sealed class RoleVaultAccessDispatchReliabilityTests(ApiFactory apiFactor
     public async Task When_IdentityDispatchBatchContainsMultipleRows_Then_EveryPublishedRevisionIsPersisted()
     {
         // Given
-        var jobClock = new FakeClock(apiFactory.FakeClock.GetCurrentInstant());
+        var jobClock = new FakeClock(TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant()));
         var now = jobClock.GetCurrentInstant();
         var roleDispatches = Enumerable.Range(0, 2)
             .Select(_ => OrganizationRoleVaultAccessDispatch.Create(
@@ -150,7 +150,7 @@ public sealed class RoleVaultAccessDispatchReliabilityTests(ApiFactory apiFactor
     public async Task When_IdentitySnapshotWasAcknowledgedButConsumerDidNotPersist_Then_AntiEntropyRepublishesFullState()
     {
         // Given
-        var jobClock = new FakeClock(apiFactory.FakeClock.GetCurrentInstant());
+        var jobClock = new FakeClock(TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant()));
         var initiallyPublishedAt = jobClock.GetCurrentInstant();
         var roleDispatch = OrganizationRoleVaultAccessDispatch.Create(
             Guid.NewGuid(),
@@ -417,5 +417,11 @@ public sealed class RoleVaultAccessDispatchReliabilityTests(ApiFactory apiFactor
 
             return Task.CompletedTask;
         }
+    }
+
+    private static Instant TruncateToMicroseconds(Instant value)
+    {
+        var ticks = value.ToUnixTimeTicks();
+        return Instant.FromUnixTimeTicks(ticks - ticks % 10);
     }
 }

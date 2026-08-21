@@ -11,6 +11,8 @@ public sealed record VaultDeletedEvent(
     Guid OrganizationId,
     string ActorName,
     IReadOnlyList<Guid> MemberUserIds,
+    ulong MemberSequence,
+    ulong MutationVersion,
     Instant UpdatedAt) : IIntegrationEvent
 {
     public int MemberCount => MemberUserIds.Count;

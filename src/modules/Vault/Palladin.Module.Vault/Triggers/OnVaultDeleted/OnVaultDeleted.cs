@@ -6,6 +6,7 @@ using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Infrastructure.MassTransit;
 using JetBrains.Annotations;
 using MassTransit;
+using System.Globalization;
 
 namespace Palladin.Module.Vault.Triggers;
 
@@ -28,6 +29,17 @@ internal sealed class OnVaultDeleted(
         {
             ["member_count"] = msg.MemberCount,
         });
+
+        await publishEndpoint.Publish(
+            new BroadcastVaultSyncInvalidationCommand(
+                msg.OrganizationId,
+                msg.VaultId,
+                msg.MemberSequence.ToString(CultureInfo.InvariantCulture),
+                msg.MutationVersion.ToString(CultureInfo.InvariantCulture),
+                true,
+                msg.MemberUserIds,
+                msg.UpdatedAt),
+            context.CancellationToken);
 
         foreach (var memberUserId in msg.MemberUserIds)
         {

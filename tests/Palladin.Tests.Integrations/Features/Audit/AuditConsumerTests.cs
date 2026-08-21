@@ -285,7 +285,7 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
         var orgId = Guid.NewGuid();
         var vaultId = Guid.NewGuid();
         var evt = new VaultDeletedEvent(vaultId, Guid.NewGuid(), orgId, "Dan Deleter", [Guid.NewGuid()],
-            apiFactory.FakeClock.GetCurrentInstant());
+            12, 24, apiFactory.FakeClock.GetCurrentInstant());
 
         // When
         await RunAsync(p => new OnVaultDeletedAudit(p), evt);

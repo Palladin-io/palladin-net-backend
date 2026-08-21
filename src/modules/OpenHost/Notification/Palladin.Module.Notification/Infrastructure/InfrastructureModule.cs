@@ -37,6 +37,7 @@ internal static class InfrastructureModule
                     new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase));
             });
         services.AddScoped<IWebNotifier, WebNotifier>();
+        services.AddScoped<IRealtimeEventNotifier, RealtimeEventNotifier>();
 
         services.Configure<FirebaseOptions>(configuration.GetSection(FirebaseOptions.Position));
         services.Configure<PushTextOptions>(configuration.GetSection(PushTextOptions.Position));

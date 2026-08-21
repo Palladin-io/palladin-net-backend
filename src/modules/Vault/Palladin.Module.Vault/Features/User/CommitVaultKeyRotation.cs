@@ -291,7 +291,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 .Include(x => x.VaultMemberKeyEnvelopes.Where(envelope => envelope.MemberId == memberId))
                 .SingleAsync(x => x.OrganizationId == rotation.OrganizationId && x.Id == rotation.VaultId,
                     cancellationToken);
-            vault.RemoveMemberForCommittedRotation(memberId);
+            vault.RemoveMemberForCommittedRotation(memberId, completedAt);
         }
 
         if (rotation.ExcludedAgentId is { } agentId)

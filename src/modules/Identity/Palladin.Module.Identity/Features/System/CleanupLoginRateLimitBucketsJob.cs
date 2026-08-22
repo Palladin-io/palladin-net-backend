@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NodaTime;
 using Palladin.Core.Hangfire.CronJobs;
+using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 
 namespace Palladin.Module.Identity.Features;
@@ -26,6 +27,7 @@ internal sealed class CleanupLoginRateLimitBucketsJobOptions : ICronJobOptions
 internal sealed class CleanupLoginRateLimitBucketsJob(
     IdentityDomainWriteContext domainWriteContext,
     IOptions<CleanupLoginRateLimitBucketsJobOptions> options,
+    IOptions<LoginThrottleOptions> throttleOptions,
     IClock clock) : ICronJob
 {
     public string Name => "identity.cleanup-login-rate-limit-buckets";
@@ -35,7 +37,12 @@ internal sealed class CleanupLoginRateLimitBucketsJob(
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {
         var cleanupOptions = options.Value;
-        var cutoff = clock.GetCurrentInstant() - Duration.FromMinutes(cleanupOptions.RetentionMinutes);
+        var configuredRetention = Duration.FromMinutes(cleanupOptions.RetentionMinutes);
+        var activeWindowRetention = Duration.FromSeconds(throttleOptions.Value.RateLimitWindowSeconds);
+        var effectiveRetention = configuredRetention > activeWindowRetention
+            ? configuredRetention
+            : activeWindowRetention;
+        var cutoff = clock.GetCurrentInstant() - effectiveRetention;
 
         while (true)
         {

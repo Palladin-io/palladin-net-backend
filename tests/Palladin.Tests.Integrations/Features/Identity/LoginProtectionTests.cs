@@ -125,6 +125,41 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_EmptyResetRacesWithFailure_Then_ExistingStateIsFenced()
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var email = $"concurrent-empty-reset-{Guid.NewGuid():N}@example.com";
+        var ip = $"192.0.2.{Random.Shared.Next(1, 255)}";
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        await SeedEmptyLockoutAsync(email, ip, now);
+        var services = CreateThrottleServices(5);
+
+        await using var resetScope = apiFactory.Services.CreateAsyncScope();
+        var resetContext = resetScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var stagedReset = await services[0].StageResetAsync(
+            resetContext,
+            email,
+            ip,
+            now + Duration.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+        stagedReset.IsLocked.ShouldBeFalse();
+
+        await services[1].RecordFailureAsync(
+            email,
+            ip,
+            now + Duration.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(
+            () => resetContext.CommitAsync(TestContext.Current.CancellationToken));
+
+        var lockout = await ReadLockoutAsync(email, ip);
+        lockout.Version.ShouldBe(1u);
+        lockout.FailedCount.ShouldBe(1);
+        lockout.LockedUntil.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task When_MultipleLimiterInstancesSharePartitions_Then_GlobalLimitIsEnforced()
     {
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
@@ -190,6 +225,10 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
                 RetentionMinutes = 15,
                 BatchSize = 2,
             }),
+            Options.Create(new LoginThrottleOptions
+            {
+                RateLimitWindowSeconds = 60,
+            }),
             apiFactory.FakeClock);
         await job.ExecuteAsync(TestContext.Current.CancellationToken);
 
@@ -198,6 +237,47 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var expiredIds = expired.Select(item => item.Id).ToArray();
         var remainingIds = await readContext.LoginRateLimitBuckets
             .Where(bucket => bucket.Id == active.Id || expiredIds.Contains(bucket.Id))
+            .Select(bucket => bucket.Id)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        remainingIds.ShouldBe([active.Id]);
+    }
+
+    [Fact]
+    public async Task When_ConfiguredRetentionIsShorterThanLimiterWindow_Then_ActiveBucketIsPreserved()
+    {
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var expired = LoginRateLimitBucket.Create(
+            Guid.NewGuid(),
+            RandomPartitionKey(),
+            now - Duration.FromSeconds(121));
+        var active = LoginRateLimitBucket.Create(
+            Guid.NewGuid(),
+            RandomPartitionKey(),
+            now - Duration.FromSeconds(90));
+        writeContext.AddRange([expired, active]);
+        await writeContext.CommitAsync(TestContext.Current.CancellationToken);
+        writeContext.Clear();
+
+        var job = new CleanupLoginRateLimitBucketsJob(
+            writeContext,
+            Options.Create(new CleanupLoginRateLimitBucketsJobOptions
+            {
+                RetentionMinutes = 1,
+                BatchSize = 2,
+            }),
+            Options.Create(new LoginThrottleOptions
+            {
+                RateLimitWindowSeconds = 120,
+            }),
+            apiFactory.FakeClock);
+        await job.ExecuteAsync(TestContext.Current.CancellationToken);
+
+        await using var assertionScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = assertionScope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
+        var remainingIds = await readContext.LoginRateLimitBuckets
+            .Where(bucket => bucket.Id == active.Id || bucket.Id == expired.Id)
             .Select(bucket => bucket.Id)
             .ToListAsync(TestContext.Current.CancellationToken);
         remainingIds.ShouldBe([active.Id]);

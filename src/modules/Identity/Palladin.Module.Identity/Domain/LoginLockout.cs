@@ -70,19 +70,13 @@ internal sealed class LoginLockout : EventEntityBase
         return LoginLockoutDecision.Recorded();
     }
 
-    internal bool Reset(Instant now)
+    internal void Reset(Instant now)
     {
-        if (FailedCount == 0 && LockedUntil is null)
-        {
-            return false;
-        }
-
         FailedCount = 0;
         LockedUntil = null;
         WindowStartedAt = now;
         UpdatedAt = now;
         Version++;
-        return true;
     }
 
     private static string HashEmail(string email) =>

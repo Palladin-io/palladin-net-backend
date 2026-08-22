@@ -150,7 +150,9 @@ internal sealed class LoginTotpEndpoint(
                 LoginFailureAttribution.Known(
                     user.OrganizationId,
                     user.Id,
-                    LoginAttemptFactor.Totp),
+                    LoginAttemptFactor.Totp,
+                    user.PreferredLanguage.Code,
+                    user.EmailVerified),
                 now,
                 ct);
             if (failure.IsLocked)

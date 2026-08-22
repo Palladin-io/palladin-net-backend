@@ -117,6 +117,8 @@ internal sealed class LoginEndpoint(
                 Credential = credential,
                 credential.UserId,
                 credential.User.OrganizationId,
+                credential.User.PreferredLanguage,
+                credential.User.EmailVerified,
                 credential.User.SecurityVersion,
                 credential.User.KdfProfileId,
             })
@@ -137,7 +139,9 @@ internal sealed class LoginEndpoint(
                 : LoginFailureAttribution.Known(
                     credentialState.OrganizationId,
                     credentialState.UserId,
-                    LoginAttemptFactor.Password);
+                    LoginAttemptFactor.Password,
+                    credentialState.PreferredLanguage.Code,
+                    credentialState.EmailVerified);
             var failure = await loginThrottle.RecordFailureAsync(email, ip, attribution, now, ct);
             if (failure.IsLocked)
             {

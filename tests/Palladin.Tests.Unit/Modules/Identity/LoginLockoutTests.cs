@@ -20,7 +20,6 @@ public sealed class LoginLockoutTests
             "member@example.com",
             "198.51.100.10",
             now);
-
         lockout.RecordFailure(
             5,
             Duration.FromMinutes(15),
@@ -29,7 +28,9 @@ public sealed class LoginLockoutTests
             LoginFailureAttribution.Known(
                 organizationId,
                 userId,
-                LoginAttemptFactor.Password),
+                LoginAttemptFactor.Password,
+                "pl",
+                true),
             now);
 
         var @event = lockout.FetchEvents().ShouldHaveSingleItem()
@@ -72,6 +73,12 @@ public sealed class LoginLockoutTests
             "member@example.com",
             "198.51.100.10",
             now);
+        var attribution = LoginFailureAttribution.Known(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            LoginAttemptFactor.Password,
+            "pl",
+            true);
 
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -80,7 +87,7 @@ public sealed class LoginLockoutTests
                 Duration.FromMinutes(15),
                 Duration.FromMinutes(15),
                 Guid.NewGuid(),
-                LoginFailureAttribution.Unknown(LoginAttemptFactor.Password),
+                attribution,
                 now);
         }
 
@@ -89,7 +96,7 @@ public sealed class LoginLockoutTests
             Duration.FromMinutes(15),
             Duration.FromMinutes(15),
             Guid.NewGuid(),
-            LoginFailureAttribution.Unknown(LoginAttemptFactor.Password),
+            attribution,
             now);
         var @event = lockout.FetchEvents()
             .OfType<LoginLockedOutEvent>()
@@ -97,7 +104,72 @@ public sealed class LoginLockoutTests
             .ShouldBeOfType<LoginLockedOutEvent>();
 
         @event.EmailHash.ShouldNotContain("member@example.com");
+        @event.IpAddress.ShouldBe("198.51.100.10");
+        @event.RecipientEmail.ShouldBe("member@example.com");
+        @event.PreferredLanguage.ShouldBe("pl");
+        @event.AttemptCount.ShouldBe(5);
+        @event.WindowMinutes.ShouldBe(15);
+        @event.LockoutMinutes.ShouldBe(15);
         @event.LockedUntil.ShouldBe(now + Duration.FromMinutes(15));
         lockout.FetchEvents().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void When_UnknownAccountThresholdIsReached_Then_RecipientFieldsRemainEmpty()
+    {
+        var now = Instant.FromUtc(2026, 8, 22, 12, 0);
+        var lockout = LoginLockout.Create(
+            Guid.NewGuid(),
+            "unknown@example.com",
+            "203.0.113.10",
+            now);
+
+        lockout.RecordFailure(
+            1,
+            Duration.FromMinutes(1),
+            Duration.FromMinutes(15),
+            Guid.NewGuid(),
+            LoginFailureAttribution.Unknown(LoginAttemptFactor.Password),
+            now);
+
+        var @event = lockout.FetchEvents()
+            .OfType<LoginLockedOutEvent>()
+            .ShouldHaveSingleItem();
+        @event.TargetUserId.ShouldBeNull();
+        @event.RecipientEmail.ShouldBeNull();
+        @event.PreferredLanguage.ShouldBeNull();
+        @event.EmailHash.ShouldNotContain("unknown@example.com");
+    }
+
+    [Fact]
+    public void When_UnverifiedAccountThresholdIsReached_Then_NoSecurityEmailRecipientIsExposed()
+    {
+        var now = Instant.FromUtc(2026, 8, 22, 12, 0);
+        var targetUserId = Guid.NewGuid();
+        var lockout = LoginLockout.Create(
+            Guid.NewGuid(),
+            "unverified@example.com",
+            "203.0.113.10",
+            now);
+
+        lockout.RecordFailure(
+            1,
+            Duration.FromMinutes(1),
+            Duration.FromMinutes(15),
+            Guid.NewGuid(),
+            LoginFailureAttribution.Known(
+                Guid.NewGuid(),
+                targetUserId,
+                LoginAttemptFactor.Password,
+                "pl",
+                false),
+            now);
+
+        var @event = lockout.FetchEvents()
+            .OfType<LoginLockedOutEvent>()
+            .ShouldHaveSingleItem();
+        @event.TargetUserId.ShouldBe(targetUserId);
+        @event.RecipientEmail.ShouldBeNull();
+        @event.PreferredLanguage.ShouldBeNull();
     }
 }

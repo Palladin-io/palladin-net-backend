@@ -170,7 +170,7 @@ public sealed class LoginTests(ApiFactory apiFactory) : TestBase
     [Fact]
     public async Task When_RepeatedFailures_Then_LocksOutWith429()
     {
-        // Given — MaxAttempts is 5; the threshold attempt itself must be locked out.
+        // Given — MaxAttempts is 3; the threshold attempt itself must be locked out.
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var email = $"lock-{Guid.NewGuid():N}@example.com";
         await apiFactory.Services.SeedPasswordUserAsync(RandomBytes(32), email: email);
@@ -178,7 +178,7 @@ public sealed class LoginTests(ApiFactory apiFactory) : TestBase
         var badRequest = new LoginRequest { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = RandomBytes(32) };
 
         // When
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < 2; i++)
         {
             var (failedResponse, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(badRequest);
             failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);

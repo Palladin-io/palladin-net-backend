@@ -1,0 +1,16 @@
+Zablokowaliśmy podejrzane próby logowania
+
+{{ appName }} wykrył {{ attemptCount }} nieudanych prób logowania w oknie {{ windowMinutes }} min i tymczasowo zablokował dalsze próby z tego adresu IP.
+
+Liczba nieudanych prób: {{ attemptCount }}
+Okno czasowe: {{ windowMinutes }} min
+Adres IP: {{ ipAddress }}
+Czas blokady: {{ occurredAt }}
+Blokada wygaśnie: {{ lockedUntil }}
+
+Twoje konto nie zostało globalnie zablokowane. Ograniczenie dotyczy dalszych prób logowania z podanego adresu IP.
+
+Jeśli rozpoznajesz tę aktywność, nie musisz nic robić. Jeśli nie, otwórz {{ appName }} samodzielnie i sprawdź Audit Log. Upewnij się też, że używasz unikalnego hasła i masz włączone TOTP.
+
+Ten alert nie zawiera linku do odblokowania. Blokada wygaśnie automatycznie o podanym czasie.
+{% include '_footer.pl.text.liquid' %}

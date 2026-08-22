@@ -1,0 +1,16 @@
+{% include '_header.html.liquid' %}
+<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">We blocked suspicious login attempts</h1>
+<p style="margin:0 0 16px">{{ appName }} detected {{ attemptCount }} failed attempts within a {{ windowMinutes }} min window and temporarily blocked further login attempts from this IP address.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px;background:#fbeaea;border:1px solid #f3caca;border-radius:8px">
+  <tr><td style="padding:16px;font-size:14px;color:#7a1f1f">
+    <p style="margin:0 0 6px"><strong>Failed attempts:</strong> {{ attemptCount }}</p>
+    <p style="margin:0 0 6px"><strong>Time window:</strong> {{ windowMinutes }} min</p>
+    <p style="margin:0 0 6px"><strong>IP address:</strong> {{ ipAddress }}</p>
+    <p style="margin:0 0 6px"><strong>Blocked at:</strong> {{ occurredAt }}</p>
+    <p style="margin:0"><strong>Block expires:</strong> {{ lockedUntil }}</p>
+  </td></tr>
+</table>
+<p style="margin:0 0 16px">Your account was not blocked globally. The restriction applies to further login attempts from the listed IP address.</p>
+<p style="margin:0 0 16px">If you recognize this activity, no action is needed. If you do not, open {{ appName }} directly and review the Audit Log. Also make sure your password is unique and TOTP is enabled.</p>
+<p style="margin:0">This alert does not contain an unlock link. The block expires automatically at the time shown above.</p>
+{% include '_footer.en.html.liquid' %}

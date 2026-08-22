@@ -74,7 +74,19 @@ internal sealed class LoginLockout : EventEntityBase
             LockedUntil = lockedUntil;
             FailedCount = 0;
             WindowStartedAt = now;
-            AddEvent(new LoginLockedOutEvent(HashEmail(Email), lockedUntil, now));
+            var verifiedRecipient = attribution.TargetUserId is not null && attribution.EmailVerified;
+            AddEvent(new LoginLockedOutEvent(
+                attemptId,
+                HashEmail(Email),
+                IpAddress,
+                attribution.TargetUserId,
+                verifiedRecipient ? Email : null,
+                verifiedRecipient ? attribution.PreferredLanguage : null,
+                maxAttempts,
+                (int)window.TotalMinutes,
+                (int)lockoutDuration.TotalMinutes,
+                lockedUntil,
+                now));
             return LoginLockoutDecision.Locked(lockedUntil);
         }
 
@@ -104,14 +116,18 @@ internal readonly record struct LoginLockoutDecision(bool IsLocked, Instant? Loc
 internal readonly record struct LoginFailureAttribution(
     Guid? OrganizationId,
     Guid? TargetUserId,
-    string Factor)
+    string Factor,
+    string? PreferredLanguage,
+    bool EmailVerified)
 {
     internal static LoginFailureAttribution Known(
         Guid organizationId,
         Guid targetUserId,
-        string factor) =>
-        new(organizationId, targetUserId, factor);
+        string factor,
+        string preferredLanguage,
+        bool emailVerified) =>
+        new(organizationId, targetUserId, factor, preferredLanguage, emailVerified);
 
     internal static LoginFailureAttribution Unknown(string factor) =>
-        new(null, null, factor);
+        new(null, null, factor, null, false);
 }

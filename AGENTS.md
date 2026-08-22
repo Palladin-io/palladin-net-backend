@@ -77,7 +77,7 @@ The previously approved pre-production database reset used one `Initial` EF Core
 - `src/modules/{ModuleName}/` — Domain module group containing the implementation project, contracts project and module README. Active domain groups: Identity, Vault and Agents.
 - `src/modules/OpenHost/{ModuleName}/` — Shared Open Host Service group with the same internal layout. Active OpenHost groups: Audit, Notification, Search and PublicAssetCatalog. Billing is planned, not yet present in `src/modules/`.
 - `tests/Palladin.Api.Tests/` — Main integration test suite
-- `tests/Palladin.Tests.Architecture/` — Module boundary compliance tests
+- `tests/Palladin.Tests.Unit/Architecture/` and `tests/Palladin.Tests.Integrations/Architecture/` — module boundary and endpoint security compliance tests
 
 ### Module group structure
 ```

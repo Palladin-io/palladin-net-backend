@@ -1,0 +1,16 @@
+We temporarily locked password and TOTP login to your account
+
+{{ appName }} detected {{ attemptCount }} failed attempts within a {{ windowMinutes }} min window and temporarily blocked further password and TOTP login attempts to your account.
+
+Failed attempts: {{ attemptCount }}
+Time window: {{ windowMinutes }} min
+Source IP addresses: {{ ipAddresses }}
+Blocked at: {{ occurredAt }}
+Block expires: {{ lockedUntil }}
+
+The restriction applies to password and TOTP login attempts for your account regardless of the source IP address.
+
+If you recognize this activity, no action is needed. If you do not, open {{ appName }} directly and review the Audit Log. Also make sure your password is unique and TOTP is enabled.
+
+This alert does not contain an unlock link. The block expires automatically at the time shown above.
+{% include '_footer.en.text.liquid' %}

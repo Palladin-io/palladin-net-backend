@@ -7,4 +7,4 @@ internal interface ILoginSaltService
     Task<LoginBootstrap> GetBootstrapAsync(string normalizedEmail, string profileId, CancellationToken ct);
 }
 
-internal sealed record LoginBootstrap(Guid? AccountId, byte[] KdfSalt);
+internal sealed record LoginBootstrap(Guid AccountId, byte[] KdfSalt);

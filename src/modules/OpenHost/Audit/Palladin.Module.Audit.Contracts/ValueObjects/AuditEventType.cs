@@ -8,6 +8,7 @@ namespace Palladin.Module.Audit.Contracts.ValueObjects;
 [PublicAPI]
 public static class AuditEventType
 {
+    public const string LoginFailed = "auth.login-failed";
     public const string GrantCreated = "grant.created";
     public const string GrantRequested = "grant.requested";
     public const string GrantApproved = "grant.approved";

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -14,6 +15,16 @@ internal static class RateLimitingExtensions
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = (context, _) =>
+            {
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                {
+                    context.HttpContext.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
+                        .ToString(CultureInfo.InvariantCulture);
+                }
+
+                return ValueTask.CompletedTask;
+            };
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 var path = context.Request.Path;
@@ -23,6 +34,11 @@ internal static class RateLimitingExtensions
                 if (path.StartsWithSegments("/api/auth/oauth") || path.StartsWithSegments("/api/auth/refresh"))
                 {
                     return FixedWindow($"auth:{ip}", permitLimit: 30);
+                }
+
+                if (path.StartsWithSegments("/api/auth/login"))
+                {
+                    return FixedWindow($"auth-login:{path}:{ip}", permitLimit: 30);
                 }
 
                 if (path.StartsWithSegments("/api/account/password")

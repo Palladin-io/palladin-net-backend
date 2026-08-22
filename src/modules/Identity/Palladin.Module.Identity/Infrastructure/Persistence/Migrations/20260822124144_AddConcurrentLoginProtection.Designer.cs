@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Palladin.Module.Identity.Infrastructure.Persistence;
 namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(IdentityDbWriteContext))]
-    partial class IdentityDbWriteContextModelSnapshot : ModelSnapshot
+    [Migration("20260822124144_AddConcurrentLoginProtection")]
+    partial class AddConcurrentLoginProtection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -40,12 +43,13 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<int>("FailedCount")
                         .HasColumnType("integer");
 
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<Instant?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
-
-                    b.PrimitiveCollection<string[]>("SourceIpAddresses")
-                        .IsRequired()
-                        .HasColumnType("text[]");
 
                     b.Property<Instant>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -59,7 +63,7 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Email")
+                    b.HasIndex("Email", "IpAddress")
                         .IsUnique();
 
                     b.ToTable("LoginLockouts");
@@ -96,8 +100,6 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PartitionKey")
                         .IsUnique();
-
-                    b.HasIndex("UpdatedAt");
 
                     b.ToTable("LoginRateLimitBuckets");
                 });

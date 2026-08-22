@@ -19,6 +19,7 @@
         <ProjectReference Include="..\..\..\core\Palladin.Core.Api\Palladin.Core.Api.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.Events\Palladin.Core.Events.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.Guid\Palladin.Core.Guid.csproj" />
+        <ProjectReference Include="..\..\..\core\Palladin.Core.Hangfire\Palladin.Core.Hangfire.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.Json\Palladin.Core.Json.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.MassTransit\Palladin.Core.MassTransit.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.Persistence\Palladin.Core.Persistence.csproj" />

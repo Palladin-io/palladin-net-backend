@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Palladin.Module.Identity.Domain;
+using System.Globalization;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -35,12 +36,16 @@ internal sealed class LoginTotpValidator : Validator<LoginTotpRequest>
 
 [PublicAPI]
 internal sealed class LoginTotpEndpoint(
+    IdentityDomainReadContext domainReadContext,
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
     IAuthSessionIssuer sessionIssuer,
-    ILoginThrottleService loginThrottle,
+    LoginRateLimiter loginRateLimiter,
+    LoginThrottleService loginThrottle,
     IClock clock) : Endpoint<LoginTotpRequest, AuthSessionResponse>
 {
+    private const int ConcurrentAuthRetryAfterSeconds = 1;
+
     public override void Configure()
     {
         Post("api/auth/login/totp");
@@ -60,10 +65,46 @@ internal sealed class LoginTotpEndpoint(
     {
         var now = clock.GetCurrentInstant();
         var challengeHash = SecureToken.Hash(req.ChallengeToken);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        var ipLease = await loginRateLimiter.AcquireTotpIpAsync(ip, now, ct);
+        if (!ipLease.IsAcquired)
+        {
+            await SendRateLimitedAsync(ipLease.RetryAfterSeconds, ct);
+            return;
+        }
+
+        var challengeOwner = await domainReadContext.VerificationTokens
+            .Where(t => t.TokenHash == challengeHash
+                        && t.Purpose == VerificationTokenPurpose.LoginTotpChallenge
+                        && t.ConsumedAt == null
+                        && t.ExpiresAt >= now)
+            .Select(t => new { t.Id, t.UserId, t.User.Email })
+            .FirstOrDefaultAsync(ct);
+
+        if (challengeOwner is null)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+
+        var accountLease = await loginRateLimiter.AcquireTotpAccountAsync(challengeOwner.Email, now, ct);
+        if (!accountLease.IsAcquired)
+        {
+            await SendRateLimitedAsync(accountLease.RetryAfterSeconds, ct);
+            return;
+        }
+
+        var throttleStatus = await loginThrottle.GetStatusAsync(challengeOwner.Email, now, ct);
+        if (throttleStatus.IsLocked)
+        {
+            await SendRateLimitedAsync(throttleStatus.RetryAfterSeconds, ct);
+            return;
+        }
 
         var challenge = await domainWriteContext.VerificationTokens
             .FirstOrDefaultAsync(
-                t => t.TokenHash == challengeHash && t.Purpose == VerificationTokenPurpose.LoginTotpChallenge, ct);
+                t => t.Id == challengeOwner.Id && t.Purpose == VerificationTokenPurpose.LoginTotpChallenge, ct);
 
         if (challenge is null || !challenge.CanConsume(now))
         {
@@ -77,7 +118,7 @@ internal sealed class LoginTotpEndpoint(
                     .ThenInclude(assignment => assignment.Role)
             .Include(u => u.Organization)
             .Include(u => u.TotpCredential).ThenInclude(t => t!.RecoveryCodes)
-            .FirstOrDefaultAsync(u => u.Id == challenge.UserId, ct);
+            .FirstOrDefaultAsync(u => u.Id == challengeOwner.UserId, ct);
 
         if (user?.TotpCredential is not { IsEnabled: true, Secret: { } secret } totp)
         {
@@ -93,13 +134,6 @@ internal sealed class LoginTotpEndpoint(
             return;
         }
 
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        if (await loginThrottle.IsLockedAsync(user.Email, ip, now, ct))
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
-            return;
-        }
-
         if (totpService.VerifyCode(secret, req.Code, totp.LastUsedTimeStep, out var matchedStep))
         {
             totp.RecordUsedTimeStep(matchedStep, now);
@@ -110,13 +144,35 @@ internal sealed class LoginTotpEndpoint(
         }
         else
         {
-            await loginThrottle.RecordFailureAsync(user.Email, ip, now, ct);
+            var failure = await loginThrottle.RecordFailureAsync(
+                user.Email,
+                ip,
+                LoginFailureAttribution.Known(
+                    user.OrganizationId,
+                    user.Id,
+                    LoginAttemptFactor.Totp,
+                    user.PreferredLanguage.Code,
+                    user.EmailVerified),
+                now,
+                ct);
+            if (failure.IsLocked)
+            {
+                await SendRateLimitedAsync(failure.RetryAfterSeconds, ct);
+                return;
+            }
+
             await Send.UnauthorizedAsync(ct);
             return;
         }
 
+        var reset = await loginThrottle.StageResetAsync(domainWriteContext, user.Email, now, ct);
+        if (reset.IsLocked)
+        {
+            await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);
+            return;
+        }
+
         challenge.Consume(now);
-        await loginThrottle.ResetAsync(user.Email, ip, now, ct);
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
@@ -125,9 +181,23 @@ internal sealed class LoginTotpEndpoint(
             user.Organization.PlanType,
             membership.AuthorizationVersion,
             now);
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception))
+        {
+            await SendRateLimitedAsync(ConcurrentAuthRetryAfterSeconds, ct);
+            return;
+        }
 
         await Send.OkAsync(
             new AuthSessionResponse(accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified), ct);
+    }
+
+    private async Task SendRateLimitedAsync(int retryAfterSeconds, CancellationToken ct)
+    {
+        HttpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
     }
 }

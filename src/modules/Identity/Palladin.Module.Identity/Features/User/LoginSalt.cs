@@ -16,7 +16,7 @@ public sealed record LoginSaltRequest
 
 [PublicAPI]
 public sealed record LoginSaltResponse(
-    Guid? AccountId,
+    Guid AccountId,
     string ProfileId,
     ushort SecurityVersion,
     string KdfSalt,
@@ -42,14 +42,15 @@ internal sealed class LoginSaltEndpoint(ILoginSaltService loginSaltService)
     {
         Post("api/auth/login/salt");
         // Anonymous by design: the client needs the auth salt to derive its authHash before it can
-        // authenticate. Unknown emails receive a deterministic pseudo-salt, so this never reveals
-        // whether an account exists.
+        // authenticate. Unknown emails receive deterministic pseudo AccountId and salt values, so
+        // the response shape never reveals whether an account exists.
         AllowAnonymous();
         Summary(summary =>
         {
             summary.Summary = "Fetch the login auth salt";
-            summary.Description = "Returns the client-side auth salt for an email. Unknown or non-password "
-                + "accounts get a stable pseudo-random salt (HMAC of the email) so registration status leaks nothing.";
+            summary.Description = "Returns the public client-side KDF bootstrap for an email. Unknown or "
+                + "non-password accounts get stable pseudo-random AccountId and salt values so registration "
+                + "status leaks nothing.";
         });
         Tags("Identity/Auth");
     }

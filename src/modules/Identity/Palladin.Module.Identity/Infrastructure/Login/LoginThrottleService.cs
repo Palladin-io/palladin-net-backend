@@ -1,57 +1,117 @@
+using JetBrains.Annotations;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using NodaTime;
 using Palladin.Core.Guid;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure.Persistence;
-using JetBrains.Annotations;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using NodaTime;
 
 namespace Palladin.Module.Identity.Infrastructure.Login;
 
 [UsedImplicitly]
 internal sealed class LoginThrottleService(
-    IdentityDbWriteContext writeContext,
-    IdentityDomainWriteContext domainWriteContext,
+    IServiceScopeFactory scopeFactory,
     IGuidProvider guidProvider,
-    IOptions<LoginThrottleOptions> options) : ILoginThrottleService
+    IOptions<LoginThrottleOptions> options)
 {
-    public async Task<bool> IsLockedAsync(string normalizedEmail, string ipAddress, Instant now, CancellationToken ct)
+    public async Task<LoginThrottleResult> GetStatusAsync(
+        string normalizedEmail,
+        Instant now,
+        CancellationToken ct)
     {
-        var lockedUntil = await writeContext.LoginLockouts
-            .Where(x => x.Email == normalizedEmail && x.IpAddress == ipAddress)
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
+        var lockedUntil = await readContext.LoginLockouts
+            .Where(x => x.Email == normalizedEmail)
             .Select(x => x.LockedUntil)
             .FirstOrDefaultAsync(ct);
 
-        return lockedUntil is { } until && now < until;
+        return lockedUntil is { } until && now < until
+            ? LoginThrottleResult.Locked(until, now)
+            : LoginThrottleResult.Available();
     }
 
-    public async Task RecordFailureAsync(string normalizedEmail, string ipAddress, Instant now, CancellationToken ct)
+    public async Task<LoginThrottleResult> RecordFailureAsync(
+        string normalizedEmail,
+        string ipAddress,
+        LoginFailureAttribution attribution,
+        Instant now,
+        CancellationToken ct)
     {
-        var opts = options.Value;
-        var lockout = await writeContext.LoginLockouts
-            .FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IpAddress == ipAddress, ct);
+        var throttleOptions = options.Value;
+        for (var attempt = 0; attempt < throttleOptions.ConcurrencyRetryLimit; attempt++)
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+            var lockout = await writeContext.LoginLockouts
+                .FirstOrDefaultAsync(x => x.Email == normalizedEmail, ct);
+
+            if (lockout is null)
+            {
+                lockout = LoginLockout.Create(guidProvider.Generate(), normalizedEmail, now);
+                writeContext.Add(lockout);
+            }
+            var decision = lockout.RecordFailure(
+                throttleOptions.MaxAttempts,
+                Duration.FromMinutes(throttleOptions.WindowMinutes),
+                Duration.FromMinutes(throttleOptions.LockoutMinutes),
+                guidProvider.Generate(),
+                ipAddress,
+                attribution,
+                now);
+
+            try
+            {
+                await writeContext.CommitAsync(ct);
+                return decision.IsLocked
+                    ? LoginThrottleResult.Locked(decision.LockedUntil!.Value, now)
+                    : LoginThrottleResult.Available();
+            }
+            catch (Exception exception) when (LoginProtectionConcurrency.IsRetryable(exception))
+            {
+                await Task.Yield();
+            }
+        }
+
+        return LoginThrottleResult.FailClosed();
+    }
+
+    public async Task<LoginThrottleResult> StageResetAsync(
+        IdentityDomainWriteContext domainWriteContext,
+        string normalizedEmail,
+        Instant now,
+        CancellationToken ct)
+    {
+        var lockout = await domainWriteContext.LoginLockouts
+            .FirstOrDefaultAsync(x => x.Email == normalizedEmail, ct);
 
         if (lockout is null)
         {
-            lockout = LoginLockout.Create(guidProvider.Generate(), normalizedEmail, ipAddress, now);
-            domainWriteContext.Add(lockout);
+            // The empty row is a transaction-local fence for the previously absent account. If a
+            // concurrent failed attempt inserts the same account first, the endpoint's final commit
+            // loses on the unique constraint and no authenticated session is published.
+            domainWriteContext.Add(LoginLockout.Create(
+                guidProvider.Generate(), normalizedEmail, now));
+            return LoginThrottleResult.Available();
         }
 
-        lockout.RecordFailure(
-            opts.MaxAttempts,
-            Duration.FromMinutes(opts.WindowMinutes),
-            Duration.FromMinutes(opts.LockoutMinutes),
-            now);
+        if (lockout.IsLocked(now))
+        {
+            return LoginThrottleResult.Locked(lockout.LockedUntil!.Value, now);
+        }
 
-        await domainWriteContext.CommitAsync(ct);
+        lockout.Reset(now);
+        return LoginThrottleResult.Available();
     }
+}
 
-    // Mutates the tracked lockout only; the caller's CommitAsync persists it in one unit of work.
-    public async Task ResetAsync(string normalizedEmail, string ipAddress, Instant now, CancellationToken ct)
-    {
-        var lockout = await writeContext.LoginLockouts
-            .FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IpAddress == ipAddress, ct);
+internal readonly record struct LoginThrottleResult(bool IsLocked, int RetryAfterSeconds)
+{
+    internal static LoginThrottleResult Available() => new(false, 0);
 
-        lockout?.Reset(now);
-    }
+    internal static LoginThrottleResult Locked(Instant lockedUntil, Instant now) =>
+        new(true, Math.Max(1, (int)Math.Ceiling((lockedUntil - now).TotalSeconds)));
+
+    internal static LoginThrottleResult FailClosed() => new(true, 1);
 }

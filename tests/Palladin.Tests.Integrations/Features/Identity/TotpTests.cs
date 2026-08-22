@@ -38,6 +38,10 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
             new LoginRequest { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = authHash });
         login.TotpRequired.ShouldBeTrue();
 
+        var (failedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(
+            new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = "not-a-code" });
+        failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
         // When — a fresh (next-step) code, since the confirm code's step is now consumed
         var (response, result) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(
             new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = NextCode(enroll.Secret) });
@@ -45,6 +49,18 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         result.AccessToken.ShouldNotBeNullOrWhiteSpace();
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
+        var lockout = await readContext.LoginLockouts.SingleAsync(
+            candidate => candidate.Email == email,
+            TestContext.Current.CancellationToken);
+        lockout.FailedCount.ShouldBe(0);
+        lockout.LockedUntil.ShouldBeNull();
+        lockout.Version.ShouldBe(2u);
+        (await readContext.RefreshTokens.AnyAsync(
+            token => token.UserId == user.Id,
+            TestContext.Current.CancellationToken)).ShouldBeTrue();
     }
 
     [Fact]
@@ -97,6 +113,53 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         result.AccessToken.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task When_RepeatedLoginTotpFailuresReachThreshold_Then_Returns429WithRetryAfter()
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = KeyGeneration.GenerateRandomKey(32);
+        var email = $"totp-lock-{Guid.NewGuid():N}@example.com";
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
+        var authedClient = apiFactory.CreateAuthenticatedClient(user);
+        var enroll = await EnrollAsync(authedClient);
+        await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
+            new ConfirmTotpRequest { Code = Code(enroll.Secret) });
+
+        var anonClient = apiFactory.CreateClient();
+        var (_, login) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = authHash,
+            });
+        var request = new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = "000000" };
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var (failedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(request);
+            failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        var (renewedLoginResponse, renewedLogin) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = authHash,
+            });
+        renewedLoginResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var (lockedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(
+            request with { ChallengeToken = renewedLogin.ChallengeToken! });
+        lockedResponse.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        lockedResponse.Headers.RetryAfter.ShouldNotBeNull();
+        lockedResponse.Headers.RetryAfter.Delta.ShouldNotBeNull();
+        lockedResponse.Headers.RetryAfter.Delta.Value.ShouldBeGreaterThan(TimeSpan.Zero);
     }
 
     [Fact]

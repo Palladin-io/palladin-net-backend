@@ -4,10 +4,18 @@ using NodaTime;
 
 namespace Palladin.Module.Identity.Contracts.Events;
 
-// EmailHash (not the email) is the analytics distinct id — a lockout can happen for an unknown email
-// and the address itself must stay out of analytics/logs.
+// EmailHash is the analytics distinct id. Recipient fields are populated only for a known account
+// and exist solely for the security email; analytics must never receive them or the source IPs.
 [PublicAPI]
 public sealed record LoginLockedOutEvent(
+    Guid LockoutOccurrenceId,
     string EmailHash,
+    string[] SourceIpAddresses,
+    Guid? TargetUserId,
+    string? RecipientEmail,
+    string? PreferredLanguage,
+    int AttemptCount,
+    int WindowMinutes,
+    int LockoutMinutes,
     Instant LockedUntil,
     Instant OccurredAt) : IIntegrationEvent;

@@ -32,21 +32,23 @@ internal sealed class AppendAuditLogConsumer(
         var msg = context.Message;
         var ct = context.CancellationToken;
 
-        var alreadyLogged = await domainReadContext.AuditLogEntries.AnyAsync(
-            e => e.OrganizationId == msg.OrganizationId
-                 && e.EventType == msg.EventType
-                 && e.VaultId == msg.VaultId
-                 && e.AgentId == msg.AgentId
-                 && e.EntryId == msg.EntryId
-                 && e.OccurredAt == msg.OccurredAt,
-            ct);
+        var alreadyLogged = msg.IdempotencyKey is { } idempotencyKey
+            ? await domainReadContext.AuditLogEntries.AnyAsync(e => e.Id == idempotencyKey, ct)
+            : await domainReadContext.AuditLogEntries.AnyAsync(
+                e => e.OrganizationId == msg.OrganizationId
+                     && e.EventType == msg.EventType
+                     && e.VaultId == msg.VaultId
+                     && e.AgentId == msg.AgentId
+                     && e.EntryId == msg.EntryId
+                     && e.OccurredAt == msg.OccurredAt,
+                ct);
         if (alreadyLogged)
         {
             return;
         }
 
         domainWriteContext.Add(AuditLogEntry.Create(
-            guidProvider.Generate(),
+            msg.IdempotencyKey ?? guidProvider.Generate(),
             msg.OrganizationId,
             msg.EventType,
             msg.ActorType,

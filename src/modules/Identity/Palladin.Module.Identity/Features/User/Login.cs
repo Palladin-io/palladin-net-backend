@@ -1,4 +1,5 @@
 using Palladin.Core.Guid;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.Jwt;
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Options;
 using NodaTime;
 using System.Text.Json.Serialization;
 using Palladin.Core.Json;
+using System.Globalization;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -47,7 +49,7 @@ internal sealed class LoginValidator : Validator<LoginRequest>
         RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.CurrentSecurityVersion);
         RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.CurrentProfileId);
         RuleFor(x => x.AuthCredential).Must(value => value is
-            { Length: IdentityKdfProfiles.AuthCredentialBytes });
+        { Length: IdentityKdfProfiles.AuthCredentialBytes });
     }
 }
 
@@ -56,11 +58,14 @@ internal sealed class LoginEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,
     IAuthSessionIssuer sessionIssuer,
-    ILoginThrottleService loginThrottle,
+    LoginRateLimiter loginRateLimiter,
+    LoginThrottleService loginThrottle,
     IGuidProvider guidProvider,
     IOptions<TotpOptions> totpOptions,
     IClock clock) : Endpoint<LoginRequest, LoginResponse>
 {
+    private const int ConcurrentAuthRetryAfterSeconds = 1;
+
     // Fixed material to equalise verification time when no password credential exists, so a missing
     // account is timing-indistinguishable from a wrong authHash.
     private static readonly byte[] DummyHash = new byte[32];
@@ -70,14 +75,14 @@ internal sealed class LoginEndpoint(
     {
         Post("api/auth/login");
         // Anonymous by design: this IS the authentication. Responses are generic to avoid account
-        // enumeration; failures are rate-limited and locked out per (email, ip).
+        // enumeration; failures are rate-limited per IP/account and locked out per account.
         AllowAnonymous();
         Summary(summary =>
         {
             summary.Summary = "Log in with email + password";
             summary.Description = "Verifies the client authHash (constant-time). Returns a session, or a "
                 + "short-lived TOTP challenge when the second factor is enabled. Bad credentials return a "
-                + "generic 401; repeated failures per (email, ip) are locked out with 429.";
+                + "generic 401; repeated failures for the account are locked out with 429.";
         });
         Tags("Identity/Auth");
     }
@@ -88,9 +93,17 @@ internal sealed class LoginEndpoint(
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var now = clock.GetCurrentInstant();
 
-        if (await loginThrottle.IsLockedAsync(email, ip, now, ct))
+        var rateLimitLease = await loginRateLimiter.AcquireLoginAsync(email, ip, now, ct);
+        if (!rateLimitLease.IsAcquired)
         {
-            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            await SendRateLimitedAsync(rateLimitLease.RetryAfterSeconds, ct);
+            return;
+        }
+
+        var throttleStatus = await loginThrottle.GetStatusAsync(email, now, ct);
+        if (throttleStatus.IsLocked)
+        {
+            await SendRateLimitedAsync(throttleStatus.RetryAfterSeconds, ct);
             return;
         }
 
@@ -102,6 +115,10 @@ internal sealed class LoginEndpoint(
             .Select(credential => new
             {
                 Credential = credential,
+                credential.UserId,
+                credential.User.OrganizationId,
+                credential.User.PreferredLanguage,
+                credential.User.EmailVerified,
                 credential.User.SecurityVersion,
                 credential.User.KdfProfileId,
             })
@@ -117,7 +134,21 @@ internal sealed class LoginEndpoint(
             || credentialState.KdfProfileId != req.KdfProfileId
             || !credentialVerified)
         {
-            await loginThrottle.RecordFailureAsync(email, ip, now, ct);
+            var attribution = credentialState is null
+                ? LoginFailureAttribution.Unknown(LoginAttemptFactor.Password)
+                : LoginFailureAttribution.Known(
+                    credentialState.OrganizationId,
+                    credentialState.UserId,
+                    LoginAttemptFactor.Password,
+                    credentialState.PreferredLanguage.Code,
+                    credentialState.EmailVerified);
+            var failure = await loginThrottle.RecordFailureAsync(email, ip, attribution, now, ct);
+            if (failure.IsLocked)
+            {
+                await SendRateLimitedAsync(failure.RetryAfterSeconds, ct);
+                return;
+            }
+
             await Send.UnauthorizedAsync(ct);
             return;
         }
@@ -139,8 +170,6 @@ internal sealed class LoginEndpoint(
             return;
         }
 
-        await loginThrottle.ResetAsync(email, ip, now, ct);
-
         if (user.TotpCredential is { IsEnabled: true })
         {
             var (challengeToken, challengeHash) = SecureToken.Generate();
@@ -153,6 +182,13 @@ internal sealed class LoginEndpoint(
             return;
         }
 
+        var reset = await loginThrottle.StageResetAsync(domainWriteContext, email, now, ct);
+        if (reset.IsLocked)
+        {
+            await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);
+            return;
+        }
+
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
             user.OrganizationId,
@@ -160,10 +196,24 @@ internal sealed class LoginEndpoint(
             user.Organization.PlanType,
             membership.AuthorizationVersion,
             now);
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception))
+        {
+            await SendRateLimitedAsync(ConcurrentAuthRetryAfterSeconds, ct);
+            return;
+        }
 
         await Send.OkAsync(
             new LoginResponse(false, null, accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified),
             ct);
+    }
+
+    private async Task SendRateLimitedAsync(int retryAfterSeconds, CancellationToken ct)
+    {
+        HttpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
     }
 }

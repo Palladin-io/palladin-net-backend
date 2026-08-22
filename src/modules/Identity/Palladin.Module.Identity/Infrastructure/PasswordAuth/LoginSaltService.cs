@@ -38,9 +38,16 @@ internal sealed class LoginSaltService(
     private Guid PseudoAccountId(string normalizedEmail, string profileId)
     {
         var bytes = PseudoBytes("account-id", normalizedEmail, profileId, 16);
-        bytes[6] = (byte)((bytes[6] & 0x0f) | 0x40);
-        bytes[8] = (byte)((bytes[8] & 0x3f) | 0x80);
-        return new Guid(bytes, bigEndian: true);
+        try
+        {
+            bytes[6] = (byte)((bytes[6] & 0x0f) | 0x40);
+            bytes[8] = (byte)((bytes[8] & 0x3f) | 0x80);
+            return new Guid(bytes, bigEndian: true);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
     }
 
     private byte[] PseudoBytes(
@@ -52,8 +59,15 @@ internal sealed class LoginSaltService(
         var key = Encoding.UTF8.GetBytes(options.Value.EnumerationSecret);
         var input = Encoding.UTF8.GetBytes($"{purpose}\0{profileId}\0{normalizedEmail}");
         var mac = HMACSHA256.HashData(key, input);
-        CryptographicOperations.ZeroMemory(key);
-        CryptographicOperations.ZeroMemory(input);
-        return mac[..length];
+        try
+        {
+            return mac[..length];
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(input);
+            CryptographicOperations.ZeroMemory(mac);
+        }
     }
 }

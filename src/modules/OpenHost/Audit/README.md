@@ -14,7 +14,7 @@ Audit does NOT listen to `Vault*`/`Agent*`/`Identity*` events. Each owning modul
 |---|---|---|
 | Vault | `On{Vault,Entry}Upserted{,Audit}`, `On{Vault,Entry}Deleted…Audit`, `OnVaultExportedAudit`, `OnGrant{Created,Requested,Approved,Denied,Revoked,Consumed,Expired}Audit`, `OnCredentialAccessed{,Denied}Audit` | `vault.*`, `entry.*`, `grant.*`, `credential.*` |
 | Agents | `OnAgentUpsertedAudit` (pending→`agent.enrolled`), `OnAgent{Deactivated,Reactivated,Deleted}Audit`, `OnApiKey{Created,Activated,Deleted,Revoked}Audit` | `agent.*`, `apikey.*` |
-| Identity | `OnOrganization{Created,Updated}Audit`, `OnUserSignedUpAudit`, `OnAccount{SetupCompleted,RecoveryCompleted}Audit` | `org.*`, `user.*`, `account.*` |
+| Identity | `OnLoginAttemptFailedAudit`, `OnOrganization{Created,Updated}Audit`, `OnUserSignedUpAudit`, `OnAccount{SetupCompleted,RecoveryCompleted}Audit` | `auth.login-failed`, `org.*`, `user.*`, `account.*` |
 
 Vault's entry / credential-denied events carry no `OrganizationId`; that owning trigger resolves it from the Vault read-model before publishing.
 
@@ -37,7 +37,7 @@ EF Core + Postgres, MassTransit, **Hangfire** (export job), **S3 via `ICdnServic
 
 ## Critical points / invariants
 - Rows are append-only through the domain/application model — never expose an update or delete path for `AuditLogEntry`. PostgreSQL does not implement this rule with executable database behavior.
-- The single `AppendAuditLogConsumer` writes rows, idempotent on the natural key `(OrganizationId, EventType, VaultId, AgentId, EntryId, OccurredAt)`. Never insert rows elsewhere and never add an `IConsumer<ForeignEvent>` here — publish `AppendAuditLogCommand` from the owning module instead.
+- The single `AppendAuditLogConsumer` writes rows. A producer with a stable occurrence ID supplies it as `IdempotencyKey`, which becomes the row ID; other producers retain the natural key `(OrganizationId, EventType, VaultId, AgentId, EntryId, OccurredAt)`. Never insert rows elsewhere and never add an `IConsumer<ForeignEvent>` here — publish `AppendAuditLogCommand` from the owning module instead.
 - Canonical Vault and Entry names are never stored or exported; clients resolve opaque IDs locally. Agent request reasons are likewise excluded. `AgentName` and `ActorName` remain solely for forensic attribution.
 - CSV export uses `AsNoTracking` projection and keyset pages of 500 rows; only the current page is materialized. The tracked export job is independent of row paging, so EF tracking cannot retain the full result set.
 - The canonical opaque cutover truncates legacy audit rows and export-job references, then the startup cutover purges prior external CSV objects before marking completion. This intentionally destructive migration has no downgrade path. Normal retention operates only on post-cutover opaque records and exports.

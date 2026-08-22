@@ -19,6 +19,7 @@ internal sealed class IdentityDbWriteContext(DbContextOptions<IdentityDbWriteCon
     public DbSet<TotpRecoveryCode> TotpRecoveryCodes => Set<TotpRecoveryCode>();
     public DbSet<VerificationToken> VerificationTokens => Set<VerificationToken>();
     public DbSet<LoginLockout> LoginLockouts => Set<LoginLockout>();
+    public DbSet<LoginRateLimitBucket> LoginRateLimitBuckets => Set<LoginRateLimitBucket>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

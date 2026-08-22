@@ -19,4 +19,5 @@ internal sealed class IdentityDomainReadContext(IdentityDbReadContext readContex
     public IQueryable<TotpRecoveryCode> TotpRecoveryCodes => Query<TotpRecoveryCode>();
     public IQueryable<VerificationToken> VerificationTokens => Query<VerificationToken>();
     public IQueryable<LoginLockout> LoginLockouts => Query<LoginLockout>();
+    public IQueryable<LoginRateLimitBucket> LoginRateLimitBuckets => Query<LoginRateLimitBucket>();
 }

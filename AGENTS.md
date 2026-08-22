@@ -87,7 +87,7 @@ The previously approved pre-production database reset used one `Initial` EF Core
 - `src/modules/{ModuleName}/` — Domain module group containing the implementation project, contracts project and module README. Active domain groups: Identity, Vault and Agents.
 - `src/modules/OpenHost/{ModuleName}/` — Shared Open Host Service group with the same internal layout. Active OpenHost groups: Audit, Notification, Search and PublicAssetCatalog. Billing is planned, not yet present in `src/modules/`.
 - `tests/Palladin.Api.Tests/` — Main integration test suite
-- `tests/Palladin.Tests.Architecture/` — Module boundary compliance tests
+- `tests/Palladin.Tests.Unit/Architecture/` and `tests/Palladin.Tests.Integrations/Architecture/` — module boundary and endpoint security compliance tests
 
 ### Module group structure
 ```
@@ -303,6 +303,7 @@ Cross-cutting pieces already exist in `src/core/`. Use them — re-implementing 
 ## Code Style
 - Latest C# features: primary constructors, records, pattern matching, file-scoped namespaces, global usings
 - `internal sealed` for module-internal classes
+- Do not introduce an interface by default for a class with one module-internal implementation. Add one only for a real module/external boundary, runtime-selected multiple implementations, or a deliberate test seam that tests actually substitute. DI registration or hypothetical future mocking is not sufficient; inject and register the concrete internal class instead.
 - `var` when type is obvious
 - LINQ and lambda for collections
 - No comments — self-documenting code through naming

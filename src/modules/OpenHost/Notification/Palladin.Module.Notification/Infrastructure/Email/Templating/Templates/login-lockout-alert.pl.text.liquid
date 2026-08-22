@@ -1,0 +1,16 @@
+Tymczasowo zablokowaliśmy logowanie hasłem i TOTP do Twojego konta
+
+{{ appName }} wykrył {{ attemptCount }} nieudanych prób logowania w oknie {{ windowMinutes }} min i tymczasowo zablokował dalsze próby logowania hasłem oraz TOTP do Twojego konta.
+
+Liczba nieudanych prób: {{ attemptCount }}
+Okno czasowe: {{ windowMinutes }} min
+Źródłowe adresy IP: {{ ipAddresses }}
+Czas blokady: {{ occurredAt }}
+Blokada wygaśnie: {{ lockedUntil }}
+
+Ograniczenie dotyczy prób logowania hasłem oraz TOTP do Twojego konta niezależnie od źródłowego adresu IP.
+
+Jeśli rozpoznajesz tę aktywność, nie musisz nic robić. Jeśli nie, otwórz {{ appName }} samodzielnie i sprawdź Audit Log. Upewnij się też, że używasz unikalnego hasła i masz włączone TOTP.
+
+Ten alert nie zawiera linku do odblokowania. Blokada wygaśnie automatycznie o podanym czasie.
+{% include '_footer.pl.text.liquid' %}

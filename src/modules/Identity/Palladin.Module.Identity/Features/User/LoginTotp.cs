@@ -175,7 +175,7 @@ internal sealed class LoginTotpEndpoint(
         {
             await domainWriteContext.CommitAsync(ct);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception))
         {
             await SendRateLimitedAsync(ConcurrentAuthRetryAfterSeconds, ct);
             return;

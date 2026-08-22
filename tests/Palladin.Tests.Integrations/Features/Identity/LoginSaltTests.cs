@@ -29,7 +29,7 @@ public sealed class LoginSaltTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         result.KdfSalt.ShouldBe(WebEncoders.Base64UrlEncode(authSalt));
-        result.AccountId.ShouldNotBeNull();
+        result.AccountId.ShouldNotBe(Guid.Empty);
         result.ProfileId.ShouldBe("identity-argon2id-password-v1");
     }
 
@@ -55,8 +55,8 @@ public sealed class LoginSaltTests(ApiFactory apiFactory) : TestBase
         firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         first.KdfSalt.ShouldBe(second.KdfSalt);
         first.AccountId.ShouldBe(second.AccountId);
-        first.AccountId.ShouldNotBeNull();
-        first.AccountId!.Value.ToString("N")[12].ShouldBe('4');
+        first.AccountId.ShouldNotBe(Guid.Empty);
+        first.AccountId.ToString("N")[12].ShouldBe('4');
         WebEncoders.Base64UrlDecode(first.KdfSalt).Length.ShouldBe(16);
     }
 

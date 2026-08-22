@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Palladin.Core.Hangfire;
 using Palladin.Core.Security;
+using Palladin.Module.Identity.Features;
 
 namespace Palladin.Module.Identity.Infrastructure.Login;
 
@@ -22,6 +24,18 @@ internal static class LoginModule
         services.AddScoped<ILoginThrottleService, LoginThrottleService>();
         services.AddScoped<ILoginRateLimiter, LoginRateLimiter>();
         services.AddSingleton<IEmailVerificationGate, EmailVerificationGate>();
+
+        var cleanupSection = configuration.GetSection(CleanupLoginRateLimitBucketsJobOptions.Position);
+        services.AddScopedCronJob<CleanupLoginRateLimitBucketsJob, CleanupLoginRateLimitBucketsJobOptions>(
+            cleanupSection);
+        services.AddOptions<CleanupLoginRateLimitBucketsJobOptions>()
+            .Validate(
+                cleanup => !cleanup.Enabled
+                    || (!string.IsNullOrWhiteSpace(cleanup.Expression)
+                        && cleanup.RetentionMinutes is > 0 and <= 1440
+                        && cleanup.BatchSize is > 0 and <= 5000),
+                "Login rate-limit bucket cleanup requires a valid schedule, retention, and bounded batch size.")
+            .ValidateOnStart();
 
         return services;
     }

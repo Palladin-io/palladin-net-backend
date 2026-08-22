@@ -5,10 +5,23 @@ namespace Palladin.Module.Identity.Infrastructure.Login;
 
 internal static class LoginProtectionConcurrency
 {
+    private const string LoginLockoutPairConstraint = "IX_LoginLockouts_Email_IpAddress";
+
     internal static bool IsRetryable(Exception exception) =>
         exception is DbUpdateConcurrencyException
         || exception is DbUpdateException
         {
             InnerException: PostgresException { SqlState: PostgresErrorCodes.UniqueViolation },
+        };
+
+    internal static bool IsAuthenticationFenceConflict(Exception exception) =>
+        exception is DbUpdateConcurrencyException
+        || exception is DbUpdateException
+        {
+            InnerException: PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: LoginLockoutPairConstraint,
+            },
         };
 }

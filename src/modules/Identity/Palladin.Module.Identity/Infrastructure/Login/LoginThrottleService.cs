@@ -91,6 +91,11 @@ internal sealed class LoginThrottleService(
 
         if (lockout is null)
         {
+            // The empty row is a transaction-local fence for the previously absent pair. If a
+            // concurrent failed attempt inserts the same pair first, the endpoint's final commit
+            // loses on the unique constraint and no authenticated session is published.
+            domainWriteContext.Add(LoginLockout.Create(
+                guidProvider.Generate(), normalizedEmail, ipAddress, now));
             return LoginThrottleResult.Available();
         }
 

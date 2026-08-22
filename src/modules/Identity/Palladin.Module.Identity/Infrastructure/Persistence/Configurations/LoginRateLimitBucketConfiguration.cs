@@ -14,5 +14,6 @@ internal sealed class LoginRateLimitBucketConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.PartitionKey).IsRequired().HasMaxLength(64);
         builder.Property(x => x.Version).IsConcurrencyToken();
         builder.HasIndex(x => x.PartitionKey).IsUnique();
+        builder.HasIndex(x => x.UpdatedAt);
     }
 }

@@ -66,8 +66,8 @@ EF Core + Postgres, MassTransit publish, custom JWT (`TokenService`), Google OAu
 - **PasswordCredential** (1:1 User) — independently salted server Argon2id verifier of the request-only client `AuthCredential`, plus the public client KDF salt. Password users only; version/downgrade state remains account-wide on `User` so OAuth setup is covered too.
 - **TotpCredential** (1:1 User) + **TotpRecoveryCode** — pending/active TOTP secret, replay high-water mark, and one-time recovery-code hashes.
 - **VerificationToken** — single-use, hashed, TTL-bound token; `Purpose` (`EmailVerify` / `EmailChange` / `LoginTotpChallenge`) is always part of the lookup so a token can't be redeemed cross-purpose.
-- **LoginLockout** — failure-window counter per normalized (email, IP), protected by an optimistic `Version`; threshold activation publishes one hash-only `LoginLockedOutEvent` per lockout window.
-- **LoginRateLimitBucket** — PostgreSQL-backed fixed-window partition shared by all API replicas. Separate login/TOTP and IP/account partitions are HMAC-SHA-256 keyed, so the limiter table stores neither plaintext e-mail nor IP.
+- **LoginLockout** — failure-window counter per normalized (email, IP), protected by an optimistic `Version`; a successful authentication inserts an empty row when the pair was absent so the final session commit is fenced against a concurrent first failure. Threshold activation publishes one hash-only `LoginLockedOutEvent` per lockout window.
+- **LoginRateLimitBucket** — PostgreSQL-backed fixed-window partition shared by all API replicas. Separate login/TOTP and IP/account partitions are HMAC-SHA-256 keyed, so the limiter table stores neither plaintext e-mail nor IP. A five-minute job removes partitions idle for 15 minutes in bounded, `UpdatedAt`-indexed batches.
 
 ## Contracts (namespaces / types)
 - Public enums consumed cross-module: `Palladin.Module.Identity.Domain.Enums` (`PlanType`, `AuthProvider`) — Audit reads these.

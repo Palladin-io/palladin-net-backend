@@ -21,6 +21,16 @@ Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/pa
 - Use local-only `appsettings.Local.json` or environment variables for developer overrides; `appsettings.Local.json` is ignored by Git.
 - A deployment is healthy only after the API health endpoint succeeds and the application remains running.
 
+## Public Repository Configuration
+
+Assume this repository and its complete Git history will be public.
+
+- Public client identifiers such as OAuth client IDs, Firebase app/API IDs, and analytics project keys are not secrets, but Palladin-owned environment values must not be committed to generic runnable defaults or examples unless the platform requires checked-in public client configuration and a security review documents why.
+- Tracked configuration must use empty values or unmistakable placeholders. Put real local developer values in the ignored `appsettings.Local.json`, user-secrets, or environment variables. Inject staging and production values through the approved deployment configuration or secret store.
+- A fresh clone or fork must never silently use Palladin's cloud project, OAuth consent screen, quota, telemetry destination, or callback configuration.
+- Before approving any tracked cloud identifier, verify environment separation and provider-side restrictions such as authorized origins, redirect URIs, application identifiers, referrer restrictions, and API allowlists.
+- Client secrets, private keys, service-account files, access tokens, signing material, and credentials are secrets regardless of surrounding configuration and must never be tracked.
+
 ## Build, Test, and Run Commands
 
 ```bash

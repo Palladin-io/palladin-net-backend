@@ -36,8 +36,10 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
-builder.Configuration.AddJsonFile("Configuration/pushtext.json", optional: false, reloadOnChange: true);
+builder.Configuration
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddJsonFile("Configuration/pushtext.json", optional: false, reloadOnChange: true)
+    .AddEnvironmentVariables();
 
 var configuration = builder.Configuration;
 

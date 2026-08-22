@@ -10,8 +10,12 @@ internal static class OAuthModule
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<GoogleOAuthOptions>(
-            configuration.GetSection(GoogleOAuthOptions.Position));
+        services.AddOptions<GoogleOAuthOptions>()
+            .Bind(configuration.GetSection(GoogleOAuthOptions.Position))
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.ClientId),
+                "Google OAuth client ID must be configured.")
+            .ValidateOnStart();
 
         services.AddScoped<IExternalOAuthProvider, GoogleOAuthProvider>();
 

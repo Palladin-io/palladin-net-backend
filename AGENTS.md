@@ -57,7 +57,15 @@ Palladin has not entered production and has no Vault data that requires compatib
 
 ### Pre-production migration history
 
-The approved pre-production database reset uses one `Initial` EF Core migration per active module context. After an explicitly approved squash, replace the complete migration history and model snapshot together, then recreate local and staging databases from the new Initial migrations.
+Checked-in migration history is append-only by default. Never delete, rename, reorder, edit, regenerate, consolidate or squash any pre-existing migration unless the product owner explicitly requests that exact migration-history rewrite in the current task.
+
+- A feature, refactor, bug fix, model change, migration generation, database reset or request to clean/recreate a local, test or staging database is **not** permission to rewrite migration history.
+- A non-production or disposable environment is **not** permission to rewrite migration history.
+- Historical approval for an earlier squash is exhausted once that squash is complete; it is never standing approval for another one.
+- The default response to a schema change is a new incremental migration. If rewriting history appears necessary, stop and ask first, naming the affected module contexts and environments and explaining how databases that applied the old history must be reset or reconciled.
+- Never apply rewritten migration history to an existing database until the owner has also explicitly approved the reset or reconciliation scope for that database.
+
+The previously approved pre-production database reset used one `Initial` EF Core migration per active module context. After a newly and explicitly approved squash, replace the complete migration history and model snapshot together, then recreate only the local and staging databases included in that approval.
 
 - Do not preserve historical cutover migrations or compatibility SQL after an approved squash.
 - After the squash, evolve schemas with normal incremental migrations. Do not squash again unless the owner explicitly requests another destructive pre-production reset.

@@ -12,7 +12,7 @@ public class MassTransitOptions
     public KillSwitchOptions KillSwitch { get; init; } = new();
     public CircuitBreakerOptions CircuitBreaker { get; init; } = new();
     public RateLimiterOptions RateLimiter { get; init; } = new();
-    public bool EnableDelayedMessageScheduler { get; init; } = true;
+    public bool EnableDelayedMessageScheduler { get; init; }
 }
 
 [PublicAPI]

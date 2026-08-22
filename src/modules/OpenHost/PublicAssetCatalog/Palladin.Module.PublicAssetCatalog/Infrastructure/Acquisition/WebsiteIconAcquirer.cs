@@ -26,7 +26,7 @@ internal enum WebsiteIconAcquisitionResult
 {
     NotRequired = 0,
     Acquired = 1,
-    RetryRequired = 2,
+    Failed = 2,
 }
 
 /// <summary>Best-effort public favicon acquisition with DNS pinning and redirect revalidation.</summary>
@@ -72,7 +72,7 @@ internal sealed class WebsiteIconAcquirer(
             var dimensions = await ValidateImmutableImageAsync(existing, ct);
             if (dimensions is null)
             {
-                return WebsiteIconAcquisitionResult.RetryRequired;
+                return WebsiteIconAcquisitionResult.Failed;
             }
             await CompleteAggregateAsync(asset, existing, dimensions.Value.Width, dimensions.Value.Height, key, ct);
             return WebsiteIconAcquisitionResult.Acquired;
@@ -141,19 +141,19 @@ internal sealed class WebsiteIconAcquirer(
         }
         if (image is null)
         {
-            return WebsiteIconAcquisitionResult.RetryRequired;
+            return WebsiteIconAcquisitionResult.Failed;
         }
         using (image)
         {
             if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048 || (long)image.Width * image.Height > 4_000_000)
             {
-                return WebsiteIconAcquisitionResult.RetryRequired;
+                return WebsiteIconAcquisitionResult.Failed;
             }
             await using var sanitized = new MemoryStream();
             await image.SaveAsync(sanitized, new PngEncoder(), ct);
             if (sanitized.Length > MaximumDownloadBytes)
             {
-                return WebsiteIconAcquisitionResult.RetryRequired;
+                return WebsiteIconAcquisitionResult.Failed;
             }
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
             sanitized.Position = 0;
@@ -165,7 +165,7 @@ internal sealed class WebsiteIconAcquirer(
                 var dimensions = await ValidateImmutableImageAsync(published, ct);
                 if (dimensions is null)
                 {
-                    return WebsiteIconAcquisitionResult.RetryRequired;
+                    return WebsiteIconAcquisitionResult.Failed;
                 }
                 width = dimensions.Value.Width;
                 height = dimensions.Value.Height;

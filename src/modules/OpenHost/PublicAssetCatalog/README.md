@@ -58,10 +58,8 @@ or row lock and sets the marker only after the broker accepts the command. A con
 publish the same command, which is safe because acquisition and immutable storage publication are
 idempotent; the marker's optimistic concurrency token has one durable winner. A marked Pending reservation is never
 re-enqueued merely because time elapsed. An expected download, decode, validation or sanitization failure
-redelivers only that icon to the tail of the RabbitMQ queue after one, two and three seconds; other queued
-icons continue immediately. The delayed-message scheduler is enabled by default in shared MassTransit
-configuration so this policy cannot silently disappear when an environment omits the optional override.
-After the third redelivery the exhausted asset becomes `Failed`. An unexpected
+marks only that icon as `Failed` after its first acquisition attempt; the consumer does not schedule
+redelivery, and other queued icons continue immediately. An unexpected
 infrastructure fault still uses the shared MassTransit retry policy, and its fault consumer clears the dispatch
 marker after broker retries are exhausted so a later explicit ensure can recover it. Reservation creation is serialized
 per Member before hostname permits are charged, so concurrent requests cannot charge the same hostname twice.

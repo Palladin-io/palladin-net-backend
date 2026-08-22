@@ -11,11 +11,16 @@ using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using NSubstitute;
 using MassTransit;
+using Palladin.Core.MassTransit;
 
 namespace Palladin.Tests.Unit.PublicAssetCatalog;
 
 public sealed class PublicAssetSecurityTests
 {
+    [Fact]
+    public void When_Delayed_Redelivery_Is_Used_Then_The_Scheduler_Is_Enabled_By_Default() =>
+        new MassTransitOptions().EnableDelayedMessageScheduler.ShouldBeTrue();
+
     [Fact]
     public void When_Website_Icon_Is_Scheduled_Then_It_Uses_The_Durable_Command_Contract() =>
         new AcquireWebsiteIconV2Command(Guid.NewGuid(), "host-538.example.com").ShouldBeAssignableTo<IIntegrationCommand>();

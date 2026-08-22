@@ -95,7 +95,7 @@ internal sealed class LoginTotpEndpoint(
             return;
         }
 
-        var throttleStatus = await loginThrottle.GetStatusAsync(challengeOwner.Email, ip, now, ct);
+        var throttleStatus = await loginThrottle.GetStatusAsync(challengeOwner.Email, now, ct);
         if (throttleStatus.IsLocked)
         {
             await SendRateLimitedAsync(throttleStatus.RetryAfterSeconds, ct);
@@ -165,7 +165,7 @@ internal sealed class LoginTotpEndpoint(
             return;
         }
 
-        var reset = await loginThrottle.StageResetAsync(domainWriteContext, user.Email, ip, now, ct);
+        var reset = await loginThrottle.StageResetAsync(domainWriteContext, user.Email, now, ct);
         if (reset.IsLocked)
         {
             await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);

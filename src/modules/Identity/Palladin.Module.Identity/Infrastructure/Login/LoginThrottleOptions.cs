@@ -8,8 +8,8 @@ internal sealed class LoginThrottleOptions
 {
     public const string Position = "LoginThrottle";
 
-    public int MaxAttempts { get; init; } = 3;
-    public int WindowMinutes { get; init; } = 1;
+    public int MaxAttempts { get; init; } = 4;
+    public int WindowMinutes { get; init; } = 5;
     public int LockoutMinutes { get; init; } = 15;
     public int RateLimitWindowSeconds { get; init; } = 60;
     public int LoginIpPermitLimit { get; init; } = 30;

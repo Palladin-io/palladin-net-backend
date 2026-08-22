@@ -13,19 +13,19 @@ namespace Palladin.Tests.Unit.Modules.Identity;
 public sealed class LoginLockedOutTriggerTests
 {
     [Fact]
-    public async Task When_LockoutIsAnalyzed_Then_RecipientAndIpStayOutOfAnalytics()
+    public async Task When_LockoutIsAnalyzed_Then_RecipientAndSourceIpsStayOutOfAnalytics()
     {
         var analytics = Substitute.For<IAnalyticsService>();
         var occurredAt = Instant.FromUtc(2026, 8, 22, 12, 3);
         var @event = new LoginLockedOutEvent(
             Guid.NewGuid(),
             new string('c', 64),
-            "198.51.100.10",
+            ["198.51.100.10", "203.0.113.11"],
             Guid.NewGuid(),
             "member@example.com",
             "pl",
-            3,
-            1,
+            4,
+            5,
             15,
             occurredAt + Duration.FromMinutes(15),
             occurredAt);
@@ -51,12 +51,12 @@ public sealed class LoginLockedOutTriggerTests
         var @event = new LoginLockedOutEvent(
             Guid.NewGuid(),
             new string('c', 64),
-            "198.51.100.10",
+            ["198.51.100.10", "203.0.113.11"],
             targetUserId,
             "member@example.com",
             "pl",
-            3,
-            1,
+            4,
+            5,
             15,
             occurredAt + Duration.FromMinutes(15),
             occurredAt);
@@ -70,9 +70,9 @@ public sealed class LoginLockedOutTriggerTests
                 command.Email == "member@example.com"
                 && command.Template == EmailTemplates.LoginLockoutAlert
                 && command.Language == "pl"
-                && command.Model["attemptCount"] == "3"
-                && command.Model["windowMinutes"] == "1"
-                && command.Model["ipAddress"] == "198.51.100.10"
+                && command.Model["attemptCount"] == "4"
+                && command.Model["windowMinutes"] == "5"
+                && command.Model["ipAddresses"] == "198.51.100.10, 203.0.113.11"
                 && command.Model["occurredAt"] == "2026-08-22 12:03 UTC"
                 && command.Model["lockedUntil"] == "2026-08-22 12:18 UTC"
                 && !command.Model.ContainsKey("unlockUrl")
@@ -82,18 +82,18 @@ public sealed class LoginLockedOutTriggerTests
     }
 
     [Fact]
-    public async Task When_UnknownAccountPairIsLocked_Then_NoEmailIsPublished()
+    public async Task When_UnknownAccountIsLocked_Then_NoEmailIsPublished()
     {
         var occurredAt = Instant.FromUtc(2026, 8, 22, 12, 3);
         var @event = new LoginLockedOutEvent(
             Guid.NewGuid(),
             new string('c', 64),
-            "198.51.100.10",
+            ["198.51.100.10"],
             null,
             null,
             null,
-            3,
-            1,
+            4,
+            5,
             15,
             occurredAt + Duration.FromMinutes(15),
             occurredAt);

@@ -18,13 +18,13 @@ public sealed class LoginLockoutTests
         var lockout = LoginLockout.Create(
             Guid.NewGuid(),
             "member@example.com",
-            "198.51.100.10",
             now);
         lockout.RecordFailure(
             5,
             Duration.FromMinutes(15),
             Duration.FromMinutes(15),
             attemptId,
+            "198.51.100.10",
             LoginFailureAttribution.Known(
                 organizationId,
                 userId,
@@ -52,7 +52,6 @@ public sealed class LoginLockoutTests
         var lockout = LoginLockout.Create(
             Guid.NewGuid(),
             "member@example.com",
-            "198.51.100.10",
             createdAt);
 
         lockout.Reset(resetAt);
@@ -60,6 +59,7 @@ public sealed class LoginLockoutTests
         lockout.Version.ShouldBe(1u);
         lockout.FailedCount.ShouldBe(0);
         lockout.LockedUntil.ShouldBeNull();
+        lockout.SourceIpAddresses.ShouldBeEmpty();
         lockout.WindowStartedAt.ShouldBe(resetAt);
         lockout.UpdatedAt.ShouldBe(resetAt);
     }
@@ -71,7 +71,6 @@ public sealed class LoginLockoutTests
         var lockout = LoginLockout.Create(
             Guid.NewGuid(),
             "member@example.com",
-            "198.51.100.10",
             now);
         var attribution = LoginFailureAttribution.Known(
             Guid.NewGuid(),
@@ -80,22 +79,31 @@ public sealed class LoginLockoutTests
             "pl",
             true);
 
-        for (var attempt = 0; attempt < 5; attempt++)
+        var attemptSourceIpAddresses = new[]
+        {
+            "198.51.100.10",
+            "198.51.100.10",
+            "203.0.113.10",
+            "203.0.113.11",
+        };
+        foreach (var sourceIpAddress in attemptSourceIpAddresses)
         {
             lockout.RecordFailure(
-                5,
-                Duration.FromMinutes(15),
+                4,
+                Duration.FromMinutes(5),
                 Duration.FromMinutes(15),
                 Guid.NewGuid(),
+                sourceIpAddress,
                 attribution,
                 now);
         }
 
         lockout.RecordFailure(
-            5,
-            Duration.FromMinutes(15),
+            4,
+            Duration.FromMinutes(5),
             Duration.FromMinutes(15),
             Guid.NewGuid(),
+            "192.0.2.10",
             attribution,
             now);
         var @event = lockout.FetchEvents()
@@ -104,14 +112,45 @@ public sealed class LoginLockoutTests
             .ShouldBeOfType<LoginLockedOutEvent>();
 
         @event.EmailHash.ShouldNotContain("member@example.com");
-        @event.IpAddress.ShouldBe("198.51.100.10");
+        @event.SourceIpAddresses.ShouldBe(
+            ["198.51.100.10", "203.0.113.10", "203.0.113.11"]);
         @event.RecipientEmail.ShouldBe("member@example.com");
         @event.PreferredLanguage.ShouldBe("pl");
-        @event.AttemptCount.ShouldBe(5);
-        @event.WindowMinutes.ShouldBe(15);
+        @event.AttemptCount.ShouldBe(4);
+        @event.WindowMinutes.ShouldBe(5);
         @event.LockoutMinutes.ShouldBe(15);
         @event.LockedUntil.ShouldBe(now + Duration.FromMinutes(15));
+        lockout.SourceIpAddresses.ShouldBeEmpty();
         lockout.FetchEvents().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void When_FiveMinuteWindowExpires_Then_CountAndSourceIpsRestart()
+    {
+        var now = Instant.FromUtc(2026, 8, 22, 12, 0);
+        var lockout = LoginLockout.Create(Guid.NewGuid(), "member@example.com", now);
+
+        lockout.RecordFailure(
+            4,
+            Duration.FromMinutes(5),
+            Duration.FromMinutes(15),
+            Guid.NewGuid(),
+            "198.51.100.10",
+            LoginFailureAttribution.Unknown(LoginAttemptFactor.Password),
+            now);
+        lockout.RecordFailure(
+            4,
+            Duration.FromMinutes(5),
+            Duration.FromMinutes(15),
+            Guid.NewGuid(),
+            "203.0.113.10",
+            LoginFailureAttribution.Unknown(LoginAttemptFactor.Password),
+            now + Duration.FromMinutes(5));
+
+        lockout.FailedCount.ShouldBe(1);
+        lockout.WindowStartedAt.ShouldBe(now + Duration.FromMinutes(5));
+        lockout.SourceIpAddresses.ShouldBe(["203.0.113.10"]);
+        lockout.LockedUntil.ShouldBeNull();
     }
 
     [Fact]
@@ -121,7 +160,6 @@ public sealed class LoginLockoutTests
         var lockout = LoginLockout.Create(
             Guid.NewGuid(),
             "unknown@example.com",
-            "203.0.113.10",
             now);
 
         lockout.RecordFailure(
@@ -129,6 +167,7 @@ public sealed class LoginLockoutTests
             Duration.FromMinutes(1),
             Duration.FromMinutes(15),
             Guid.NewGuid(),
+            "203.0.113.10",
             LoginFailureAttribution.Unknown(LoginAttemptFactor.Password),
             now);
 
@@ -149,7 +188,6 @@ public sealed class LoginLockoutTests
         var lockout = LoginLockout.Create(
             Guid.NewGuid(),
             "unverified@example.com",
-            "203.0.113.10",
             now);
 
         lockout.RecordFailure(
@@ -157,6 +195,7 @@ public sealed class LoginLockoutTests
             Duration.FromMinutes(1),
             Duration.FromMinutes(15),
             Guid.NewGuid(),
+            "203.0.113.10",
             LoginFailureAttribution.Known(
                 Guid.NewGuid(),
                 targetUserId,

@@ -18,49 +18,47 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
-    public async Task When_ConcurrentFailuresCreateCounter_Then_NoAttemptIsLost()
+    public async Task When_ConcurrentFailuresFromDifferentIpsCreateAccountCounter_Then_NoAttemptIsLost()
     {
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var email = $"concurrent-new-{Guid.NewGuid():N}@example.com";
-        var ip = $"198.51.100.{Random.Shared.Next(1, 255)}";
         var now = TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant());
         var services = CreateThrottleServices(5);
 
-        var results = await Task.WhenAll(services.Select(service =>
+        var results = await Task.WhenAll(services.Select((service, index) =>
             service.RecordFailureAsync(
                 email,
-                ip,
+                $"198.51.100.{index + 1}",
                 UnknownPasswordFailure,
                 now,
                 TestContext.Current.CancellationToken)));
 
         results.Count(result => result.IsLocked).ShouldBe(1);
-        var lockout = await ReadLockoutAsync(email, ip);
+        var lockout = await ReadLockoutAsync(email);
         lockout.Version.ShouldBe(5u);
         lockout.FailedCount.ShouldBe(0);
         lockout.LockedUntil.ShouldBe(now + Duration.FromMinutes(15));
     }
 
     [Fact]
-    public async Task When_ConcurrentFailuresUpdateExistingCounter_Then_NoAttemptIsLost()
+    public async Task When_ConcurrentFailuresFromDifferentIpsUpdateAccountCounter_Then_NoAttemptIsLost()
     {
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var email = $"concurrent-existing-{Guid.NewGuid():N}@example.com";
-        var ip = $"203.0.113.{Random.Shared.Next(1, 255)}";
         var now = TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant());
-        await SeedEmptyLockoutAsync(email, ip, now);
+        await SeedEmptyLockoutAsync(email, now);
         var services = CreateThrottleServices(5);
 
-        var results = await Task.WhenAll(services.Select(service =>
+        var results = await Task.WhenAll(services.Select((service, index) =>
             service.RecordFailureAsync(
                 email,
-                ip,
+                $"203.0.113.{index + 1}",
                 UnknownPasswordFailure,
                 now,
                 TestContext.Current.CancellationToken)));
 
         results.Count(result => result.IsLocked).ShouldBe(1);
-        var lockout = await ReadLockoutAsync(email, ip);
+        var lockout = await ReadLockoutAsync(email);
         lockout.Version.ShouldBe(5u);
         lockout.FailedCount.ShouldBe(0);
         lockout.LockedUntil.ShouldBe(now + Duration.FromMinutes(15));
@@ -86,7 +84,6 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var stagedReset = await services[1].StageResetAsync(
             resetContext,
             email,
-            ip,
             now + Duration.FromSeconds(1),
             TestContext.Current.CancellationToken);
         stagedReset.IsLocked.ShouldBeFalse();
@@ -101,7 +98,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         await Should.ThrowAsync<DbUpdateConcurrencyException>(
             () => resetContext.CommitAsync(TestContext.Current.CancellationToken));
 
-        var lockout = await ReadLockoutAsync(email, ip);
+        var lockout = await ReadLockoutAsync(email);
         lockout.Version.ShouldBe(2u);
         lockout.FailedCount.ShouldBe(2);
         lockout.LockedUntil.ShouldBeNull();
@@ -121,7 +118,6 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var stagedReset = await services[0].StageResetAsync(
             resetContext,
             email,
-            ip,
             now,
             TestContext.Current.CancellationToken);
         stagedReset.IsLocked.ShouldBeFalse();
@@ -137,7 +133,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
             () => resetContext.CommitAsync(TestContext.Current.CancellationToken));
         LoginProtectionConcurrency.IsAuthenticationFenceConflict(conflict).ShouldBeTrue();
 
-        var lockout = await ReadLockoutAsync(email, ip);
+        var lockout = await ReadLockoutAsync(email);
         lockout.Version.ShouldBe(1u);
         lockout.FailedCount.ShouldBe(1);
     }
@@ -149,7 +145,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var email = $"concurrent-empty-reset-{Guid.NewGuid():N}@example.com";
         var ip = $"192.0.2.{Random.Shared.Next(1, 255)}";
         var now = apiFactory.FakeClock.GetCurrentInstant();
-        await SeedEmptyLockoutAsync(email, ip, now);
+        await SeedEmptyLockoutAsync(email, now);
         var services = CreateThrottleServices(5);
 
         await using var resetScope = apiFactory.Services.CreateAsyncScope();
@@ -157,7 +153,6 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var stagedReset = await services[0].StageResetAsync(
             resetContext,
             email,
-            ip,
             now + Duration.FromSeconds(1),
             TestContext.Current.CancellationToken);
         stagedReset.IsLocked.ShouldBeFalse();
@@ -172,7 +167,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         await Should.ThrowAsync<DbUpdateConcurrencyException>(
             () => resetContext.CommitAsync(TestContext.Current.CancellationToken));
 
-        var lockout = await ReadLockoutAsync(email, ip);
+        var lockout = await ReadLockoutAsync(email);
         lockout.Version.ShouldBe(1u);
         lockout.FailedCount.ShouldBe(1);
         lockout.LockedUntil.ShouldBeNull();
@@ -308,7 +303,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var options = Options.Create(new LoginThrottleOptions
         {
             MaxAttempts = maxAttempts,
-            WindowMinutes = 15,
+            WindowMinutes = 5,
             LockoutMinutes = 15,
             ConcurrencyRetryLimit = 64,
         });
@@ -341,20 +336,20 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
             .ToArray();
     }
 
-    private async Task SeedEmptyLockoutAsync(string email, string ip, Instant now)
+    private async Task SeedEmptyLockoutAsync(string email, Instant now)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
-        writeContext.Add(LoginLockout.Create(Guid.NewGuid(), email, ip, now));
+        writeContext.Add(LoginLockout.Create(Guid.NewGuid(), email, now));
         await writeContext.CommitAsync(TestContext.Current.CancellationToken);
     }
 
-    private async Task<LoginLockout> ReadLockoutAsync(string email, string ip)
+    private async Task<LoginLockout> ReadLockoutAsync(string email)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
         return await readContext.LoginLockouts.SingleAsync(
-            lockout => lockout.Email == email && lockout.IpAddress == ip,
+            lockout => lockout.Email == email,
             TestContext.Current.CancellationToken);
     }
 

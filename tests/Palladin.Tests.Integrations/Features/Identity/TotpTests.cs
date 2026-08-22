@@ -138,7 +138,7 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
             });
         var request = new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = "000000" };
 
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             var (failedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(request);
             failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);

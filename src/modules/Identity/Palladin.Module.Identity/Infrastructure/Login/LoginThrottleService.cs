@@ -17,14 +17,13 @@ internal sealed class LoginThrottleService(
 {
     public async Task<LoginThrottleResult> GetStatusAsync(
         string normalizedEmail,
-        string ipAddress,
         Instant now,
         CancellationToken ct)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
         var lockedUntil = await readContext.LoginLockouts
-            .Where(x => x.Email == normalizedEmail && x.IpAddress == ipAddress)
+            .Where(x => x.Email == normalizedEmail)
             .Select(x => x.LockedUntil)
             .FirstOrDefaultAsync(ct);
 
@@ -46,11 +45,11 @@ internal sealed class LoginThrottleService(
             await using var scope = scopeFactory.CreateAsyncScope();
             var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
             var lockout = await writeContext.LoginLockouts
-                .FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IpAddress == ipAddress, ct);
+                .FirstOrDefaultAsync(x => x.Email == normalizedEmail, ct);
 
             if (lockout is null)
             {
-                lockout = LoginLockout.Create(guidProvider.Generate(), normalizedEmail, ipAddress, now);
+                lockout = LoginLockout.Create(guidProvider.Generate(), normalizedEmail, now);
                 writeContext.Add(lockout);
             }
             var decision = lockout.RecordFailure(
@@ -58,6 +57,7 @@ internal sealed class LoginThrottleService(
                 Duration.FromMinutes(throttleOptions.WindowMinutes),
                 Duration.FromMinutes(throttleOptions.LockoutMinutes),
                 guidProvider.Generate(),
+                ipAddress,
                 attribution,
                 now);
 
@@ -80,20 +80,19 @@ internal sealed class LoginThrottleService(
     public async Task<LoginThrottleResult> StageResetAsync(
         IdentityDomainWriteContext domainWriteContext,
         string normalizedEmail,
-        string ipAddress,
         Instant now,
         CancellationToken ct)
     {
         var lockout = await domainWriteContext.LoginLockouts
-            .FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IpAddress == ipAddress, ct);
+            .FirstOrDefaultAsync(x => x.Email == normalizedEmail, ct);
 
         if (lockout is null)
         {
-            // The empty row is a transaction-local fence for the previously absent pair. If a
-            // concurrent failed attempt inserts the same pair first, the endpoint's final commit
+            // The empty row is a transaction-local fence for the previously absent account. If a
+            // concurrent failed attempt inserts the same account first, the endpoint's final commit
             // loses on the unique constraint and no authenticated session is published.
             domainWriteContext.Add(LoginLockout.Create(
-                guidProvider.Generate(), normalizedEmail, ipAddress, now));
+                guidProvider.Generate(), normalizedEmail, now));
             return LoginThrottleResult.Available();
         }
 

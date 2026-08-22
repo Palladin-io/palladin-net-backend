@@ -30,9 +30,9 @@ public sealed class EmailTemplateRendererTests
         ["eventTitle"] = "New sign-in",
         ["eventDescription"] = "A new device signed in.",
         ["occurredAt"] = "10 Jul 2026, 12:00 UTC",
-        ["attemptCount"] = "3",
-        ["windowMinutes"] = "1",
-        ["ipAddress"] = "198.51.100.10",
+        ["attemptCount"] = "4",
+        ["windowMinutes"] = "5",
+        ["ipAddresses"] = "198.51.100.10, 203.0.113.11",
         ["lockedUntil"] = "10 Jul 2026, 12:15 UTC",
     };
 
@@ -121,6 +121,7 @@ public sealed class EmailTemplateRendererTests
         foreach (var rendered in new[] { english, polish })
         {
             rendered.HtmlBody.ShouldContain("198.51.100.10");
+            rendered.HtmlBody.ShouldContain("203.0.113.11");
             rendered.HtmlBody.ShouldContain("10 Jul 2026, 12:15 UTC");
             rendered.HtmlBody.ShouldNotContain("padding:10px 20px");
             rendered.HtmlBody.ShouldNotContain(">Unlock account<");
@@ -128,9 +129,9 @@ public sealed class EmailTemplateRendererTests
         }
 
         english.Subject.ShouldContain("login attempts blocked");
-        english.HtmlBody.ShouldContain("3 failed attempts");
+        english.HtmlBody.ShouldContain("4 failed attempts");
         polish.Subject.ShouldContain("zablokowane próby logowania");
-        polish.HtmlBody.ShouldContain("3 nieudanych prób");
+        polish.HtmlBody.ShouldContain("4 nieudanych prób");
     }
 
     [Fact]

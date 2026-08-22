@@ -6,14 +6,14 @@ using Palladin.Module.Identity.Contracts.Events;
 
 namespace Palladin.Module.Identity.Domain;
 
-// Failed-login window per (email, ip). When failures reach the threshold within the
-// window the pair is locked until LockedUntil. A successful login resets it. Enumeration-safe: the
-// same lockout applies whether or not the email maps to a real account.
+// Failed-login window per normalized email. When failures from any source IP reach the threshold
+// within the window the account identifier is locked until LockedUntil. A successful login resets
+// it. Enumeration-safe: the same lockout applies whether or not the email maps to a real account.
 internal sealed class LoginLockout : EventEntityBase
 {
     public Guid Id { get; private set; }
     public string Email { get; private set; } = string.Empty;
-    public string IpAddress { get; private set; } = string.Empty;
+    public string[] SourceIpAddresses { get; private set; } = [];
     public int FailedCount { get; private set; }
     public Instant WindowStartedAt { get; private set; }
     public Instant? LockedUntil { get; private set; }
@@ -23,12 +23,11 @@ internal sealed class LoginLockout : EventEntityBase
 
     private LoginLockout() { }
 
-    internal static LoginLockout Create(Guid id, string email, string ipAddress, Instant now) =>
+    internal static LoginLockout Create(Guid id, string email, Instant now) =>
         new()
         {
             Id = id,
             Email = email,
-            IpAddress = ipAddress,
             WindowStartedAt = now,
             CreatedAt = now,
             UpdatedAt = now,
@@ -41,13 +40,14 @@ internal sealed class LoginLockout : EventEntityBase
         Duration window,
         Duration lockoutDuration,
         Guid attemptId,
+        string ipAddress,
         LoginFailureAttribution attribution,
         Instant now)
     {
         AddEvent(new LoginAttemptFailedEvent(
             attemptId,
             HashEmail(Email),
-            IpAddress,
+            ipAddress,
             attribution.OrganizationId,
             attribution.TargetUserId,
             attribution.Factor,
@@ -58,13 +58,18 @@ internal sealed class LoginLockout : EventEntityBase
             return LoginLockoutDecision.Locked(LockedUntil!.Value);
         }
 
-        if (now - WindowStartedAt > window)
+        if (now - WindowStartedAt >= window)
         {
             FailedCount = 0;
             WindowStartedAt = now;
+            SourceIpAddresses = [];
         }
 
         FailedCount++;
+        if (!SourceIpAddresses.Contains(ipAddress, StringComparer.Ordinal))
+        {
+            SourceIpAddresses = [.. SourceIpAddresses, ipAddress];
+        }
         UpdatedAt = now;
         Version++;
 
@@ -78,7 +83,7 @@ internal sealed class LoginLockout : EventEntityBase
             AddEvent(new LoginLockedOutEvent(
                 attemptId,
                 HashEmail(Email),
-                IpAddress,
+                [.. SourceIpAddresses],
                 attribution.TargetUserId,
                 verifiedRecipient ? Email : null,
                 verifiedRecipient ? attribution.PreferredLanguage : null,
@@ -87,6 +92,7 @@ internal sealed class LoginLockout : EventEntityBase
                 (int)lockoutDuration.TotalMinutes,
                 lockedUntil,
                 now));
+            SourceIpAddresses = [];
             return LoginLockoutDecision.Locked(lockedUntil);
         }
 
@@ -96,6 +102,7 @@ internal sealed class LoginLockout : EventEntityBase
     internal void Reset(Instant now)
     {
         FailedCount = 0;
+        SourceIpAddresses = [];
         LockedUntil = null;
         WindowStartedAt = now;
         UpdatedAt = now;

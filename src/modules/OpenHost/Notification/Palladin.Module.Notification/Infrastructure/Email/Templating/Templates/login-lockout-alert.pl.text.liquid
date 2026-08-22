@@ -1,14 +1,14 @@
-Zablokowaliśmy podejrzane próby logowania
+Tymczasowo zablokowaliśmy logowanie hasłem i TOTP do Twojego konta
 
-{{ appName }} wykrył {{ attemptCount }} nieudanych prób logowania w oknie {{ windowMinutes }} min i tymczasowo zablokował dalsze próby z tego adresu IP.
+{{ appName }} wykrył {{ attemptCount }} nieudanych prób logowania w oknie {{ windowMinutes }} min i tymczasowo zablokował dalsze próby logowania hasłem oraz TOTP do Twojego konta.
 
 Liczba nieudanych prób: {{ attemptCount }}
 Okno czasowe: {{ windowMinutes }} min
-Adres IP: {{ ipAddress }}
+Źródłowe adresy IP: {{ ipAddresses }}
 Czas blokady: {{ occurredAt }}
 Blokada wygaśnie: {{ lockedUntil }}
 
-Twoje konto nie zostało globalnie zablokowane. Ograniczenie dotyczy dalszych prób logowania z podanego adresu IP.
+Ograniczenie dotyczy prób logowania hasłem oraz TOTP do Twojego konta niezależnie od źródłowego adresu IP.
 
 Jeśli rozpoznajesz tę aktywność, nie musisz nic robić. Jeśli nie, otwórz {{ appName }} samodzielnie i sprawdź Audit Log. Upewnij się też, że używasz unikalnego hasła i masz włączone TOTP.
 

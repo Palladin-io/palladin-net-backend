@@ -34,7 +34,7 @@ internal sealed class OnLoginLockedOutEmail : IConsumer<LoginLockedOutEvent>
             {
                 ["attemptCount"] = msg.AttemptCount.ToString(CultureInfo.InvariantCulture),
                 ["windowMinutes"] = msg.WindowMinutes.ToString(CultureInfo.InvariantCulture),
-                ["ipAddress"] = msg.IpAddress,
+                ["ipAddresses"] = string.Join(", ", msg.SourceIpAddresses),
                 ["occurredAt"] = FormatUtc(msg.OccurredAt),
                 ["lockedUntil"] = FormatUtc(msg.LockedUntil),
             },

@@ -10,7 +10,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnAgentEnrolledOnboardingDefinition : ConsumerDefinition<OnAgentEnrolledOnboarding>
 {
-    public OnAgentEnrolledOnboardingDefinition() => EndpointName = AgentsEndpoints.Onboarding;
+    public OnAgentEnrolledOnboardingDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 // Enrolling an agent (agent becomes Active) is an ORG-level onboarding milestone — once anyone in the

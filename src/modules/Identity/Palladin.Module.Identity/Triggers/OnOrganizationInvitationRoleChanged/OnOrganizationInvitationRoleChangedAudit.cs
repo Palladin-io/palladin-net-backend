@@ -10,7 +10,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationInvitationRoleChangedAuditDefinition
     : ConsumerDefinition<OnOrganizationInvitationRoleChangedAudit>
 {
-    public OnOrganizationInvitationRoleChangedAuditDefinition() => EndpointName = IdentityEndpoints.Audit;
+    public OnOrganizationInvitationRoleChangedAuditDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

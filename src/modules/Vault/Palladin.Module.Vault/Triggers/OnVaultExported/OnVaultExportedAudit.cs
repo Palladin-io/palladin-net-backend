@@ -12,7 +12,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnVaultExportedAuditDefinition : ConsumerDefinition<OnVaultExportedAudit>
 {
-    public OnVaultExportedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnVaultExportedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 // The export event carries no org, so Vault resolves the tenant from its own read-model before

@@ -2,6 +2,7 @@ using JetBrains.Annotations;
 using MassTransit;
 using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
+using Palladin.Module.PublicAssetCatalog.Infrastructure.MassTransit;
 
 namespace Palladin.Module.PublicAssetCatalog.Features;
 
@@ -10,7 +11,7 @@ internal sealed class AcquireWebsiteIconV2ConsumerDefinition : ConsumerDefinitio
 {
     public AcquireWebsiteIconV2ConsumerDefinition()
     {
-        EndpointName = "public-asset-catalog.commands.acquire-website-icon-v2";
+        EndpointName = PublicAssetCatalogEndpoints.WebsiteIcons;
         ConcurrentMessageLimit = 8;
     }
 }
@@ -28,7 +29,7 @@ internal sealed class AcquireWebsiteIconV2FaultConsumerDefinition : ConsumerDefi
 {
     public AcquireWebsiteIconV2FaultConsumerDefinition()
     {
-        EndpointName = "public-asset-catalog.faults.acquire-website-icon-v2";
+        EndpointName = PublicAssetCatalogEndpoints.Self;
         ConcurrentMessageLimit = 8;
     }
 }

@@ -13,7 +13,7 @@ namespace Palladin.Module.Audit.Triggers.AuditLogExportRequested;
 [UsedImplicitly]
 internal sealed class OnAuditLogExportedDefinition : ConsumerDefinition<OnAuditLogExported>
 {
-    public OnAuditLogExportedDefinition() => EndpointName = AuditEndpoints.SelfExport;
+    public OnAuditLogExportedDefinition() => EndpointName = AuditEndpoints.Self;
 }
 
 [UsedImplicitly]

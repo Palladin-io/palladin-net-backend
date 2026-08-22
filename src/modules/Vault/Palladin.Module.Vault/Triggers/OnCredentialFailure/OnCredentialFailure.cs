@@ -37,7 +37,7 @@ internal sealed class OnCredentialFailureReported(IAnalyticsService analyticsSer
 [UsedImplicitly]
 internal sealed class OnCredentialFailureReportedBroadcastDefinition : ConsumerDefinition<OnCredentialFailureReportedBroadcast>
 {
-    public OnCredentialFailureReportedBroadcastDefinition() => EndpointName = VaultEndpoints.Notification;
+    public OnCredentialFailureReportedBroadcastDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

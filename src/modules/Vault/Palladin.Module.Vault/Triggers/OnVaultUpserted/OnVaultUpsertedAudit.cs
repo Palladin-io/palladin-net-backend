@@ -12,7 +12,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnVaultUpsertedAuditDefinition : ConsumerDefinition<OnVaultUpsertedAudit>
 {
-    public OnVaultUpsertedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnVaultUpsertedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 // Vault owns vaults, so it (not Audit) denormalizes the audit row and publishes the append command.

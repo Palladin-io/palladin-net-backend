@@ -12,7 +12,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnGrantApprovedBroadcastDefinition : ConsumerDefinition<OnGrantApprovedBroadcast>
 {
-    public OnGrantApprovedBroadcastDefinition() => EndpointName = VaultEndpoints.Notification;
+    public OnGrantApprovedBroadcastDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

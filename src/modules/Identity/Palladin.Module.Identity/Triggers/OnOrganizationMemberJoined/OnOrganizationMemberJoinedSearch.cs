@@ -11,7 +11,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationMemberJoinedSearchDefinition
     : ConsumerDefinition<OnOrganizationMemberJoinedSearch>
 {
-    public OnOrganizationMemberJoinedSearchDefinition() => EndpointName = IdentityEndpoints.Search;
+    public OnOrganizationMemberJoinedSearchDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

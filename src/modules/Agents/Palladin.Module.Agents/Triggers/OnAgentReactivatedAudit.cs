@@ -10,7 +10,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnAgentReactivatedAuditDefinition : ConsumerDefinition<OnAgentReactivatedAudit>
 {
-    public OnAgentReactivatedAuditDefinition() => EndpointName = AgentsEndpoints.Audit;
+    public OnAgentReactivatedAuditDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 [UsedImplicitly]

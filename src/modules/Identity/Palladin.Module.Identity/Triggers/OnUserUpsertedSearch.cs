@@ -13,7 +13,7 @@ namespace Palladin.Module.Identity.Triggers;
 [UsedImplicitly]
 internal sealed class OnUserUpsertedSearchDefinition : ConsumerDefinition<OnUserUpsertedSearch>
 {
-    public OnUserUpsertedSearchDefinition() => EndpointName = IdentityEndpoints.Search;
+    public OnUserUpsertedSearchDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

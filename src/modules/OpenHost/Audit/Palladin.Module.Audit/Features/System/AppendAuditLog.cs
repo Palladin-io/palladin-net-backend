@@ -14,7 +14,7 @@ namespace Palladin.Module.Audit.Features;
 [UsedImplicitly]
 internal sealed class AppendAuditLogConsumerDefinition : ConsumerDefinition<AppendAuditLogConsumer>
 {
-    public AppendAuditLogConsumerDefinition() => EndpointName = AuditEndpoints.Append;
+    public AppendAuditLogConsumerDefinition() => EndpointName = AuditEndpoints.General;
 }
 
 // Audit's ONLY inbound consumer (OpenHost): appends one opaque row. It resolves nothing — the

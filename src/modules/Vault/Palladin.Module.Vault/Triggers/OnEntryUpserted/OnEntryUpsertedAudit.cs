@@ -12,7 +12,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnEntryUpsertedAuditDefinition : ConsumerDefinition<OnEntryUpsertedAudit>
 {
-    public OnEntryUpsertedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnEntryUpsertedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

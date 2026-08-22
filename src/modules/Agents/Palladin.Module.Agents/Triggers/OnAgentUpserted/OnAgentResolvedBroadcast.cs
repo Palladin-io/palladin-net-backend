@@ -14,7 +14,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnAgentResolvedBroadcastDefinition : ConsumerDefinition<OnAgentResolvedBroadcast>
 {
-    public OnAgentResolvedBroadcastDefinition() => EndpointName = AgentsEndpoints.Notification;
+    public OnAgentResolvedBroadcastDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 [UsedImplicitly]

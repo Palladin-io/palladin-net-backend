@@ -10,7 +10,7 @@ namespace Palladin.Module.Identity.Triggers;
 [UsedImplicitly]
 internal sealed class OnAccountSetupCompletedAuditDefinition : ConsumerDefinition<OnAccountSetupCompletedAudit>
 {
-    public OnAccountSetupCompletedAuditDefinition() => EndpointName = IdentityEndpoints.Audit;
+    public OnAccountSetupCompletedAuditDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

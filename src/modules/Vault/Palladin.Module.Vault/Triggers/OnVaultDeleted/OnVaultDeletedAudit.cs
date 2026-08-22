@@ -10,7 +10,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnVaultDeletedAuditDefinition : ConsumerDefinition<OnVaultDeletedAudit>
 {
-    public OnVaultDeletedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnVaultDeletedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

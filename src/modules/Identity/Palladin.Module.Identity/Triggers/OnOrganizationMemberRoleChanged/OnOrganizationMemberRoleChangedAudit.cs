@@ -11,7 +11,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationMemberRoleChangedAuditDefinition
     : ConsumerDefinition<OnOrganizationMemberRoleChangedAudit>
 {
-    public OnOrganizationMemberRoleChangedAuditDefinition() => EndpointName = IdentityEndpoints.Audit;
+    public OnOrganizationMemberRoleChangedAuditDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

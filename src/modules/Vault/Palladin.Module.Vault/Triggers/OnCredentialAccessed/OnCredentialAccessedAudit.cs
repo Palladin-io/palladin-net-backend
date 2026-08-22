@@ -10,7 +10,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnCredentialAccessedAuditDefinition : ConsumerDefinition<OnCredentialAccessedAudit>
 {
-    public OnCredentialAccessedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnCredentialAccessedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

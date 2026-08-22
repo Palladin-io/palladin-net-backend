@@ -10,7 +10,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationInvitationCancelledAuditDefinition
     : ConsumerDefinition<OnOrganizationInvitationCancelledAudit>
 {
-    public OnOrganizationInvitationCancelledAuditDefinition() => EndpointName = IdentityEndpoints.Audit;
+    public OnOrganizationInvitationCancelledAuditDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

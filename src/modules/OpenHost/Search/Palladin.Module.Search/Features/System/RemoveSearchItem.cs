@@ -12,7 +12,7 @@ namespace Palladin.Module.Search.Features;
 [UsedImplicitly]
 internal sealed class RemoveSearchItemConsumerDefinition : ConsumerDefinition<RemoveSearchItemConsumer>
 {
-    public RemoveSearchItemConsumerDefinition() => EndpointName = SearchEndpoints.Remove;
+    public RemoveSearchItemConsumerDefinition() => EndpointName = SearchEndpoints.Items;
 }
 
 [UsedImplicitly]

@@ -67,14 +67,21 @@ dotnet run --project src/Palladin.Api/Palladin.Api.csproj
 
 The development API listens on `http://localhost:5000`. Check `GET /api/health`; Scalar API documentation is available at `/scalar` only in Development.
 
-For local overrides, use ASP.NET's double-underscore environment syntax or the ignored local settings file. For example:
+For local overrides, copy the tracked placeholder template to the ignored local settings file and fill in your own Google Web client ID:
+
+```bash
+cp src/Palladin.Api/appsettings.Local.example.json \
+  src/Palladin.Api/appsettings.Local.json
+```
+
+Alternatively, use ASP.NET's double-underscore environment syntax. Environment variables take precedence over the local settings file:
 
 ```bash
 Modules__Identity__Google__ClientId=your-local-client-id \
 dotnet run --project src/Palladin.Api/Palladin.Api.csproj
 ```
 
-Never commit `appsettings.Local.json`, `.env` files, service-account JSON, signing keys, tokens, or production connection strings.
+The Google client ID is public client configuration rather than a secret, but Palladin's value stays outside tracked defaults so a public clone or fork cannot silently use Palladin's OAuth project. Never commit `appsettings.Local.json`, `.env` files, service-account JSON, signing keys, tokens, or production connection strings.
 
 ## Tests
 

@@ -23,7 +23,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var email = $"concurrent-new-{Guid.NewGuid():N}@example.com";
         var ip = $"198.51.100.{Random.Shared.Next(1, 255)}";
-        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var now = TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant());
         var services = CreateThrottleServices(5);
 
         var results = await Task.WhenAll(services.Select(service =>
@@ -47,7 +47,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var email = $"concurrent-existing-{Guid.NewGuid():N}@example.com";
         var ip = $"203.0.113.{Random.Shared.Next(1, 255)}";
-        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var now = TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant());
         await SeedEmptyLockoutAsync(email, ip, now);
         var services = CreateThrottleServices(5);
 
@@ -360,6 +360,12 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
 
     private static string RandomPartitionKey() =>
         $"{Guid.NewGuid():N}{Guid.NewGuid():N}";
+
+    private static Instant TruncateToMicroseconds(Instant value)
+    {
+        var ticks = value.ToUnixTimeTicks();
+        return Instant.FromUnixTimeTicks(ticks - ticks % 10);
+    }
 
     private static LoginFailureAttribution UnknownPasswordFailure =>
         LoginFailureAttribution.Unknown(LoginAttemptFactor.Password);

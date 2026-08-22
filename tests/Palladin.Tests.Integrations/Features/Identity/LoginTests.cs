@@ -4,8 +4,11 @@ using Palladin.Module.Identity.Features;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using OtpNet;
+using Palladin.Module.Identity.Infrastructure.Persistence;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Identity;
@@ -47,6 +50,53 @@ public sealed class LoginTests(ApiFactory apiFactory) : TestBase
         result.TotpRequired.ShouldBeFalse();
         result.AccessToken.ShouldNotBeNullOrWhiteSpace();
         result.EmailVerified.ShouldBe(true);
+    }
+
+    [Fact]
+    public async Task When_SuccessfulLoginFollowsFailure_Then_SessionAndResetCommitTogether()
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = RandomBytes(32);
+        var email = $"login-reset-{Guid.NewGuid():N}@example.com";
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            authHash,
+            email: email,
+            emailVerified: true);
+        var client = apiFactory.CreateClient();
+
+        var (failedResponse, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = RandomBytes(32),
+            });
+        failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
+        var (response, result) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = authHash,
+            });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        result.AccessToken.ShouldNotBeNullOrWhiteSpace();
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
+        var lockout = await readContext.LoginLockouts.SingleAsync(
+            candidate => candidate.Email == email,
+            TestContext.Current.CancellationToken);
+        lockout.FailedCount.ShouldBe(0);
+        lockout.LockedUntil.ShouldBeNull();
+        lockout.Version.ShouldBe(2u);
+        (await readContext.RefreshTokens.AnyAsync(
+            token => token.UserId == user.Id,
+            TestContext.Current.CancellationToken)).ShouldBeTrue();
     }
 
     [Fact]

@@ -44,6 +44,8 @@ internal sealed class LoginTotpEndpoint(
     ILoginThrottleService loginThrottle,
     IClock clock) : Endpoint<LoginTotpRequest, AuthSessionResponse>
 {
+    private const int ConcurrentAuthRetryAfterSeconds = 1;
+
     public override void Configure()
     {
         Post("api/auth/login/totp");
@@ -153,7 +155,7 @@ internal sealed class LoginTotpEndpoint(
             return;
         }
 
-        var reset = await loginThrottle.ResetAsync(user.Email, ip, now, ct);
+        var reset = await loginThrottle.StageResetAsync(domainWriteContext, user.Email, ip, now, ct);
         if (reset.IsLocked)
         {
             await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);
@@ -169,7 +171,15 @@ internal sealed class LoginTotpEndpoint(
             user.Organization.PlanType,
             membership.AuthorizationVersion,
             now);
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await SendRateLimitedAsync(ConcurrentAuthRetryAfterSeconds, ct);
+            return;
+        }
 
         await Send.OkAsync(
             new AuthSessionResponse(accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified), ct);

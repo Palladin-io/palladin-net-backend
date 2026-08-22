@@ -79,36 +79,27 @@ internal sealed class LoginThrottleService(
         return LoginThrottleResult.FailClosed();
     }
 
-    public async Task<LoginThrottleResult> ResetAsync(
+    public async Task<LoginThrottleResult> StageResetAsync(
+        IdentityDomainWriteContext domainWriteContext,
         string normalizedEmail,
         string ipAddress,
         Instant now,
         CancellationToken ct)
     {
-        var retryLimit = options.Value.ConcurrencyRetryLimit;
-        for (var attempt = 0; attempt < retryLimit; attempt++)
+        var lockout = await domainWriteContext.LoginLockouts
+            .FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IpAddress == ipAddress, ct);
+
+        if (lockout is null)
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
-            var lockout = await writeContext.LoginLockouts
-                .FirstOrDefaultAsync(x => x.Email == normalizedEmail && x.IpAddress == ipAddress, ct);
-
-            if (lockout is null || !lockout.Reset(now))
-            {
-                return LoginThrottleResult.Available();
-            }
-
-            try
-            {
-                await writeContext.CommitAsync(ct);
-                return LoginThrottleResult.Available();
-            }
-            catch (Exception exception) when (LoginProtectionConcurrency.IsRetryable(exception))
-            {
-                await Task.Yield();
-            }
+            return LoginThrottleResult.Available();
         }
 
-        return LoginThrottleResult.FailClosed();
+        if (lockout.IsLocked(now))
+        {
+            return LoginThrottleResult.Locked(lockout.LockedUntil!.Value, now);
+        }
+
+        lockout.Reset(now);
+        return LoginThrottleResult.Available();
     }
 }

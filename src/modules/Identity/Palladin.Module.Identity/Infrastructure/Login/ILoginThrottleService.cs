@@ -1,4 +1,5 @@
 using NodaTime;
+using Palladin.Module.Identity.Infrastructure.Persistence;
 
 namespace Palladin.Module.Identity.Infrastructure.Login;
 
@@ -16,7 +17,8 @@ internal interface ILoginThrottleService
         Instant now,
         CancellationToken ct);
 
-    Task<LoginThrottleResult> ResetAsync(
+    Task<LoginThrottleResult> StageResetAsync(
+        IdentityDomainWriteContext domainWriteContext,
         string normalizedEmail,
         string ipAddress,
         Instant now,

@@ -63,6 +63,8 @@ internal sealed class LoginEndpoint(
     IOptions<TotpOptions> totpOptions,
     IClock clock) : Endpoint<LoginRequest, LoginResponse>
 {
+    private const int ConcurrentAuthRetryAfterSeconds = 1;
+
     // Fixed material to equalise verification time when no password credential exists, so a missing
     // account is timing-indistinguishable from a wrong authHash.
     private static readonly byte[] DummyHash = new byte[32];
@@ -167,7 +169,7 @@ internal sealed class LoginEndpoint(
             return;
         }
 
-        var reset = await loginThrottle.ResetAsync(email, ip, now, ct);
+        var reset = await loginThrottle.StageResetAsync(domainWriteContext, email, ip, now, ct);
         if (reset.IsLocked)
         {
             await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);
@@ -181,7 +183,15 @@ internal sealed class LoginEndpoint(
             user.Organization.PlanType,
             membership.AuthorizationVersion,
             now);
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await SendRateLimitedAsync(ConcurrentAuthRetryAfterSeconds, ct);
+            return;
+        }
 
         await Send.OkAsync(
             new LoginResponse(false, null, accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified),

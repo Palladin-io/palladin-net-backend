@@ -38,6 +38,10 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
             new LoginRequest { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = authHash });
         login.TotpRequired.ShouldBeTrue();
 
+        var (failedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(
+            new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = "not-a-code" });
+        failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
         // When — a fresh (next-step) code, since the confirm code's step is now consumed
         var (response, result) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(
             new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = NextCode(enroll.Secret) });
@@ -45,6 +49,18 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         result.AccessToken.ShouldNotBeNullOrWhiteSpace();
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDomainReadContext>();
+        var lockout = await readContext.LoginLockouts.SingleAsync(
+            candidate => candidate.Email == email,
+            TestContext.Current.CancellationToken);
+        lockout.FailedCount.ShouldBe(0);
+        lockout.LockedUntil.ShouldBeNull();
+        lockout.Version.ShouldBe(2u);
+        (await readContext.RefreshTokens.AnyAsync(
+            token => token.UserId == user.Id,
+            TestContext.Current.CancellationToken)).ShouldBeTrue();
     }
 
     [Fact]

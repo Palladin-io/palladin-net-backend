@@ -64,13 +64,28 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var services = CreateThrottleServices(5);
         await services[0].RecordFailureAsync(email, ip, now, TestContext.Current.CancellationToken);
 
-        await Task.WhenAll(
-            services[1].ResetAsync(email, ip, now + Duration.FromSeconds(1), TestContext.Current.CancellationToken),
-            services[2].RecordFailureAsync(email, ip, now + Duration.FromSeconds(1), TestContext.Current.CancellationToken));
+        await using var resetScope = apiFactory.Services.CreateAsyncScope();
+        var resetContext = resetScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var stagedReset = await services[1].StageResetAsync(
+            resetContext,
+            email,
+            ip,
+            now + Duration.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+        stagedReset.IsLocked.ShouldBeFalse();
+
+        await services[2].RecordFailureAsync(
+            email,
+            ip,
+            now + Duration.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(
+            () => resetContext.CommitAsync(TestContext.Current.CancellationToken));
 
         var lockout = await ReadLockoutAsync(email, ip);
-        lockout.Version.ShouldBe(3u);
-        lockout.FailedCount.ShouldBeOneOf(0, 1);
+        lockout.Version.ShouldBe(2u);
+        lockout.FailedCount.ShouldBe(2);
         lockout.LockedUntil.ShouldBeNull();
     }
 

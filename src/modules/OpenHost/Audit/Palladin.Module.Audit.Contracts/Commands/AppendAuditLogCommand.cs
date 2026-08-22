@@ -24,4 +24,5 @@ public sealed record AppendAuditLogCommand(
     string? AgentName,
     string? ActorName,
     string? IpAddress,
-    IReadOnlyDictionary<string, string> Metadata) : IIntegrationCommand;
+    IReadOnlyDictionary<string, string> Metadata,
+    Guid? IdempotencyKey = null) : IIntegrationCommand;

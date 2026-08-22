@@ -40,8 +40,8 @@ internal sealed class LoginTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
     IAuthSessionIssuer sessionIssuer,
-    ILoginRateLimiter loginRateLimiter,
-    ILoginThrottleService loginThrottle,
+    LoginRateLimiter loginRateLimiter,
+    LoginThrottleService loginThrottle,
     IClock clock) : Endpoint<LoginTotpRequest, AuthSessionResponse>
 {
     private const int ConcurrentAuthRetryAfterSeconds = 1;
@@ -144,7 +144,15 @@ internal sealed class LoginTotpEndpoint(
         }
         else
         {
-            var failure = await loginThrottle.RecordFailureAsync(user.Email, ip, now, ct);
+            var failure = await loginThrottle.RecordFailureAsync(
+                user.Email,
+                ip,
+                LoginFailureAttribution.Known(
+                    user.OrganizationId,
+                    user.Id,
+                    LoginAttemptFactor.Totp),
+                now,
+                ct);
             if (failure.IsLocked)
             {
                 await SendRateLimitedAsync(failure.RetryAfterSeconds, ct);

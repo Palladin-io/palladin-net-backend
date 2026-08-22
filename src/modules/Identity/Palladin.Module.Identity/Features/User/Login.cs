@@ -1,4 +1,5 @@
 using Palladin.Core.Guid;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.Jwt;
@@ -57,8 +58,8 @@ internal sealed class LoginEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,
     IAuthSessionIssuer sessionIssuer,
-    ILoginRateLimiter loginRateLimiter,
-    ILoginThrottleService loginThrottle,
+    LoginRateLimiter loginRateLimiter,
+    LoginThrottleService loginThrottle,
     IGuidProvider guidProvider,
     IOptions<TotpOptions> totpOptions,
     IClock clock) : Endpoint<LoginRequest, LoginResponse>
@@ -114,6 +115,8 @@ internal sealed class LoginEndpoint(
             .Select(credential => new
             {
                 Credential = credential,
+                credential.UserId,
+                credential.User.OrganizationId,
                 credential.User.SecurityVersion,
                 credential.User.KdfProfileId,
             })
@@ -129,7 +132,13 @@ internal sealed class LoginEndpoint(
             || credentialState.KdfProfileId != req.KdfProfileId
             || !credentialVerified)
         {
-            var failure = await loginThrottle.RecordFailureAsync(email, ip, now, ct);
+            var attribution = credentialState is null
+                ? LoginFailureAttribution.Unknown(LoginAttemptFactor.Password)
+                : LoginFailureAttribution.Known(
+                    credentialState.OrganizationId,
+                    credentialState.UserId,
+                    LoginAttemptFactor.Password);
+            var failure = await loginThrottle.RecordFailureAsync(email, ip, attribution, now, ct);
             if (failure.IsLocked)
             {
                 await SendRateLimitedAsync(failure.RetryAfterSeconds, ct);

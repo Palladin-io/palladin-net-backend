@@ -13,7 +13,7 @@ namespace Palladin.Module.Identity.Infrastructure.Login;
 internal sealed class LoginThrottleService(
     IServiceScopeFactory scopeFactory,
     IGuidProvider guidProvider,
-    IOptions<LoginThrottleOptions> options) : ILoginThrottleService
+    IOptions<LoginThrottleOptions> options)
 {
     public async Task<LoginThrottleResult> GetStatusAsync(
         string normalizedEmail,
@@ -36,6 +36,7 @@ internal sealed class LoginThrottleService(
     public async Task<LoginThrottleResult> RecordFailureAsync(
         string normalizedEmail,
         string ipAddress,
+        LoginFailureAttribution attribution,
         Instant now,
         CancellationToken ct)
     {
@@ -52,15 +53,12 @@ internal sealed class LoginThrottleService(
                 lockout = LoginLockout.Create(guidProvider.Generate(), normalizedEmail, ipAddress, now);
                 writeContext.Add(lockout);
             }
-            else if (lockout.IsLocked(now))
-            {
-                return LoginThrottleResult.Locked(lockout.LockedUntil!.Value, now);
-            }
-
             var decision = lockout.RecordFailure(
                 throttleOptions.MaxAttempts,
                 Duration.FromMinutes(throttleOptions.WindowMinutes),
                 Duration.FromMinutes(throttleOptions.LockoutMinutes),
+                guidProvider.Generate(),
+                attribution,
                 now);
 
             try
@@ -107,4 +105,14 @@ internal sealed class LoginThrottleService(
         lockout.Reset(now);
         return LoginThrottleResult.Available();
     }
+}
+
+internal readonly record struct LoginThrottleResult(bool IsLocked, int RetryAfterSeconds)
+{
+    internal static LoginThrottleResult Available() => new(false, 0);
+
+    internal static LoginThrottleResult Locked(Instant lockedUntil, Instant now) =>
+        new(true, Math.Max(1, (int)Math.Ceiling((lockedUntil - now).TotalSeconds)));
+
+    internal static LoginThrottleResult FailClosed() => new(true, 1);
 }

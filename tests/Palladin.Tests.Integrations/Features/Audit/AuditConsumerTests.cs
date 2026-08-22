@@ -7,6 +7,7 @@ using Palladin.Module.Audit.Contracts.Commands;
 using Palladin.Module.Audit.Contracts.ValueObjects;
 using Palladin.Module.Audit.Infrastructure.Persistence;
 using Palladin.Module.Identity.Contracts.Events;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Triggers;
 using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -53,6 +54,64 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
         var readContext = scope.ServiceProvider.GetRequiredService<AuditDbReadContext>();
         return await readContext.AuditLogEntries
             .FirstOrDefaultAsync(e => e.EventType == eventType && e.OrganizationId == organizationId);
+    }
+
+    [Fact]
+    public async Task When_KnownAccountLoginAttemptFails_Then_WritesDeniedSystemEntryOnce()
+    {
+        // Given
+        var attemptId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var targetUserId = Guid.NewGuid();
+        var evt = new LoginAttemptFailedEvent(
+            attemptId,
+            new string('a', 64),
+            "198.51.100.10",
+            organizationId,
+            targetUserId,
+            LoginAttemptFactor.Password,
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        // When
+        await RunAsync(p => new OnLoginAttemptFailedAudit(p), evt);
+        await RunAsync(p => new OnLoginAttemptFailedAudit(p), evt);
+
+        // Then
+        var entry = await FindAsync(AuditEventType.LoginFailed, organizationId);
+        entry.ShouldNotBeNull();
+        entry.Id.ShouldBe(attemptId);
+        entry.ActorType.ShouldBe(AuditActorType.System);
+        entry.Result.ShouldBe(AuditResult.Denied);
+        entry.UserId.ShouldBeNull();
+        entry.IpAddress.ShouldBe("198.51.100.10");
+        entry.Metadata.ShouldBe(new Dictionary<string, string>
+        {
+            ["factor"] = LoginAttemptFactor.Password,
+            ["targetUserId"] = targetUserId.ToString(),
+        });
+    }
+
+    [Fact]
+    public async Task When_UnknownAccountLoginAttemptFails_Then_DoesNotPublishOrganizationAudit()
+    {
+        // Given
+        var publishEndpoint = Substitute.For<IPublishEndpoint>();
+        var evt = new LoginAttemptFailedEvent(
+            Guid.NewGuid(),
+            new string('b', 64),
+            "203.0.113.10",
+            null,
+            null,
+            LoginAttemptFactor.Password,
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        // When
+        await new OnLoginAttemptFailedAudit(publishEndpoint)
+            .Consume(apiFactory.MockConsumeContext(evt));
+
+        // Then
+        await publishEndpoint.DidNotReceive()
+            .Publish(Arg.Any<AppendAuditLogCommand>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

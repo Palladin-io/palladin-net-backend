@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NodaTime;
 using NSubstitute;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure.Login;
@@ -26,7 +27,12 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var services = CreateThrottleServices(5);
 
         var results = await Task.WhenAll(services.Select(service =>
-            service.RecordFailureAsync(email, ip, now, TestContext.Current.CancellationToken)));
+            service.RecordFailureAsync(
+                email,
+                ip,
+                UnknownPasswordFailure,
+                now,
+                TestContext.Current.CancellationToken)));
 
         results.Count(result => result.IsLocked).ShouldBe(1);
         var lockout = await ReadLockoutAsync(email, ip);
@@ -46,7 +52,12 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var services = CreateThrottleServices(5);
 
         var results = await Task.WhenAll(services.Select(service =>
-            service.RecordFailureAsync(email, ip, now, TestContext.Current.CancellationToken)));
+            service.RecordFailureAsync(
+                email,
+                ip,
+                UnknownPasswordFailure,
+                now,
+                TestContext.Current.CancellationToken)));
 
         results.Count(result => result.IsLocked).ShouldBe(1);
         var lockout = await ReadLockoutAsync(email, ip);
@@ -63,7 +74,12 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         var ip = $"192.0.2.{Random.Shared.Next(1, 255)}";
         var now = apiFactory.FakeClock.GetCurrentInstant();
         var services = CreateThrottleServices(5);
-        await services[0].RecordFailureAsync(email, ip, now, TestContext.Current.CancellationToken);
+        await services[0].RecordFailureAsync(
+            email,
+            ip,
+            UnknownPasswordFailure,
+            now,
+            TestContext.Current.CancellationToken);
 
         await using var resetScope = apiFactory.Services.CreateAsyncScope();
         var resetContext = resetScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
@@ -78,6 +94,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         await services[2].RecordFailureAsync(
             email,
             ip,
+            UnknownPasswordFailure,
             now + Duration.FromSeconds(1),
             TestContext.Current.CancellationToken);
 
@@ -112,6 +129,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         await services[1].RecordFailureAsync(
             email,
             ip,
+            UnknownPasswordFailure,
             now,
             TestContext.Current.CancellationToken);
 
@@ -147,6 +165,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
         await services[1].RecordFailureAsync(
             email,
             ip,
+            UnknownPasswordFailure,
             now + Duration.FromSeconds(1),
             TestContext.Current.CancellationToken);
 
@@ -341,4 +360,7 @@ public sealed class LoginProtectionTests(ApiFactory apiFactory) : TestBase
 
     private static string RandomPartitionKey() =>
         $"{Guid.NewGuid():N}{Guid.NewGuid():N}";
+
+    private static LoginFailureAttribution UnknownPasswordFailure =>
+        LoginFailureAttribution.Unknown(LoginAttemptFactor.Password);
 }

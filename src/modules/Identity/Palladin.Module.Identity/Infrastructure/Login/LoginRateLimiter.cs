@@ -17,7 +17,7 @@ internal sealed class LoginRateLimiter(
     IServiceScopeFactory scopeFactory,
     IGuidProvider guidProvider,
     IOptions<LoginThrottleOptions> options,
-    IOptions<PasswordAuthOptions> passwordAuthOptions) : ILoginRateLimiter
+    IOptions<PasswordAuthOptions> passwordAuthOptions)
 {
     public async Task<LoginRateLimitLease> AcquireLoginAsync(
         string normalizedEmail,
@@ -121,4 +121,14 @@ internal enum LoginRateLimitPartition
     LoginAccount = 2,
     TotpIp = 3,
     TotpAccount = 4,
+}
+
+internal readonly record struct LoginRateLimitLease(bool IsAcquired, int RetryAfterSeconds)
+{
+    internal static LoginRateLimitLease Acquired() => new(true, 0);
+
+    internal static LoginRateLimitLease Rejected(Instant windowEndsAt, Instant now) =>
+        new(false, Math.Max(1, (int)Math.Ceiling((windowEndsAt - now).TotalSeconds)));
+
+    internal static LoginRateLimitLease FailClosed() => new(false, 1);
 }

@@ -21,8 +21,8 @@ internal static class LoginModule
         services.Configure<EmailVerificationOptions>(
             configuration.GetSection($"{ConfigPrefix}:{EmailVerificationOptions.Position}"));
 
-        services.AddScoped<ILoginThrottleService, LoginThrottleService>();
-        services.AddScoped<ILoginRateLimiter, LoginRateLimiter>();
+        services.AddScoped<LoginThrottleService>();
+        services.AddScoped<LoginRateLimiter>();
         services.AddSingleton<IEmailVerificationGate, EmailVerificationGate>();
 
         var cleanupSection = configuration.GetSection(CleanupLoginRateLimitBucketsJobOptions.Position);

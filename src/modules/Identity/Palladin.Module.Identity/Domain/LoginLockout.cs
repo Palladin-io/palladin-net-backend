@@ -40,8 +40,19 @@ internal sealed class LoginLockout : EventEntityBase
         int maxAttempts,
         Duration window,
         Duration lockoutDuration,
+        Guid attemptId,
+        LoginFailureAttribution attribution,
         Instant now)
     {
+        AddEvent(new LoginAttemptFailedEvent(
+            attemptId,
+            HashEmail(Email),
+            IpAddress,
+            attribution.OrganizationId,
+            attribution.TargetUserId,
+            attribution.Factor,
+            now));
+
         if (IsLocked(now))
         {
             return LoginLockoutDecision.Locked(LockedUntil!.Value);
@@ -88,4 +99,19 @@ internal readonly record struct LoginLockoutDecision(bool IsLocked, Instant? Loc
     internal static LoginLockoutDecision Recorded() => new(false, null);
 
     internal static LoginLockoutDecision Locked(Instant lockedUntil) => new(true, lockedUntil);
+}
+
+internal readonly record struct LoginFailureAttribution(
+    Guid? OrganizationId,
+    Guid? TargetUserId,
+    string Factor)
+{
+    internal static LoginFailureAttribution Known(
+        Guid organizationId,
+        Guid targetUserId,
+        string factor) =>
+        new(organizationId, targetUserId, factor);
+
+    internal static LoginFailureAttribution Unknown(string factor) =>
+        new(null, null, factor);
 }

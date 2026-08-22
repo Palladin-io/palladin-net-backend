@@ -293,6 +293,7 @@ Cross-cutting pieces already exist in `src/core/`. Use them — re-implementing 
 ## Code Style
 - Latest C# features: primary constructors, records, pattern matching, file-scoped namespaces, global usings
 - `internal sealed` for module-internal classes
+- Do not introduce an interface by default for a class with one module-internal implementation. Add one only for a real module/external boundary, runtime-selected multiple implementations, or a deliberate test seam that tests actually substitute. DI registration or hypothetical future mocking is not sufficient; inject and register the concrete internal class instead.
 - `var` when type is obvious
 - LINQ and lambda for collections
 - No comments — self-documenting code through naming

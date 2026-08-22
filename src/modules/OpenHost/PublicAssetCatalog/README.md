@@ -29,8 +29,9 @@ the bounded raster, re-encodes it as PNG, and publishes exactly once under the r
 - `POST /api/public-assets/uploads/{uploadSessionId}/complete`
 
 Public read endpoints are anonymous and return metadata plus a render-ready delivery URL. Ensure requires
-an email-verified Member with `VaultManage` and is rate-limited both to 30 requests and 500 newly reserved hostnames per Member per minute
-because it may schedule outbound acquisition. Production
+an email-verified Member with `VaultManage` and is rate-limited to 500 newly reserved hostnames per Member per minute
+because only a new reservation may schedule outbound acquisition. Idempotent readiness checks for existing
+hostnames do not consume that acquisition quota and are not subject to a separate request-count limit. Production
 sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environments configure the direct
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
 

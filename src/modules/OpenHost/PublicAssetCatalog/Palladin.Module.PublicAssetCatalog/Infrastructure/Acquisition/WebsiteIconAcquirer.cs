@@ -17,8 +17,16 @@ namespace Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 
 internal interface IWebsiteIconAcquirer
 {
-    Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct);
+    Task<WebsiteIconAcquisitionResult> AcquireAsync(Guid assetId, string hostname, CancellationToken ct);
+    Task FailAsync(Guid assetId, CancellationToken ct);
     Task ReleaseDispatchAsync(Guid assetId, CancellationToken ct);
+}
+
+internal enum WebsiteIconAcquisitionResult
+{
+    NotRequired = 0,
+    Acquired = 1,
+    RetryRequired = 2,
 }
 
 /// <summary>Best-effort public favicon acquisition with DNS pinning and redirect revalidation.</summary>
@@ -37,44 +45,54 @@ internal sealed class WebsiteIconAcquirer(
         "/android-chrome-192x192.png",
     ];
 
-    public async Task AcquireAsync(Guid assetId, string hostname, CancellationToken ct)
+    public async Task<WebsiteIconAcquisitionResult> AcquireAsync(
+        Guid assetId,
+        string hostname,
+        CancellationToken ct)
     {
-        if (!PublicNetworkPolicy.IsValidHostname(hostname)) return;
+        if (!PublicNetworkPolicy.IsValidHostname(hostname))
+        {
+            return WebsiteIconAcquisitionResult.NotRequired;
+        }
         var asset = await db.Assets
             .Include(x => x.Aliases)
             .Include(x => x.Revisions)
             .SingleOrDefaultAsync(x => x.Id == assetId
                 && x.Type == PublicAssetType.WebsiteIcon
                 && x.Aliases.Any(a => a.Kind == PublicAssetAliasKind.Hostname && a.Value == hostname), ct);
-        if (asset is null || asset.Status != PublicAssetStatus.Pending) return;
+        if (asset is null || asset.Status != PublicAssetStatus.Pending)
+        {
+            return WebsiteIconAcquisitionResult.NotRequired;
+        }
 
         var key = PublicAssetContracts.WebsiteIconStorageKey(asset.Id);
         var existing = await storage.OpenImmutableAsync(key, "image/png", ct);
         if (existing is not null)
         {
             var dimensions = await ValidateImmutableImageAsync(existing, ct);
-            await CompleteAggregateAsync(asset, existing, dimensions.Width, dimensions.Height, key, ct);
-            return;
+            if (dimensions is null)
+            {
+                return WebsiteIconAcquisitionResult.RetryRequired;
+            }
+            await CompleteAggregateAsync(asset, existing, dimensions.Value.Width, dimensions.Value.Height, key, ct);
+            return WebsiteIconAcquisitionResult.Acquired;
         }
 
         var origin = new Uri($"https://{hostname}/");
         var fallbackHostname = ParentHostname(hostname);
         var candidates = new List<IconCandidate>();
-        var transientFailure = false;
         var page = await TryDownloadCandidateAsync(origin, ct);
-        transientFailure |= page.TransientFailure;
-        if (page.Bytes is not null)
+        if (page is not null)
         {
-            var html = Encoding.UTF8.GetString(page.Bytes);
+            var html = Encoding.UTF8.GetString(page);
             candidates.AddRange(DiscoverHtmlIconCandidates(origin, html));
             var manifest = DiscoverManifestUri(origin, html);
             if (manifest is not null)
             {
                 var manifestDownload = await TryDownloadCandidateAsync(manifest, ct);
-                transientFailure |= manifestDownload.TransientFailure;
-                if (manifestDownload.Bytes is not null)
+                if (manifestDownload is not null)
                 {
-                    candidates.AddRange(DiscoverManifestIconCandidates(manifest, manifestDownload.Bytes));
+                    candidates.AddRange(DiscoverManifestIconCandidates(manifest, manifestDownload));
                 }
             }
         }
@@ -110,42 +128,32 @@ internal sealed class WebsiteIconAcquirer(
                 (candidate, download: await TryDownloadCandidateAsync(candidate.Uri, ct))));
             foreach (var result in downloaded.OrderByDescending(x => x.candidate.Score))
             {
-                transientFailure |= result.download.TransientFailure;
-                if (result.download.Bytes is null)
+                if (result.download is null)
                 {
                     continue;
                 }
-                await using var source = new MemoryStream(result.download.Bytes, writable: false);
+                await using var source = new MemoryStream(result.download, writable: false);
                 try { image = await Image.LoadAsync(source, ct); break; }
                 catch (UnknownImageFormatException) { }
+                catch (InvalidImageContentException) { }
             }
             if (image is not null) break;
         }
         if (image is null)
         {
-            if (transientFailure)
-            {
-                await ResetAggregateForRetryAsync(asset.Id, ct);
-            }
-            else
-            {
-                await FailAggregateAsync(asset, ct);
-            }
-            return;
+            return WebsiteIconAcquisitionResult.RetryRequired;
         }
         using (image)
         {
             if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048 || (long)image.Width * image.Height > 4_000_000)
             {
-                await FailAggregateAsync(asset, ct);
-                return;
+                return WebsiteIconAcquisitionResult.RetryRequired;
             }
             await using var sanitized = new MemoryStream();
             await image.SaveAsync(sanitized, new PngEncoder(), ct);
             if (sanitized.Length > MaximumDownloadBytes)
             {
-                await FailAggregateAsync(asset, ct);
-                return;
+                return WebsiteIconAcquisitionResult.RetryRequired;
             }
             var digest = Convert.ToHexString(SHA256.HashData(sanitized.ToArray())).ToLowerInvariant();
             sanitized.Position = 0;
@@ -155,22 +163,49 @@ internal sealed class WebsiteIconAcquirer(
             if (published.ExistingContent is not null)
             {
                 var dimensions = await ValidateImmutableImageAsync(published, ct);
-                width = dimensions.Width;
-                height = dimensions.Height;
+                if (dimensions is null)
+                {
+                    return WebsiteIconAcquisitionResult.RetryRequired;
+                }
+                width = dimensions.Value.Width;
+                height = dimensions.Value.Height;
             }
             await CompleteAggregateAsync(asset, published, width, height, key, ct);
         }
+        return WebsiteIconAcquisitionResult.Acquired;
     }
 
-    private static async Task<(int Width, int Height)> ValidateImmutableImageAsync(ImmutablePublishedObject published, CancellationToken ct)
+    private static async Task<(int Width, int Height)?> ValidateImmutableImageAsync(
+        ImmutablePublishedObject published,
+        CancellationToken ct)
     {
-        if (published.ExistingContent is null) throw new InvalidDataException("Immutable public asset content is missing.");
+        if (published.ExistingContent is null)
+        {
+            return null;
+        }
         await using var source = new MemoryStream(published.ExistingContent, writable: false);
-        using var image = await Image.LoadAsync(source, ct);
-        if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048
-            || (long)image.Width * image.Height > 4_000_000)
-            throw new InvalidDataException("The immutable website icon has invalid dimensions.");
-        return (image.Width, image.Height);
+        Image image;
+        try
+        {
+            image = await Image.LoadAsync(source, ct);
+        }
+        catch (UnknownImageFormatException)
+        {
+            return null;
+        }
+        catch (InvalidImageContentException)
+        {
+            return null;
+        }
+        using (image)
+        {
+            if (image.Width is < 1 or > 2048 || image.Height is < 1 or > 2048
+                || (long)image.Width * image.Height > 4_000_000)
+            {
+                return null;
+            }
+            return (image.Width, image.Height);
+        }
     }
 
     private async Task CompleteAggregateAsync(PublicAsset asset, ImmutablePublishedObject published, int width, int height, string key, CancellationToken ct)
@@ -179,8 +214,16 @@ internal sealed class WebsiteIconAcquirer(
         await db.CommitAsync(ct);
     }
 
-    private async Task FailAggregateAsync(PublicAsset asset, CancellationToken ct)
+    public async Task FailAsync(Guid assetId, CancellationToken ct)
     {
+        db.Clear();
+        var asset = await db.Assets.SingleOrDefaultAsync(
+            x => x.Id == assetId && x.Status == PublicAssetStatus.Pending,
+            ct);
+        if (asset is null)
+        {
+            return;
+        }
         asset.FailWebsiteIconAcquisition();
         await db.CommitAsync(ct);
     }
@@ -203,7 +246,6 @@ internal sealed class WebsiteIconAcquirer(
     }
 
     private sealed record IconCandidate(Uri Uri, int Score);
-    private readonly record struct CandidateDownload(byte[]? Bytes, bool TransientFailure);
 
     private static IEnumerable<IconCandidate> ConventionalCandidates(Uri origin, int score)
     {
@@ -393,13 +435,13 @@ internal sealed class WebsiteIconAcquirer(
         statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
         || (int)statusCode >= 500;
 
-    private static async Task<CandidateDownload> TryDownloadCandidateAsync(Uri uri, CancellationToken ct)
+    private static async Task<byte[]?> TryDownloadCandidateAsync(Uri uri, CancellationToken ct)
     {
-        try { return new(await DownloadAsync(uri, ct), false); }
-        catch (WebsiteIconTransientDownloadException) { return new(null, true); }
-        catch (HttpRequestException) { return new(null, true); }
-        catch (SocketException) { return new(null, true); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new(null, true); }
+        try { return await DownloadAsync(uri, ct); }
+        catch (WebsiteIconTransientDownloadException) { return null; }
+        catch (HttpRequestException) { return null; }
+        catch (SocketException) { return null; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
     }
 
     private sealed class WebsiteIconTransientDownloadException : Exception;

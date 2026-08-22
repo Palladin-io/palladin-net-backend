@@ -125,6 +125,63 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
+    public async Task When_One_Icon_Fails_Then_Only_That_Icon_Is_Redelivered()
+    {
+        // Given
+        var assetId = Guid.NewGuid();
+        var acquirer = Substitute.For<IWebsiteIconAcquirer>();
+        acquirer.AcquireAsync(assetId, "example.com", TestContext.Current.CancellationToken)
+            .Returns(WebsiteIconAcquisitionResult.RetryRequired);
+        var context = Substitute.For<ConsumeContext<AcquireWebsiteIconV2Command>>();
+        context.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
+        context.CancellationToken.Returns(TestContext.Current.CancellationToken);
+
+        // When
+        var action = () => new AcquireWebsiteIconV2Consumer(acquirer).Consume(context);
+
+        // Then
+        await action.ShouldThrowAsync<WebsiteIconAcquisitionRetryRequiredException>();
+        await acquirer.DidNotReceive().FailAsync(assetId, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task When_One_Icon_Exhausts_Three_Redeliveries_Then_Only_That_Icon_Fails()
+    {
+        // Given
+        var assetId = Guid.NewGuid();
+        var acquirer = Substitute.For<IWebsiteIconAcquirer>();
+        acquirer.AcquireAsync(assetId, "example.com", TestContext.Current.CancellationToken)
+            .Returns(WebsiteIconAcquisitionResult.RetryRequired);
+        var headers = Substitute.For<Headers>();
+        headers.Get<int>(MessageHeaders.RedeliveryCount, default(int?)).Returns(3);
+        var context = Substitute.For<ConsumeContext<AcquireWebsiteIconV2Command>>();
+        context.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
+        context.CancellationToken.Returns(TestContext.Current.CancellationToken);
+        context.Headers.Returns(headers);
+
+        // When
+        await new AcquireWebsiteIconV2Consumer(acquirer).Consume(context);
+
+        // Then
+        await acquirer.Received(1).FailAsync(assetId, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public void When_An_Icon_Needs_Retry_Then_It_Gets_Three_Tail_Redeliveries()
+    {
+        // Given / When / Then
+        WebsiteIconAcquisitionRetryPolicy.Intervals.ShouldBe(
+        [
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(3),
+        ]);
+        WebsiteIconAcquisitionRetryPolicy.ShouldRedeliver(0).ShouldBeTrue();
+        WebsiteIconAcquisitionRetryPolicy.ShouldRedeliver(2).ShouldBeTrue();
+        WebsiteIconAcquisitionRetryPolicy.ShouldRedeliver(3).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task When_Dns_Or_Download_Does_Not_Complete_Then_The_Worker_Operation_Is_Bounded()
     {
         var elapsed = Stopwatch.StartNew();

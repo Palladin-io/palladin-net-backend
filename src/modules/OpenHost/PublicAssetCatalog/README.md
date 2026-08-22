@@ -29,14 +29,15 @@ the bounded raster, re-encodes it as PNG, and publishes exactly once under the r
 - `POST /api/public-assets/uploads/{uploadSessionId}/complete`
 
 Public read endpoints are anonymous and return metadata plus a render-ready delivery URL. Ensure requires
-an email-verified Member with `VaultManage` and is rate-limited both to 30 requests and 500 newly reserved hostnames per Member per minute
-because it may schedule outbound acquisition. Production
+an email-verified Member with `VaultManage` and is rate-limited to 500 newly reserved hostnames per Member per minute
+because only a new reservation may schedule outbound acquisition. Idempotent readiness checks for existing
+hostnames do not consume that acquisition quota and are not subject to a separate request-count limit. Production
 sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environments configure the direct
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
 
 Missing website icons are first reserved under a unique hostname alias, then emitted as
 `AcquireWebsiteIconV2Command(assetId, hostname)` integration commands to the durable
-`public-asset-catalog.commands.acquire-website-icon-v2` RabbitMQ endpoint. The previous
+`public-asset-catalog.commands.website-icons` RabbitMQ endpoint. The previous
 pre-production command schema/queue is intentionally retired and may be purged during this
 non-production cutover; no production messages or catalog data exist to migrate. The uniqueness
 migration deterministically removes duplicate pre-production hostname assets before creating the index.
@@ -57,8 +58,11 @@ Acquisition reservations persist a dispatch marker. Ensure publishes without a d
 or row lock and sets the marker only after the broker accepts the command. A concurrent request may
 publish the same command, which is safe because acquisition and immutable storage publication are
 idempotent; the marker's optimistic concurrency token has one durable winner. A marked Pending reservation is never
-re-enqueued merely because time elapsed; a transient acquisition failure clears the committed marker,
-and permits a later explicit ensure to retry. A fault consumer clears the same marker after broker retries are exhausted. Reservation creation is serialized
+re-enqueued merely because time elapsed. An expected download, decode, validation or sanitization failure
+marks only that icon as `Failed` after its first acquisition attempt; the consumer does not schedule
+redelivery, and other queued icons continue immediately. An unexpected
+infrastructure fault still uses the shared MassTransit retry policy, and its fault consumer clears the dispatch
+marker after broker retries are exhausted so a later explicit ensure can recover it. Reservation creation is serialized
 per Member before hostname permits are charged, so concurrent requests cannot charge the same hostname twice.
 The reserved revision key is written with S3 `If-None-Match: *`,
 and every delivery probes that key before contacting the mutable upstream. A retry after an

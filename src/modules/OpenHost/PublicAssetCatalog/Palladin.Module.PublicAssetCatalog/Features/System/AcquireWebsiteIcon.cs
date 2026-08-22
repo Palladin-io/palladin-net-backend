@@ -20,8 +20,18 @@ internal sealed class AcquireWebsiteIconV2ConsumerDefinition : ConsumerDefinitio
 internal sealed class AcquireWebsiteIconV2Consumer(IWebsiteIconAcquirer acquirer)
     : IConsumer<AcquireWebsiteIconV2Command>
 {
-    public Task Consume(ConsumeContext<AcquireWebsiteIconV2Command> context) =>
-        acquirer.AcquireAsync(context.Message.AssetId, context.Message.Hostname, context.CancellationToken);
+    public async Task Consume(ConsumeContext<AcquireWebsiteIconV2Command> context)
+    {
+        var result = await acquirer.AcquireAsync(
+            context.Message.AssetId,
+            context.Message.Hostname,
+            context.CancellationToken);
+        if (result != WebsiteIconAcquisitionResult.Failed)
+        {
+            return;
+        }
+        await acquirer.FailAsync(context.Message.AssetId, context.CancellationToken);
+    }
 }
 
 [UsedImplicitly]

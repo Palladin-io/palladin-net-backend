@@ -125,6 +125,25 @@ public sealed class PublicAssetSecurityTests
     }
 
     [Fact]
+    public async Task When_One_Icon_Fails_Then_Only_That_Icon_Is_Marked_Failed()
+    {
+        // Given
+        var assetId = Guid.NewGuid();
+        var acquirer = Substitute.For<IWebsiteIconAcquirer>();
+        acquirer.AcquireAsync(assetId, "example.com", TestContext.Current.CancellationToken)
+            .Returns(WebsiteIconAcquisitionResult.Failed);
+        var context = Substitute.For<ConsumeContext<AcquireWebsiteIconV2Command>>();
+        context.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
+        context.CancellationToken.Returns(TestContext.Current.CancellationToken);
+
+        // When
+        await new AcquireWebsiteIconV2Consumer(acquirer).Consume(context);
+
+        // Then
+        await acquirer.Received(1).FailAsync(assetId, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task When_Dns_Or_Download_Does_Not_Complete_Then_The_Worker_Operation_Is_Bounded()
     {
         var elapsed = Stopwatch.StartNew();

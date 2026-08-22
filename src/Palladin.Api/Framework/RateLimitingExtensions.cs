@@ -49,14 +49,6 @@ internal static class RateLimitingExtensions
                     return FixedWindow($"identity-security-write:{userId}", permitLimit: 5);
                 }
 
-                // Website-icon ensure may enqueue tightly sandboxed outbound favicon fetches.
-                // Partition authenticated callers so one Member cannot amplify acquisition traffic.
-                if (path.StartsWithSegments("/api/public-assets/website-icons/ensure"))
-                {
-                    var memberId = context.User.GetUserId()?.ToString() ?? ip;
-                    return FixedWindow($"public-assets-ensure:member:{memberId}", permitLimit: 30);
-                }
-
                 // Agent surfaces are partitioned by the org API key (SHA-256-hashed so the secret never lingers
                 // in limiter state), falling back to IP when absent — fairer than per-IP behind a shared NAT.
                 var apiKey = context.Request.Headers[AgentAuthenticationOptions.ApiKeyHeader].ToString();

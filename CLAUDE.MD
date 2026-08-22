@@ -142,6 +142,15 @@ Convention: `Position = "Modules:{Module}:{Section}"` (e.g. `Modules:Vault:Persi
 ### Cross-module communication
 Modules communicate exclusively through **MassTransit integration events** (RabbitMQ). Domain events stay within module boundaries. Each module's published/consumed event catalog lives in its `{ModuleRoot}/README.md`.
 
+#### Receive endpoint queue naming
+
+Every consumer has an explicit `ConsumerDefinition<T>` whose endpoint name is stored in its module's `Infrastructure/MassTransit/*Endpoints.cs` constants. Queue names always follow `{module}.{type}.{destination}`:
+
+- event consumers use `{receiving-module}.events.{source-module}`; use `self` when the receiving module owns the event. All event consumers in one module for the same source module share that endpoint, regardless of whether they produce analytics, audit, search, notification or onboarding side effects. A MassTransit `Fault<TCommand>` handled by the command-owning module uses its `events.self` endpoint;
+- command consumers use `{receiving-module}.commands.{subcontext}`. Prefer `general` when the module needs only one general command lane; otherwise use a stable noun naming a meaningful module subcontext such as `inbox`, `realtime`, `scope`, `items` or `member-key-directory`. Never name a command queue after the sender module or a single command verb.
+
+Examples: `vault.events.self`, `vault.events.identity`, `notification.commands.inbox`, `audit.commands.general`. Do not introduce other type segments such as `faults`, and never hardcode an endpoint name in a consumer definition.
+
 Use one unified `Upserted` event carrying an `EntityChange { Created, Updated }` classifier instead of separate `Created` and `Updated` events. Subscribers branch on the classifier and use `UpdatedAt` for idempotency.
 
 **Strong isolation — no cross-module read query interfaces.** A module must never expose (or consume) a live read-query interface into another module's data. A read concern that spans modules gets **its own module** built as an **OpenHost** (Open Host Service): a denormalized read-model with its own access scoping.

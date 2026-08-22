@@ -10,7 +10,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnEntryCreatedOnboardingDefinition : ConsumerDefinition<OnEntryCreatedOnboarding>
 {
-    public OnEntryCreatedOnboardingDefinition() => EndpointName = VaultEndpoints.Onboarding;
+    public OnEntryCreatedOnboardingDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 // Creating the first entry is an onboarding milestone owned by Identity — Vault pushes it as a command,

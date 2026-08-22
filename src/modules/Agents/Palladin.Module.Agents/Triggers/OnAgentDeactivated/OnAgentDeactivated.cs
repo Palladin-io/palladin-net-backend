@@ -14,7 +14,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnAgentDeactivatedDefinition : ConsumerDefinition<OnAgentDeactivated>
 {
-    public OnAgentDeactivatedDefinition() => EndpointName = AgentsEndpoints.Notification;
+    public OnAgentDeactivatedDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 [UsedImplicitly]

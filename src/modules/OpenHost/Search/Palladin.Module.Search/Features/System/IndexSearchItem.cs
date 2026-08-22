@@ -12,7 +12,7 @@ namespace Palladin.Module.Search.Features;
 [UsedImplicitly]
 internal sealed class IndexSearchItemConsumerDefinition : ConsumerDefinition<IndexSearchItemConsumer>
 {
-    public IndexSearchItemConsumerDefinition() => EndpointName = SearchEndpoints.Index;
+    public IndexSearchItemConsumerDefinition() => EndpointName = SearchEndpoints.Items;
 }
 
 [UsedImplicitly]

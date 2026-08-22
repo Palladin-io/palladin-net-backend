@@ -76,9 +76,11 @@ Shared enums and exceptions referenced across module boundaries (see `CLAUDE.MD`
 | Building block | File | Purpose |
 |---|---|---|
 | `IntegrationEventPublisher` | `Palladin.Core.MassTransit/Events/IntegrationEventPublisher.cs` | `IEventPublisher` impl: filters for `IIntegrationEvent` and publishes via `IPublishEndpoint` |
-| `KebabCaseWithNamespacesEndpointNameFormatter` | `Palladin.Core.MassTransit/KebabNamespaceEndpointFormatter.cs` | Derives kebab-case RabbitMQ queue names from consumer type namespace + class name |
+| `KebabCaseWithNamespacesEndpointNameFormatter` | `Palladin.Core.MassTransit/KebabNamespaceEndpointFormatter.cs` | Fallback formatter for unnamed endpoints and message topology; application consumers use explicit module endpoint constants |
 | `MassTransitModule` | `Palladin.Core.MassTransit/MassTransitModule.cs` | Registers MassTransit + RabbitMQ; must run **after** all `AddXxxModule()` calls (see `CLAUDE.MD`) |
 | `BuildingBlocks/*` | `Palladin.Core.MassTransit/BuildingBlocks/` | Outbox, retries, circuit breaker, kill switch, rate limiter, host options, JSON options, explicit consumer scanning |
+
+Receive queues follow `{module}.{events|commands}.{destination}`. Event destinations identify the source module (`self` for events owned by the receiver), and all event consumers for the same receiver/source pair share one endpoint. Command destinations identify a stable receiving-module subcontext, or `general` when a dedicated subcontext would add no meaning. Endpoint names live in `Infrastructure/MassTransit/*Endpoints.cs`; consumer definitions never hardcode them. `MassTransitConsumerArchitectureTests` validates the convention for every module consumer, including `Fault<TCommand>` as a self event.
 
 ## `Palladin.Core.Transport`
 

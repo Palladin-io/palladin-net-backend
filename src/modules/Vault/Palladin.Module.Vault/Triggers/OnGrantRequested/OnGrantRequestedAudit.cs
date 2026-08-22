@@ -10,7 +10,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnGrantRequestedAuditDefinition : ConsumerDefinition<OnGrantRequestedAudit>
 {
-    public OnGrantRequestedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnGrantRequestedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

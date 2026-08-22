@@ -13,7 +13,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationMemberRemovalCompletedDefinition
     : ConsumerDefinition<OnOrganizationMemberRemovalCompleted>
 {
-    public OnOrganizationMemberRemovalCompletedDefinition() => EndpointName = IdentityEndpoints.Self;
+    public OnOrganizationMemberRemovalCompletedDefinition() => EndpointName = IdentityEndpoints.FromVault;
 }
 
 [UsedImplicitly]

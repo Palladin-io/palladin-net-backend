@@ -10,7 +10,7 @@ namespace Palladin.Module.Identity.Triggers;
 [UsedImplicitly]
 internal sealed class OnOrganizationMemberRemovedSearchDefinition : ConsumerDefinition<OnOrganizationMemberRemovedSearch>
 {
-    public OnOrganizationMemberRemovedSearchDefinition() => EndpointName = IdentityEndpoints.Search;
+    public OnOrganizationMemberRemovedSearchDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

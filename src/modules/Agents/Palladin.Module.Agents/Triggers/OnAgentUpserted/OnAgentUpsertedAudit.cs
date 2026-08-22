@@ -11,7 +11,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnAgentUpsertedAuditDefinition : ConsumerDefinition<OnAgentUpsertedAudit>
 {
-    public OnAgentUpsertedAuditDefinition() => EndpointName = AgentsEndpoints.Audit;
+    public OnAgentUpsertedAuditDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 // Records agent.enrolled when an agent first appears in pending status. Other upsert transitions

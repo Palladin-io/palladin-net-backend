@@ -10,7 +10,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationInvitationResentAuditDefinition
     : ConsumerDefinition<OnOrganizationInvitationResentAudit>
 {
-    public OnOrganizationInvitationResentAuditDefinition() => EndpointName = IdentityEndpoints.Audit;
+    public OnOrganizationInvitationResentAuditDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

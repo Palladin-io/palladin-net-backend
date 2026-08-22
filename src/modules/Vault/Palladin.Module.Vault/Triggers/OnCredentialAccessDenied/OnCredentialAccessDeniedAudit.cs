@@ -12,7 +12,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnCredentialAccessDeniedAuditDefinition : ConsumerDefinition<OnCredentialAccessDeniedAudit>
 {
-    public OnCredentialAccessDeniedAuditDefinition() => EndpointName = VaultEndpoints.Audit;
+    public OnCredentialAccessDeniedAuditDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 // The event carries no org, so Vault resolves it from its own read-model before publishing.

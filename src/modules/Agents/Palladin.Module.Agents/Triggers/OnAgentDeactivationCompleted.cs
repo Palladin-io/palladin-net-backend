@@ -12,7 +12,7 @@ namespace Palladin.Module.Agents.Triggers;
 internal sealed class OnAgentDeactivationCompletedDefinition
     : ConsumerDefinition<OnAgentDeactivationCompleted>
 {
-    public OnAgentDeactivationCompletedDefinition() => EndpointName = AgentsEndpoints.Self;
+    public OnAgentDeactivationCompletedDefinition() => EndpointName = AgentsEndpoints.FromVault;
 }
 
 [UsedImplicitly]

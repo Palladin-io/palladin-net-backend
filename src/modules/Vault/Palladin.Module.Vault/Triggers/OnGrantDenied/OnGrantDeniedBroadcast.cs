@@ -11,7 +11,7 @@ namespace Palladin.Module.Vault.Triggers;
 [UsedImplicitly]
 internal sealed class OnGrantDeniedBroadcastDefinition : ConsumerDefinition<OnGrantDeniedBroadcast>
 {
-    public OnGrantDeniedBroadcastDefinition() => EndpointName = VaultEndpoints.Notification;
+    public OnGrantDeniedBroadcastDefinition() => EndpointName = VaultEndpoints.Self;
 }
 
 [UsedImplicitly]

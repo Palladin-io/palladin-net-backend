@@ -10,7 +10,7 @@ namespace Palladin.Module.Notification.Triggers;
 [UsedImplicitly]
 internal sealed class OnPushTokenRegisteredOnboardingDefinition : ConsumerDefinition<OnPushTokenRegisteredOnboarding>
 {
-    public OnPushTokenRegisteredOnboardingDefinition() => EndpointName = NotificationEndpoints.Onboarding;
+    public OnPushTokenRegisteredOnboardingDefinition() => EndpointName = NotificationEndpoints.Self;
 }
 
 // Registering a mobile (iOS / Android) push token is the "mobile registered" onboarding milestone.

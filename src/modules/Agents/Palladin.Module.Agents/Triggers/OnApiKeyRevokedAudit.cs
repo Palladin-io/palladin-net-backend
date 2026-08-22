@@ -10,7 +10,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnApiKeyRevokedAuditDefinition : ConsumerDefinition<OnApiKeyRevokedAudit>
 {
-    public OnApiKeyRevokedAuditDefinition() => EndpointName = AgentsEndpoints.Audit;
+    public OnApiKeyRevokedAuditDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 [UsedImplicitly]

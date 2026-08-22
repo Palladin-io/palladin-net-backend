@@ -11,7 +11,7 @@ namespace Palladin.Module.Identity.Triggers;
 internal sealed class OnOrganizationMemberJoinedAuditDefinition
     : ConsumerDefinition<OnOrganizationMemberJoinedAudit>
 {
-    public OnOrganizationMemberJoinedAuditDefinition() => EndpointName = IdentityEndpoints.Audit;
+    public OnOrganizationMemberJoinedAuditDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 [UsedImplicitly]

@@ -10,7 +10,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnApiKeyActivatedAuditDefinition : ConsumerDefinition<OnApiKeyActivatedAudit>
 {
-    public OnApiKeyActivatedAuditDefinition() => EndpointName = AgentsEndpoints.Audit;
+    public OnApiKeyActivatedAuditDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 [UsedImplicitly]

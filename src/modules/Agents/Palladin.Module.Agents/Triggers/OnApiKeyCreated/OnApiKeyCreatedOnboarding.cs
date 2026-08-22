@@ -10,7 +10,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnApiKeyCreatedOnboardingDefinition : ConsumerDefinition<OnApiKeyCreatedOnboarding>
 {
-    public OnApiKeyCreatedOnboardingDefinition() => EndpointName = AgentsEndpoints.Onboarding;
+    public OnApiKeyCreatedOnboardingDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 // Creating an API key is an ORG-level onboarding milestone — once anyone in the org has one, it is done

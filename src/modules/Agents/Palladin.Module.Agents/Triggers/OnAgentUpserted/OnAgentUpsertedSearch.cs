@@ -11,7 +11,7 @@ namespace Palladin.Module.Agents.Triggers;
 [UsedImplicitly]
 internal sealed class OnAgentUpsertedSearchDefinition : ConsumerDefinition<OnAgentUpsertedSearch>
 {
-    public OnAgentUpsertedSearchDefinition() => EndpointName = AgentsEndpoints.Search;
+    public OnAgentUpsertedSearchDefinition() => EndpointName = AgentsEndpoints.Self;
 }
 
 // Agents are org-wide (no scope) but gated behind AgentManage, so only members with agent access see

@@ -14,7 +14,7 @@ namespace Palladin.Module.Vault.Features;
 internal sealed class UpsertMemberKeyDirectoryConsumerDefinition
     : ConsumerDefinition<UpsertMemberKeyDirectoryConsumer>
 {
-    public UpsertMemberKeyDirectoryConsumerDefinition() => EndpointName = VaultEndpoints.FromIdentity;
+    public UpsertMemberKeyDirectoryConsumerDefinition() => EndpointName = VaultEndpoints.MemberKeyDirectory;
 }
 
 [UsedImplicitly]

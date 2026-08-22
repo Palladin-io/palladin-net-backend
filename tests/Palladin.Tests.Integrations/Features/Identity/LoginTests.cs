@@ -86,9 +86,41 @@ public sealed class LoginTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_CredentialsAreInvalid_Then_KnownAndUnknownAccountsHaveSameResponseShape()
+    {
+        var knownEmail = $"known-parity-{Guid.NewGuid():N}@example.com";
+        await apiFactory.Services.SeedPasswordUserAsync(RandomBytes(32), email: knownEmail);
+        var client = apiFactory.CreateClient();
+
+        var (knownResponse, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = knownEmail,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = RandomBytes(32),
+            });
+        var (unknownResponse, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = $"unknown-parity-{Guid.NewGuid():N}@example.com",
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = RandomBytes(32),
+            });
+
+        knownResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        unknownResponse.StatusCode.ShouldBe(knownResponse.StatusCode);
+        (await unknownResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldBe(await knownResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        unknownResponse.Headers.Contains("Retry-After").ShouldBeFalse();
+        knownResponse.Headers.Contains("Retry-After").ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task When_RepeatedFailures_Then_LocksOutWith429()
     {
-        // Given — MaxAttempts is 5; the sixth attempt must be locked out.
+        // Given — MaxAttempts is 5; the threshold attempt itself must be locked out.
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var email = $"lock-{Guid.NewGuid():N}@example.com";
         await apiFactory.Services.SeedPasswordUserAsync(RandomBytes(32), email: email);
@@ -96,15 +128,19 @@ public sealed class LoginTests(ApiFactory apiFactory) : TestBase
         var badRequest = new LoginRequest { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = RandomBytes(32) };
 
         // When
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 4; i++)
         {
-            await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(badRequest);
+            var (failedResponse, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(badRequest);
+            failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         }
 
         var (response, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(badRequest);
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter.ShouldNotBeNull();
+        response.Headers.RetryAfter.Delta.ShouldNotBeNull();
+        response.Headers.RetryAfter.Delta.Value.ShouldBeGreaterThan(TimeSpan.Zero);
     }
 
     [Fact]

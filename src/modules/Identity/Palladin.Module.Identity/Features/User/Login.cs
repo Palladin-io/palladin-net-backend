@@ -15,6 +15,7 @@ using Microsoft.Extensions.Options;
 using NodaTime;
 using System.Text.Json.Serialization;
 using Palladin.Core.Json;
+using System.Globalization;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -56,6 +57,7 @@ internal sealed class LoginEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IPasswordHasher passwordHasher,
     IAuthSessionIssuer sessionIssuer,
+    ILoginRateLimiter loginRateLimiter,
     ILoginThrottleService loginThrottle,
     IGuidProvider guidProvider,
     IOptions<TotpOptions> totpOptions,
@@ -88,9 +90,17 @@ internal sealed class LoginEndpoint(
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var now = clock.GetCurrentInstant();
 
-        if (await loginThrottle.IsLockedAsync(email, ip, now, ct))
+        var rateLimitLease = await loginRateLimiter.AcquireLoginAsync(email, ip, now, ct);
+        if (!rateLimitLease.IsAcquired)
         {
-            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            await SendRateLimitedAsync(rateLimitLease.RetryAfterSeconds, ct);
+            return;
+        }
+
+        var throttleStatus = await loginThrottle.GetStatusAsync(email, ip, now, ct);
+        if (throttleStatus.IsLocked)
+        {
+            await SendRateLimitedAsync(throttleStatus.RetryAfterSeconds, ct);
             return;
         }
 
@@ -117,7 +127,13 @@ internal sealed class LoginEndpoint(
             || credentialState.KdfProfileId != req.KdfProfileId
             || !credentialVerified)
         {
-            await loginThrottle.RecordFailureAsync(email, ip, now, ct);
+            var failure = await loginThrottle.RecordFailureAsync(email, ip, now, ct);
+            if (failure.IsLocked)
+            {
+                await SendRateLimitedAsync(failure.RetryAfterSeconds, ct);
+                return;
+            }
+
             await Send.UnauthorizedAsync(ct);
             return;
         }
@@ -139,8 +155,6 @@ internal sealed class LoginEndpoint(
             return;
         }
 
-        await loginThrottle.ResetAsync(email, ip, now, ct);
-
         if (user.TotpCredential is { IsEnabled: true })
         {
             var (challengeToken, challengeHash) = SecureToken.Generate();
@@ -150,6 +164,13 @@ internal sealed class LoginEndpoint(
             await domainWriteContext.CommitAsync(ct);
 
             await Send.OkAsync(new LoginResponse(true, challengeToken, null, null, null, null, null), ct);
+            return;
+        }
+
+        var reset = await loginThrottle.ResetAsync(email, ip, now, ct);
+        if (reset.IsLocked)
+        {
+            await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);
             return;
         }
 
@@ -165,5 +186,11 @@ internal sealed class LoginEndpoint(
         await Send.OkAsync(
             new LoginResponse(false, null, accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified),
             ct);
+    }
+
+    private async Task SendRateLimitedAsync(int retryAfterSeconds, CancellationToken ct)
+    {
+        HttpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
     }
 }

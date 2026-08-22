@@ -11,4 +11,10 @@ internal sealed class LoginThrottleOptions
     public int MaxAttempts { get; init; } = 5;
     public int WindowMinutes { get; init; } = 15;
     public int LockoutMinutes { get; init; } = 15;
+    public int RateLimitWindowSeconds { get; init; } = 60;
+    public int LoginIpPermitLimit { get; init; } = 30;
+    public int LoginAccountPermitLimit { get; init; } = 10;
+    public int TotpIpPermitLimit { get; init; } = 30;
+    public int TotpAccountPermitLimit { get; init; } = 10;
+    public int ConcurrencyRetryLimit { get; init; } = 64;
 }

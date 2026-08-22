@@ -1,12 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
+using NodaTime;
 using Palladin.Core.Events;
 using Palladin.Module.Identity.Contracts.Events;
-using NodaTime;
 
 namespace Palladin.Module.Identity.Domain;
 
-// Sliding-window failed-login counter per (email, ip). When failures reach the threshold within the
+// Failed-login window per (email, ip). When failures reach the threshold within the
 // window the pair is locked until LockedUntil. A successful login resets it. Enumeration-safe: the
 // same lockout applies whether or not the email maps to a real account.
 internal sealed class LoginLockout : EventEntityBase
@@ -19,6 +19,7 @@ internal sealed class LoginLockout : EventEntityBase
     public Instant? LockedUntil { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant UpdatedAt { get; private set; }
+    public uint Version { get; private set; }
 
     private LoginLockout() { }
 
@@ -35,8 +36,17 @@ internal sealed class LoginLockout : EventEntityBase
 
     internal bool IsLocked(Instant now) => LockedUntil is { } until && now < until;
 
-    internal void RecordFailure(int maxAttempts, Duration window, Duration lockoutDuration, Instant now)
+    internal LoginLockoutDecision RecordFailure(
+        int maxAttempts,
+        Duration window,
+        Duration lockoutDuration,
+        Instant now)
     {
+        if (IsLocked(now))
+        {
+            return LoginLockoutDecision.Locked(LockedUntil!.Value);
+        }
+
         if (now - WindowStartedAt > window)
         {
             FailedCount = 0;
@@ -45,6 +55,7 @@ internal sealed class LoginLockout : EventEntityBase
 
         FailedCount++;
         UpdatedAt = now;
+        Version++;
 
         if (FailedCount >= maxAttempts)
         {
@@ -53,17 +64,34 @@ internal sealed class LoginLockout : EventEntityBase
             FailedCount = 0;
             WindowStartedAt = now;
             AddEvent(new LoginLockedOutEvent(HashEmail(Email), lockedUntil, now));
+            return LoginLockoutDecision.Locked(lockedUntil);
         }
+
+        return LoginLockoutDecision.Recorded();
     }
 
-    internal void Reset(Instant now)
+    internal bool Reset(Instant now)
     {
+        if (FailedCount == 0 && LockedUntil is null)
+        {
+            return false;
+        }
+
         FailedCount = 0;
         LockedUntil = null;
         WindowStartedAt = now;
         UpdatedAt = now;
+        Version++;
+        return true;
     }
 
     private static string HashEmail(string email) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(email))).ToLowerInvariant();
+}
+
+internal readonly record struct LoginLockoutDecision(bool IsLocked, Instant? LockedUntil)
+{
+    internal static LoginLockoutDecision Recorded() => new(false, null);
+
+    internal static LoginLockoutDecision Locked(Instant lockedUntil) => new(true, lockedUntil);
 }

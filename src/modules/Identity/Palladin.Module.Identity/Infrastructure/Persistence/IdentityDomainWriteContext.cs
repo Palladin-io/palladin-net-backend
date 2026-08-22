@@ -23,4 +23,5 @@ internal sealed class IdentityDomainWriteContext(
     public IQueryable<TotpRecoveryCode> TotpRecoveryCodes => Track<TotpRecoveryCode>();
     public IQueryable<VerificationToken> VerificationTokens => Track<VerificationToken>();
     public IQueryable<LoginLockout> LoginLockouts => Track<LoginLockout>();
+    public IQueryable<LoginRateLimitBucket> LoginRateLimitBuckets => Track<LoginRateLimitBucket>();
 }

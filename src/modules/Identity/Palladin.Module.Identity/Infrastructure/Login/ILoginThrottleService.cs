@@ -4,12 +4,31 @@ namespace Palladin.Module.Identity.Infrastructure.Login;
 
 internal interface ILoginThrottleService
 {
-    Task<bool> IsLockedAsync(string normalizedEmail, string ipAddress, Instant now, CancellationToken ct);
+    Task<LoginThrottleResult> GetStatusAsync(
+        string normalizedEmail,
+        string ipAddress,
+        Instant now,
+        CancellationToken ct);
 
-    Task RecordFailureAsync(string normalizedEmail, string ipAddress, Instant now, CancellationToken ct);
+    Task<LoginThrottleResult> RecordFailureAsync(
+        string normalizedEmail,
+        string ipAddress,
+        Instant now,
+        CancellationToken ct);
 
-    // Clears the lockout within the CURRENT unit of work but does NOT commit — the caller commits it
-    // together with session issuance / challenge consumption so a partial failure can't leave a
-    // consumed challenge without a session.
-    Task ResetAsync(string normalizedEmail, string ipAddress, Instant now, CancellationToken ct);
+    Task<LoginThrottleResult> ResetAsync(
+        string normalizedEmail,
+        string ipAddress,
+        Instant now,
+        CancellationToken ct);
+}
+
+internal readonly record struct LoginThrottleResult(bool IsLocked, int RetryAfterSeconds)
+{
+    internal static LoginThrottleResult Available() => new(false, 0);
+
+    internal static LoginThrottleResult Locked(Instant lockedUntil, Instant now) =>
+        new(true, Math.Max(1, (int)Math.Ceiling((lockedUntil - now).TotalSeconds)));
+
+    internal static LoginThrottleResult FailClosed() => new(true, 1);
 }

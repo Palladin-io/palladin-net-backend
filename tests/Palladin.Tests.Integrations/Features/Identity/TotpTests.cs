@@ -100,6 +100,53 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_RepeatedLoginTotpFailuresReachThreshold_Then_Returns429WithRetryAfter()
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = KeyGeneration.GenerateRandomKey(32);
+        var email = $"totp-lock-{Guid.NewGuid():N}@example.com";
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
+        var authedClient = apiFactory.CreateAuthenticatedClient(user);
+        var enroll = await EnrollAsync(authedClient);
+        await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
+            new ConfirmTotpRequest { Code = Code(enroll.Secret) });
+
+        var anonClient = apiFactory.CreateClient();
+        var (_, login) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = authHash,
+            });
+        var request = new LoginTotpRequest { ChallengeToken = login.ChallengeToken!, Code = "000000" };
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            var (failedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(request);
+            failedResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        var (renewedLoginResponse, renewedLogin) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                SecurityVersion = 1,
+                KdfProfileId = "identity-argon2id-password-v1",
+                AuthCredential = authHash,
+            });
+        renewedLoginResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var (lockedResponse, _) = await anonClient.POSTAsync<LoginTotpEndpoint, LoginTotpRequest, AuthSessionResponse>(
+            request with { ChallengeToken = renewedLogin.ChallengeToken! });
+        lockedResponse.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        lockedResponse.Headers.RetryAfter.ShouldNotBeNull();
+        lockedResponse.Headers.RetryAfter.Delta.ShouldNotBeNull();
+        lockedResponse.Headers.RetryAfter.Delta.Value.ShouldBeGreaterThan(TimeSpan.Zero);
+    }
+
+    [Fact]
     public async Task When_DisableWithValidCode_Then_FactorRemoved()
     {
         // Given

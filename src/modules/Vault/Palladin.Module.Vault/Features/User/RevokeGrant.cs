@@ -55,6 +55,7 @@ internal sealed class RevokeGrantEndpoint(
 
         var grant = await domainWriteContext.Grants
             .Include(g => g.EncryptedReason)
+            .Include(g => g.AgentWrappedVaultKey)
             .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
             .FirstOrDefaultAsync(g => g.Id == req.GrantId && g.VaultId == req.VaultId, ct);
         if (grant is null)

@@ -29,8 +29,10 @@ public sealed record CommitVaultKeyRotationRequest : IRequiresVaultMembership
 public sealed record VaultKeyRotationIncompleteResponse(
     Guid[] MissingMemberIds,
     Guid[] MissingAgentIds,
+    Guid[] MissingFullGrantIds,
     Guid[] DirtyMemberIds,
     Guid[] DirtyAgentIds,
+    Guid[] DirtyFullGrantIds,
     RotationEntryKeyIdentity[] MissingEntryKeys,
     Guid[] MissingEntryDiscoveryIds,
     RotationEntryKeyIdentity[] DirtyEntryKeys,
@@ -164,11 +166,16 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             ? await InspectAgentCoverageAsync(
                 organizationId, req.VaultId, req.RotationId, rotation.ExcludedAgentId, ct)
             : AgentCoverage.Complete;
+        var fullGrantCoverage = rotatesVaultKey
+            ? await InspectFullGrantCoverageAsync(
+                organizationId, req.VaultId, req.RotationId, rotation.ExcludedAgentId,
+                rotation.TargetKeyEpoch.VaultKeyVersion.Value, ct)
+            : FullGrantCoverage.Complete;
         var entryCoverage = await InspectEntryCoverageAsync(
             organizationId, req.VaultId, req.RotationId, rotatesVaultKey,
             rotation.Scope.HasFlag(VaultKeyRotationScope.Vdk), ct);
         var coverage = InspectCoverage(
-            vault, rotation, globalItems, memberCoverage, agentCoverage, entryCoverage);
+            vault, rotation, globalItems, memberCoverage, agentCoverage, fullGrantCoverage, entryCoverage);
         if (!coverage.IsComplete)
         {
             if (prunedItems > 0)
@@ -217,6 +224,9 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             await ApplyMemberRotationPagesAsync(
                 organizationId, req.VaultId, req.RotationId,
                 targetMemberKeyGeneration, targetKeyEpoch.VaultKeyVersion, rotation.ExcludedMemberId, ct);
+            await ApplyFullGrantRotationPagesAsync(
+                organizationId, req.VaultId, req.RotationId,
+                targetKeyEpoch.VaultKeyVersion.Value, rotation.ExcludedAgentId, ct);
         }
         var agentManifest = rotatesAgentProjection
             ? await ApplyAgentRotationPagesAsync(
@@ -332,11 +342,13 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         while (true)
         {
             var query = domainWriteContext.Grants
+                .Include(x => x.AgentWrappedVaultKey)
                 .Include(x => x.GrantEntryScopes).ThenInclude(x => x.Envelope)
                 .Where(x => x.OrganizationId == organizationId
                             && x.VaultId == vaultId
                             && x.AgentId == agentId
-                            && x.GrantEntryScopes.Any(scope => scope.Envelope != null));
+                            && (x.AgentWrappedVaultKey != null
+                                || x.GrantEntryScopes.Any(scope => scope.Envelope != null)));
             if (lastGrantId is not null)
             {
                 query = query.Where(x => x.Id.CompareTo(lastGrantId.Value) > 0);
@@ -591,6 +603,155 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             dirtyKeys.ToArray(),
             dirtyDiscovery.ToArray(),
             hasMoreIssues);
+    }
+
+    private async Task<FullGrantCoverage> InspectFullGrantCoverageAsync(
+        Guid organizationId,
+        Guid vaultId,
+        Guid rotationId,
+        Guid? excludedAgentId,
+        uint targetVaultKeyVersion,
+        CancellationToken cancellationToken)
+    {
+        var missing = new List<Guid>();
+        var dirty = new List<Guid>();
+        var isComplete = true;
+        var hasMoreIssues = false;
+        Guid? lastGrantId = null;
+        while (true)
+        {
+            var query = domainWriteContext.Grants
+                .OfType<FullGrant>()
+                .AsNoTracking()
+                .Include(x => x.AgentWrappedVaultKey)
+                .Where(x => x.OrganizationId == organizationId
+                    && x.VaultId == vaultId
+                    && x.Status == GrantStatus.Active)
+                .Where(x => excludedAgentId == null || x.AgentId != excludedAgentId);
+            if (lastGrantId is not null)
+            {
+                query = query.Where(x => x.Id.CompareTo(lastGrantId.Value) > 0);
+            }
+
+            var grants = await query.OrderBy(x => x.Id).Take(CommitPageSize).ToListAsync(cancellationToken);
+            if (grants.Count == 0)
+            {
+                break;
+            }
+
+            var grantIds = grants.Select(x => x.Id).ToArray();
+            var agentIds = grants.Select(x => x.AgentId).Distinct().ToArray();
+            var agents = await domainWriteContext.Agents.AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && agentIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+            var items = await LoadPreparedItemsAsync(
+                organizationId, vaultId, rotationId,
+                VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey, grantIds, cancellationToken);
+            foreach (var grant in grants)
+            {
+                var item = items.SingleOrDefault(x => x.SubjectId == grant.Id);
+                if (item is null)
+                {
+                    isComplete = false;
+                    AddBounded(missing, grant.Id, ref hasMoreIssues);
+                    continue;
+                }
+
+                try
+                {
+                    if (grant.AgentWrappedVaultKey is null
+                        || item.SourceRevision != grant.AgentWrappedVaultKey.VaultKeyVersion.Value
+                        || !agents.TryGetValue(grant.AgentId, out var agent)
+                        || agent.Status != AgentStatus.Active
+                        || agent.AccessEpoch != grant.AgentAccessEpoch)
+                    {
+                        throw new DomainException("FULL grant rotation source is stale.");
+                    }
+
+                    var fingerprint = VaultKeyFingerprint.Compute(
+                        Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                    _ = AgentWrappedVaultKeyContractMapper.ToDomain(
+                        VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
+                        organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
+                        targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint);
+                }
+                catch (Exception ex) when (ex is DomainException or FormatException)
+                {
+                    isComplete = false;
+                    AddBounded(dirty, grant.Id, ref hasMoreIssues);
+                }
+            }
+
+            lastGrantId = grants[^1].Id;
+            domainWriteContext.Clear();
+            if (grants.Count < CommitPageSize)
+            {
+                break;
+            }
+        }
+
+        return new FullGrantCoverage(isComplete, missing.ToArray(), dirty.ToArray(), hasMoreIssues);
+    }
+
+    private async Task ApplyFullGrantRotationPagesAsync(
+        Guid organizationId,
+        Guid vaultId,
+        Guid rotationId,
+        uint targetVaultKeyVersion,
+        Guid? excludedAgentId,
+        CancellationToken cancellationToken)
+    {
+        Guid? lastGrantId = null;
+        while (true)
+        {
+            var query = domainWriteContext.Grants
+                .OfType<FullGrant>()
+                .Include(x => x.AgentWrappedVaultKey)
+                .Where(x => x.OrganizationId == organizationId
+                    && x.VaultId == vaultId
+                    && x.Status == GrantStatus.Active)
+                .Where(x => excludedAgentId == null || x.AgentId != excludedAgentId);
+            if (lastGrantId is not null)
+            {
+                query = query.Where(x => x.Id.CompareTo(lastGrantId.Value) > 0);
+            }
+
+            var grants = await query.OrderBy(x => x.Id).Take(CommitPageSize).ToListAsync(cancellationToken);
+            if (grants.Count == 0)
+            {
+                break;
+            }
+
+            var grantIds = grants.Select(x => x.Id).ToArray();
+            var agentIds = grants.Select(x => x.AgentId).Distinct().ToArray();
+            var agents = await domainWriteContext.Agents
+                .Where(x => x.OrganizationId == organizationId && agentIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+            var items = await LoadPreparedItemsAsync(
+                organizationId, vaultId, rotationId,
+                VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey, grantIds, cancellationToken);
+            foreach (var grant in grants)
+            {
+                var agent = agents[grant.AgentId];
+                var item = items.Single(x => x.SubjectId == grant.Id);
+                var fingerprint = VaultKeyFingerprint.Compute(
+                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                var replacement = AgentWrappedVaultKeyContractMapper.ToDomain(
+                    VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
+                    organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
+                    targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint);
+                grant.AgentWrappedVaultKey!.ReplaceWith(replacement);
+            }
+
+            domainWriteContext.EnsureRotationPageTrackingIsBounded(0, CommitPageSize);
+            lastGrantId = grants[^1].Id;
+            await domainWriteContext.FlushAsync(cancellationToken);
+            domainWriteContext.Clear();
+            if (grants.Count < CommitPageSize)
+            {
+                break;
+            }
+        }
     }
 
     private async Task ApplyEntryRotationPagesAsync(
@@ -902,6 +1063,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         IReadOnlyCollection<VaultKeyRotationPreparedItem> items,
         MemberCoverage memberCoverage,
         AgentCoverage agentCoverage,
+        FullGrantCoverage fullGrantCoverage,
         EntryCoverage entryCoverage)
     {
         var metadataItem = items.SingleOrDefault(x => x.Kind == VaultKeyRotationPreparedItemKind.VaultMetadata
@@ -934,8 +1096,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         var response = new VaultKeyRotationIncompleteResponse(
             memberCoverage.MissingIds,
             agentCoverage.MissingIds,
+            fullGrantCoverage.MissingIds,
             memberCoverage.DirtyIds,
             agentCoverage.DirtyIds,
+            fullGrantCoverage.DirtyIds,
             entryCoverage.MissingKeys,
             entryCoverage.MissingDiscoveryIds,
             entryCoverage.DirtyKeys,
@@ -945,14 +1109,17 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             dirtyKeyMaterial,
             entryCoverage.HasMoreIssues
             || memberCoverage.HasMoreIssues
-            || agentCoverage.HasMoreIssues);
+            || agentCoverage.HasMoreIssues
+            || fullGrantCoverage.HasMoreIssues);
         return new RotationCoverage(items.Count == (metadataRequired ? 1 : 0) + requiredKeyMaterial.Length
             + requiredTrustAnchors.Length
             && memberCoverage.IsComplete
             && agentCoverage.IsComplete
+            && fullGrantCoverage.IsComplete
             && entryCoverage.IsComplete
             && response.DirtyMemberIds.Length == 0
             && response.DirtyAgentIds.Length == 0
+            && response.DirtyFullGrantIds.Length == 0
             && !response.VaultMetadataDirty
             && response.MissingKeyMaterialKinds.Length == 0
             && response.DirtyKeyMaterialKinds.Length == 0
@@ -1019,6 +1186,14 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         bool HasMoreIssues)
     {
         internal static readonly AgentCoverage Complete = new(true, [], [], false);
+    }
+    private sealed record FullGrantCoverage(
+        bool IsComplete,
+        Guid[] MissingIds,
+        Guid[] DirtyIds,
+        bool HasMoreIssues)
+    {
+        internal static readonly FullGrantCoverage Complete = new(true, [], [], false);
     }
     private sealed record EntryCoverage(
         bool IsComplete,

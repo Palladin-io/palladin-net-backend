@@ -25,6 +25,7 @@ public sealed record UpdateEntryRequest : IRequiresVaultMembership
     public MemberIndexEnvelopeContract? MemberIndex { get; init; }
     public bool AgentDiscoveryChanged { get; init; }
     public AgentDiscoveryEnvelopeContract? AgentDiscovery { get; init; }
+    public GrantDeliveryPolicy DeliveryPolicy { get; init; } = GrantDeliveryPolicy.Standard;
     public IReadOnlyList<GrantEntryEnvelopeContract> GrantEnvelopes { get; init; } = [];
 }
 
@@ -40,6 +41,7 @@ internal sealed class UpdateEntryValidator : Validator<UpdateEntryRequest>
         RuleFor(x => x.EntryId).NotEmpty();
         RuleFor(x => x.BaseRevision).NotEmpty();
         RuleFor(x => x.MemberSecret).NotNull();
+        RuleFor(x => x.DeliveryPolicy).Must(x => x.IsValid());
         RuleFor(x => x.AgentDiscovery).Null().When(x => !x.AgentDiscoveryChanged);
         RuleForEach(x => x.GrantEnvelopes).SetValidator(new GrantEntryEnvelopeContractValidator());
     }
@@ -106,7 +108,8 @@ internal sealed class UpdateEntryEndpoint(
                 memberSecret,
                 memberIndex,
                 req.AgentDiscoveryChanged,
-                agentDiscovery))
+                agentDiscovery,
+                req.DeliveryPolicy))
         {
             await Send.OkAsync(new UpdateEntryResponse(entry.CurrentRevision.Value.ToString()), ct);
             return;
@@ -119,6 +122,7 @@ internal sealed class UpdateEntryEndpoint(
             g => g.OrganizationId == organizationId
                  && g.VaultId == req.VaultId
                  && g.Status == GrantStatus.Active
+                 && g is GranularGrant
                  && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
                                                     && scope.Envelope != null))
             .ToListAsync(ct);
@@ -148,6 +152,7 @@ internal sealed class UpdateEntryEndpoint(
             memberIndex,
             req.AgentDiscoveryChanged,
             agentDiscovery,
+            req.DeliveryPolicy,
             sequences,
             now,
             userId);
@@ -173,6 +178,10 @@ internal sealed class UpdateEntryEndpoint(
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh scope is invalid.");
                 }
                 var refreshed = GrantEnvelopeContractMapper.ToDomain(contract, scope.Methods, grant.AgentId);
+                if (refreshed.DeliveryPolicy != req.DeliveryPolicy)
+                {
+                    throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh delivery policy does not match the Entry.");
+                }
                 var fingerprint = VaultKeyFingerprint.Compute(
                     Convert.FromBase64String(agents[grant.AgentId].PublicKey), VaultKeyKind.AgentX25519);
                 if (!refreshed.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))

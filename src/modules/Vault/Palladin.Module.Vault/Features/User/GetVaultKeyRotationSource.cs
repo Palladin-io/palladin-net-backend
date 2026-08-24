@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Palladin.Core.Api;
 using Palladin.Core.Security;
+using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Authorization;
@@ -52,6 +53,82 @@ public sealed record RotationMemberRecipientContract(
 public sealed record VaultKeyRotationMemberSourceResponse(
     IReadOnlyList<RotationMemberRecipientContract> Items,
     Guid? NextAfterId);
+
+[PublicAPI]
+public sealed record RotationFullGrantRecipientContract(
+    Guid GrantId,
+    Guid AgentId,
+    uint AgentAccessEpoch,
+    uint RecipientKeyVersion,
+    string RecipientKeyFingerprint,
+    string X25519PublicKey);
+
+[PublicAPI]
+public sealed record VaultKeyRotationFullGrantSourceResponse(
+    IReadOnlyList<RotationFullGrantRecipientContract> Items,
+    Guid? NextAfterId);
+
+[PublicAPI]
+internal sealed class GetVaultKeyRotationFullGrantSourceEndpoint(
+    VaultDomainReadContext domainReadContext,
+    IClock clock) : Endpoint<VaultKeyRotationSourceRequest, VaultKeyRotationFullGrantSourceResponse>
+{
+    public override void Configure()
+    {
+        Get("api/vaults/{vaultId:guid}/key-rotations/{rotationId:guid}/source/full-grants");
+        AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        this.RequirePermission(Permission.VaultManage);
+        this.RequireEmailVerified();
+        this.RequireVaultMembership();
+        Summary(x => x.Description = "Returns a bounded page of active FULL-grant Agent recipients that require the target VK wrapper.");
+        Tags("Vault/Key Rotation");
+    }
+
+    public override async Task HandleAsync(VaultKeyRotationSourceRequest req, CancellationToken ct)
+    {
+        var organizationId = User.GetOrganizationId()!.Value;
+        var userId = User.GetUserId()!.Value;
+        var rotation = await RotationSourceAuthorization.LoadAsync(
+            domainReadContext, organizationId, req, userId, clock.GetCurrentInstant(), ct);
+        var query =
+            from grant in domainReadContext.Grants.OfType<FullGrant>()
+            join agent in domainReadContext.Agents on grant.AgentId equals agent.Id
+            where grant.OrganizationId == organizationId
+                  && grant.VaultId == req.VaultId
+                  && grant.Status == GrantStatus.Active
+                  && agent.OrganizationId == organizationId
+                  && agent.Status == AgentStatus.Active
+                  && agent.AccessEpoch == grant.AgentAccessEpoch
+                  && agent.Id != rotation.ExcludedAgentId
+            select new
+            {
+                GrantId = grant.Id,
+                grant.AgentId,
+                grant.AgentAccessEpoch,
+                agent.RecipientKeyVersion,
+                agent.PublicKey,
+            };
+        if (req.AfterId is { } after)
+        {
+            query = query.Where(x => x.GrantId.CompareTo(after) > 0);
+        }
+
+        var page = await query.OrderBy(x => x.GrantId).Take(req.PageSize).ToListAsync(ct);
+        await Send.OkAsync(new VaultKeyRotationFullGrantSourceResponse(
+            page.Select(x =>
+            {
+                var publicKey = Convert.FromBase64String(x.PublicKey);
+                return new RotationFullGrantRecipientContract(
+                    x.GrantId,
+                    x.AgentId,
+                    x.AgentAccessEpoch,
+                    x.RecipientKeyVersion,
+                    WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentX25519)),
+                    WebEncoders.Base64UrlEncode(publicKey));
+            }).ToArray(),
+            page.Count == req.PageSize ? page[^1].GrantId : null), ct);
+    }
+}
 
 [PublicAPI]
 public sealed record VaultKeyRotationPublicKeySourceResponse(

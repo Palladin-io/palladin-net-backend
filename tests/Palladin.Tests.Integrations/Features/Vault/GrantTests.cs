@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Features;
+using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
@@ -237,11 +238,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         oldGrant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
             setup.OrganizationId, setup.VaultId, oldGrant.Id, setup.EntryId, oldGrant.Methods));
         await apiFactory.Services.SeedGranularGrantAsync(oldGrant);
-        var fullRequest = Request(setup) with
-        {
-            Type = GrantType.Full,
-            EntryId = null,
-        };
+        var fullRequest = FullRequest(setup);
 
         var (response, _) = await setup.Client
             .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(fullRequest);
@@ -253,23 +250,21 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task ProactiveFullGrant_WhenCurrentEntrySetIsIncomplete_RollsBackWithoutCreatingGrant()
+    public async Task ProactiveFullGrant_WithMultipleCurrentEntries_CreatesSingleVaultKeyWrapper()
     {
         var setup = await ArrangeAsync();
         await apiFactory.Services.SeedEntryAsync(setup.VaultId, Guid.NewGuid());
-        var request = Request(setup) with
-        {
-            Type = GrantType.Full,
-            EntryId = null,
-        };
+        var request = FullRequest(setup);
 
         var (response, _) = await setup.Client
             .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await db.Grants.AnyAsync(g => g.Id == request.GrantId)).ShouldBeFalse();
+        (await db.Grants.AnyAsync(g => g.Id == request.GrantId)).ShouldBeTrue();
+        (await db.AgentWrappedVaultKeys.CountAsync(x => x.GrantId == request.GrantId)).ShouldBe(1);
+        (await db.GrantEntryScopes.AnyAsync(x => x.GrantId == request.GrantId)).ShouldBeFalse();
     }
 
     [Fact]
@@ -378,6 +373,24 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
                     setup.OrganizationId, setup.VaultId, grantId, setup.EntryId, setup.AgentPublicKey,
                     agentId: setup.AgentId),
             ],
+        };
+    }
+
+    private static CreateGrantRequest FullRequest(Setup setup)
+    {
+        var request = Request(setup);
+        return request with
+        {
+            Type = GrantType.Full,
+            EntryId = null,
+            GrantEntries = [],
+            AgentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToContract(
+                GrantEnvelopeTestData.AgentVaultKey(
+                    setup.OrganizationId,
+                    setup.VaultId,
+                    request.GrantId,
+                    setup.AgentId,
+                    agentPublicKey: setup.AgentPublicKey)),
         };
     }
 

@@ -24,6 +24,7 @@ public sealed record AgentSummary(
     string PublicKeySuffix,
     string? PublicKey,
     uint RecipientKeyVersion,
+    uint AccessEpoch,
     Instant CreatedAt,
     Instant? EnrolledAt,
     string? EnrolledByName,

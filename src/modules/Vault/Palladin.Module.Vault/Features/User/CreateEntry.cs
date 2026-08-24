@@ -23,7 +23,7 @@ public sealed record CreateEntryRequest : IRequiresVaultMembership
     public MemberIndexEnvelopeContract MemberIndex { get; init; } = null!;
     public MemberSecretEnvelopeContract MemberSecret { get; init; } = null!;
     public AgentDiscoveryEnvelopeContract? AgentDiscovery { get; init; }
-    public IReadOnlyList<GrantEntryEnvelopeContract> GrantEnvelopes { get; init; } = [];
+    public GrantDeliveryPolicy DeliveryPolicy { get; init; } = GrantDeliveryPolicy.Standard;
 }
 
 [PublicAPI]
@@ -39,7 +39,7 @@ internal sealed class CreateEntryValidator : Validator<CreateEntryRequest>
         RuleFor(x => x.EntryKey).NotNull();
         RuleFor(x => x.MemberIndex).NotNull();
         RuleFor(x => x.MemberSecret).NotNull();
-        RuleForEach(x => x.GrantEnvelopes).SetValidator(new GrantEntryEnvelopeContractValidator());
+        RuleFor(x => x.DeliveryPolicy).Must(x => x.IsValid());
     }
 }
 
@@ -82,7 +82,7 @@ internal sealed class CreateEntryEndpoint(
                                       && x.Id == req.EntryId, ct);
         if (existing is not null)
         {
-            if (!existing.IsExactCreateRetry(entryKey, memberSecret, memberIndex, agentDiscovery))
+            if (!existing.IsExactCreateRetry(entryKey, memberSecret, memberIndex, agentDiscovery, req.DeliveryPolicy))
             {
                 ThrowError("Entry identifier is already bound to a different canonical transition.");
             }
@@ -99,14 +99,6 @@ internal sealed class CreateEntryEndpoint(
             await Send.NotFoundAsync(ct);
             return;
         }
-
-        var activeFullGrants = await domainWriteContext.Grants.OfType<FullGrant>()
-            .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
-            .Where(
-            g => g.OrganizationId == organizationId
-                 && g.VaultId == req.VaultId
-                 && g.Status == GrantStatus.Active)
-            .ToListAsync(ct);
 
         var now = clock.GetCurrentInstant();
         var scope = new EntryScope(vault.OrganizationId, vault.Id, req.EntryId);
@@ -134,33 +126,12 @@ internal sealed class CreateEntryEndpoint(
             version,
             memberIndex,
             agentDiscovery,
+            req.DeliveryPolicy,
             vault.MemberKeyGeneration,
             vault.CurrentVaultKeyVersion,
             vault.CurrentVdkVersion,
             now,
             userId);
-
-        var agentIds = activeFullGrants.Select(g => g.AgentId).Distinct().ToArray();
-        var agentKeys = await domainWriteContext.Agents
-            .Where(a => a.OrganizationId == organizationId && agentIds.Contains(a.Id))
-            .Select(a => new { a.Id, a.PublicKey, a.RecipientKeyVersion })
-            .ToListAsync(ct);
-        var agentFingerprints = agentKeys.ToDictionary(
-            a => a.Id,
-            a => VaultKeyFingerprint.Compute(Convert.FromBase64String(a.PublicKey), VaultKeyKind.AgentX25519));
-        if (!FullGrantEntryWrapper.TryWrapNewEntry(
-                activeFullGrants,
-                scope,
-                req.GrantEnvelopes,
-                agentFingerprints,
-                agentKeys.ToDictionary(a => a.Id, a => a.RecipientKeyVersion),
-                vault.MemberKeyGeneration.Value,
-                out var grantError))
-        {
-            AddError(r => r.GrantEnvelopes, grantError);
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
 
         domainWriteContext.Add(entry);
         await domainWriteContext.CommitAsync(ct);

@@ -2,6 +2,8 @@ using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Module.Vault.Infrastructure.Crypto;
+using Palladin.Module.Vault.Shared;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
@@ -56,6 +58,9 @@ internal abstract record CredentialDeliveryResult
         byte[] AgentKeyFingerprint,
         Instant? EnvelopeExpiresAt,
         int? EnvelopeRemainingUses,
+        AgentWrappedVaultKeyContract? AgentWrappedVaultKey,
+        VaultEntryKeyContract? EntryKey,
+        MemberSecretEnvelopeContract? MemberSecret,
         int? RemainingUses,
         bool Consumed,
         string AgentName,
@@ -90,15 +95,16 @@ internal sealed class CredentialDeliveryService(
                         && e.VaultId == input.VaultId
                         && e.Id == input.EntryId
                         && e.State == EntryState.Active)
-            .Select(e => new { e.CurrentRevision })
+            .Select(e => new { e.CurrentRevision, e.CurrentKeyVersion, e.DeliveryPolicy })
             .FirstOrDefaultAsync(ct);
         if (activeEntry is null)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MaterialUnavailable);
         }
 
-        var material = await domainReadContext.GrantEntryScopes
-            .Where(scope => scope.OrganizationId == input.OrganizationId
+        var material = input.Type == GrantType.Granular
+            ? await domainReadContext.GrantEntryScopes
+                .Where(scope => scope.OrganizationId == input.OrganizationId
                             && scope.VaultId == input.VaultId
                             && scope.GrantId == input.GrantId
                             && scope.EntryId == input.EntryId
@@ -128,11 +134,47 @@ internal sealed class CredentialDeliveryService(
                 scope.envelope.ExpiresAt,
                 scope.envelope.RemainingUses,
             })
-            .FirstOrDefaultAsync(ct);
+                .FirstOrDefaultAsync(ct)
+            : null;
 
-        // FULL grant covering an entry added after approval: no wrapped DEK exists for this agent yet
-        // (the server cannot wrap one). Clients must re-wrap entry keys when grant coverage changes.
-        if (material is null)
+        AgentWrappedVaultKeyContract? agentWrappedVaultKey = null;
+        VaultEntryKeyContract? entryKey = null;
+        MemberSecretEnvelopeContract? memberSecret = null;
+        if (input.Type == GrantType.Full)
+        {
+            var fullWrap = await domainReadContext.AgentWrappedVaultKeys
+                .SingleOrDefaultAsync(x => x.OrganizationId == input.OrganizationId
+                    && x.VaultId == input.VaultId
+                    && x.GrantId == input.GrantId
+                    && x.AgentId == input.AgentId
+                    && x.AgentAccessEpoch == input.AgentAccessEpoch, ct);
+            var currentEntryKey = await domainReadContext.EntryKeys
+                .SingleOrDefaultAsync(x => x.OrganizationId == input.OrganizationId
+                    && x.VaultId == input.VaultId
+                    && x.EntryId == input.EntryId
+                    && x.KeyVersion == activeEntry.CurrentKeyVersion, ct);
+            var currentVersion = await domainReadContext.EntryVersions
+                .SingleOrDefaultAsync(x => x.OrganizationId == input.OrganizationId
+                    && x.VaultId == input.VaultId
+                    && x.EntryId == input.EntryId
+                    && x.Revision == activeEntry.CurrentRevision, ct);
+
+            if (fullWrap is not null
+                && currentEntryKey is not null
+                && currentVersion is not null
+                && fullWrap.VaultKeyVersion == currentEntryKey.WrappingKeyVersion)
+            {
+                agentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToContract(fullWrap);
+                entryKey = VaultEnvelopeContractMapper.ToContract(currentEntryKey);
+                memberSecret = VaultEnvelopeContractMapper.ToContract(currentVersion.GetMemberSecret());
+            }
+        }
+
+        // FULL delivery is available only when the live grant wrapper targets the same Vault Key
+        // generation that protects the Entry DEK. A mismatch is a fail-closed rotation state.
+        if ((input.Type == GrantType.Granular && material is null)
+            || (input.Type == GrantType.Full
+                && (agentWrappedVaultKey is null || entryKey is null || memberSecret is null)))
         {
             if (input.QueryLimit is not null
                 && await domainReadContext.Grants.AnyAsync(grant =>
@@ -152,14 +194,17 @@ internal sealed class CredentialDeliveryService(
 
         // DeliveryPolicy is authenticated by the grant descriptor and immutable on the durable
         // scope. Field identifiers are never treated as an Entry-type discriminator.
+        var deliveryPolicy = input.Type == GrantType.Full
+            ? activeEntry.DeliveryPolicy
+            : material!.DeliveryPolicy;
         if (input.Method != GrantMethods.Exec
-            && material.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly)
+            && deliveryPolicy == GrantDeliveryPolicy.ExecOnly)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.ScriptExecOnly);
         }
 
         if (input.Method != GrantMethods.Inject
-            && material.DeliveryPolicy == GrantDeliveryPolicy.InjectOnly)
+            && deliveryPolicy == GrantDeliveryPolicy.InjectOnly)
         {
             return new CredentialDeliveryResult.Denied(CredentialDenialReasons.CreditCardInjectOnly);
         }
@@ -184,6 +229,8 @@ internal sealed class CredentialDeliveryService(
 
         int? remainingUses = null;
         var consumed = false;
+        var materialEntryRevision = material?.EntryRevision ?? activeEntry.CurrentRevision.Value;
+        var materialGrantEnvelopeRevision = material?.GrantEnvelopeRevision ?? 0UL;
 
         if (input.QueryLimit is not null)
         {
@@ -215,28 +262,57 @@ internal sealed class CredentialDeliveryService(
                                  AND "OrganizationId" = {input.OrganizationId}
                                  AND "Status" = {(int)AgentStatus.Active}
                                  AND "AccessEpoch" = {input.AgentAccessEpoch})
-                           AND EXISTS (
-                               SELECT 1
-                               FROM "VaultEntries" entry
-                               JOIN "GrantEntryEnvelopes" envelope
-                                 ON envelope."OrganizationId" = entry."OrganizationId"
-                                AND envelope."VaultId" = entry."VaultId"
-                                AND envelope."EntryId" = entry."Id"
-                               WHERE entry."OrganizationId" = {input.OrganizationId}
-                                 AND entry."VaultId" = {input.VaultId}
-                                 AND entry."Id" = {input.EntryId}
-                                 AND entry."State" = {(int)EntryState.Active}
-                                 AND entry."CurrentRevision" = envelope."EntryRevision"
-                                 AND envelope."GrantId" = {input.GrantId}
-                                 AND envelope."EntryRevision" = {material.EntryRevision}
-                                 AND envelope."GrantEnvelopeRevision" = {material.GrantEnvelopeRevision})
+                           AND (
+                               ({(int)input.Type} = {(int)GrantType.Granular} AND EXISTS (
+                                   SELECT 1
+                                   FROM "VaultEntries" entry
+                                   JOIN "GrantEntryEnvelopes" envelope
+                                     ON envelope."OrganizationId" = entry."OrganizationId"
+                                    AND envelope."VaultId" = entry."VaultId"
+                                    AND envelope."EntryId" = entry."Id"
+                                   WHERE entry."OrganizationId" = {input.OrganizationId}
+                                     AND entry."VaultId" = {input.VaultId}
+                                     AND entry."Id" = {input.EntryId}
+                                     AND entry."State" = {(int)EntryState.Active}
+                                     AND entry."CurrentRevision" = envelope."EntryRevision"
+                                     AND envelope."GrantId" = {input.GrantId}
+                                     AND envelope."EntryRevision" = {materialEntryRevision}
+                                     AND envelope."GrantEnvelopeRevision" = {materialGrantEnvelopeRevision}))
+                               OR ({(int)input.Type} = {(int)GrantType.Full} AND EXISTS (
+                                   SELECT 1
+                                   FROM "VaultEntries" entry
+                                   JOIN "VaultEntryKeys" entry_key
+                                     ON entry_key."OrganizationId" = entry."OrganizationId"
+                                    AND entry_key."VaultId" = entry."VaultId"
+                                    AND entry_key."EntryId" = entry."Id"
+                                    AND entry_key."KeyVersion" = entry."CurrentKeyVersion"
+                                   JOIN "AgentWrappedVaultKeys" wrapped_vk
+                                     ON wrapped_vk."OrganizationId" = entry."OrganizationId"
+                                    AND wrapped_vk."VaultId" = entry."VaultId"
+                                    AND wrapped_vk."GrantId" = {input.GrantId}
+                                   WHERE entry."OrganizationId" = {input.OrganizationId}
+                                     AND entry."VaultId" = {input.VaultId}
+                                     AND entry."Id" = {input.EntryId}
+                                     AND entry."State" = {(int)EntryState.Active}
+                                     AND entry."CurrentRevision" = {materialEntryRevision}
+                                     AND wrapped_vk."AgentId" = {input.AgentId}
+                                     AND wrapped_vk."AgentAccessEpoch" = {input.AgentAccessEpoch}
+                                     AND wrapped_vk."VaultKeyVersion" = entry_key."WrappingKeyVersion")))
                            AND "QueryCount" < "QueryLimit"
                          RETURNING "QueryCount", "Status"
-                     ), deleted AS (
+                     ), deleted_granular AS (
                          DELETE FROM "GrantEntryEnvelopes"
                          WHERE "OrganizationId" = {input.OrganizationId}
                            AND "VaultId" = {input.VaultId}
                            AND "GrantId" = {input.GrantId}
+                           AND {(int)input.Type} = {(int)GrantType.Granular}
+                           AND EXISTS (SELECT 1 FROM updated WHERE "Status" = {(int)GrantStatus.Consumed})
+                     ), deleted_full AS (
+                         DELETE FROM "AgentWrappedVaultKeys"
+                         WHERE "OrganizationId" = {input.OrganizationId}
+                           AND "VaultId" = {input.VaultId}
+                           AND "GrantId" = {input.GrantId}
+                           AND {(int)input.Type} = {(int)GrantType.Full}
                            AND EXISTS (SELECT 1 FROM updated WHERE "Status" = {(int)GrantStatus.Consumed})
                      )
                      SELECT "QueryCount" AS "Value" FROM updated
@@ -268,21 +344,34 @@ internal sealed class CredentialDeliveryService(
 
                 if (currentEpochGrant.Status == GrantStatus.Active)
                 {
-                    var materialStillCurrent = await domainReadContext.GrantEntryEnvelopes.AnyAsync(
-                        envelope =>
-                            envelope.OrganizationId == input.OrganizationId
-                            && envelope.VaultId == input.VaultId
-                            && envelope.GrantId == input.GrantId
-                            && envelope.EntryId == input.EntryId
-                            && envelope.EntryRevision == material.EntryRevision
-                            && envelope.GrantEnvelopeRevision == material.GrantEnvelopeRevision
-                            && domainReadContext.Entries.Any(entry =>
-                                entry.OrganizationId == input.OrganizationId
-                                && entry.VaultId == input.VaultId
-                                && entry.Id == input.EntryId
-                                && entry.State == EntryState.Active
-                                && entry.CurrentRevision.Value == envelope.EntryRevision),
-                        ct);
+                    var materialStillCurrent = input.Type == GrantType.Full
+                        ? await domainReadContext.AgentWrappedVaultKeys.AnyAsync(wrapped =>
+                            wrapped.OrganizationId == input.OrganizationId
+                            && wrapped.VaultId == input.VaultId
+                            && wrapped.GrantId == input.GrantId
+                            && wrapped.AgentId == input.AgentId
+                            && wrapped.AgentAccessEpoch == input.AgentAccessEpoch
+                            && domainReadContext.EntryKeys.Any(key =>
+                                key.OrganizationId == input.OrganizationId
+                                && key.VaultId == input.VaultId
+                                && key.EntryId == input.EntryId
+                                && key.KeyVersion == activeEntry.CurrentKeyVersion
+                                && key.WrappingKeyVersion == wrapped.VaultKeyVersion), ct)
+                        : await domainReadContext.GrantEntryEnvelopes.AnyAsync(
+                            envelope =>
+                                envelope.OrganizationId == input.OrganizationId
+                                && envelope.VaultId == input.VaultId
+                                && envelope.GrantId == input.GrantId
+                                && envelope.EntryId == input.EntryId
+                                && envelope.EntryRevision == materialEntryRevision
+                                && envelope.GrantEnvelopeRevision == materialGrantEnvelopeRevision
+                                && domainReadContext.Entries.Any(entry =>
+                                    entry.OrganizationId == input.OrganizationId
+                                    && entry.VaultId == input.VaultId
+                                    && entry.Id == input.EntryId
+                                    && entry.State == EntryState.Active
+                                    && entry.CurrentRevision.Value == envelope.EntryRevision),
+                            ct);
                     if (!materialStillCurrent)
                     {
                         return new CredentialDeliveryResult.Denied(CredentialDenialReasons.MaterialUnavailable);
@@ -316,21 +405,42 @@ internal sealed class CredentialDeliveryService(
                          AND "OrganizationId" = {input.OrganizationId}
                          AND "Status" = {(int)AgentStatus.Active}
                          AND "AccessEpoch" = {input.AgentAccessEpoch})
-                   AND EXISTS (
-                       SELECT 1
-                       FROM "VaultEntries" entry
-                       JOIN "GrantEntryEnvelopes" envelope
-                         ON envelope."OrganizationId" = entry."OrganizationId"
-                        AND envelope."VaultId" = entry."VaultId"
-                        AND envelope."EntryId" = entry."Id"
-                       WHERE entry."OrganizationId" = {input.OrganizationId}
-                         AND entry."VaultId" = {input.VaultId}
-                         AND entry."Id" = {input.EntryId}
-                         AND entry."State" = {(int)EntryState.Active}
-                         AND entry."CurrentRevision" = envelope."EntryRevision"
-                         AND envelope."GrantId" = {input.GrantId}
-                         AND envelope."EntryRevision" = {material.EntryRevision}
-                         AND envelope."GrantEnvelopeRevision" = {material.GrantEnvelopeRevision})
+                   AND (
+                       ({(int)input.Type} = {(int)GrantType.Granular} AND EXISTS (
+                           SELECT 1
+                           FROM "VaultEntries" entry
+                           JOIN "GrantEntryEnvelopes" envelope
+                             ON envelope."OrganizationId" = entry."OrganizationId"
+                            AND envelope."VaultId" = entry."VaultId"
+                            AND envelope."EntryId" = entry."Id"
+                           WHERE entry."OrganizationId" = {input.OrganizationId}
+                             AND entry."VaultId" = {input.VaultId}
+                             AND entry."Id" = {input.EntryId}
+                             AND entry."State" = {(int)EntryState.Active}
+                             AND entry."CurrentRevision" = envelope."EntryRevision"
+                             AND envelope."GrantId" = {input.GrantId}
+                             AND envelope."EntryRevision" = {materialEntryRevision}
+                             AND envelope."GrantEnvelopeRevision" = {materialGrantEnvelopeRevision}))
+                       OR ({(int)input.Type} = {(int)GrantType.Full} AND EXISTS (
+                           SELECT 1
+                           FROM "VaultEntries" entry
+                           JOIN "VaultEntryKeys" entry_key
+                             ON entry_key."OrganizationId" = entry."OrganizationId"
+                            AND entry_key."VaultId" = entry."VaultId"
+                            AND entry_key."EntryId" = entry."Id"
+                            AND entry_key."KeyVersion" = entry."CurrentKeyVersion"
+                           JOIN "AgentWrappedVaultKeys" wrapped_vk
+                             ON wrapped_vk."OrganizationId" = entry."OrganizationId"
+                            AND wrapped_vk."VaultId" = entry."VaultId"
+                            AND wrapped_vk."GrantId" = {input.GrantId}
+                           WHERE entry."OrganizationId" = {input.OrganizationId}
+                             AND entry."VaultId" = {input.VaultId}
+                             AND entry."Id" = {input.EntryId}
+                             AND entry."State" = {(int)EntryState.Active}
+                             AND entry."CurrentRevision" = {materialEntryRevision}
+                             AND wrapped_vk."AgentId" = {input.AgentId}
+                             AND wrapped_vk."AgentAccessEpoch" = {input.AgentAccessEpoch}
+                             AND wrapped_vk."VaultKeyVersion" = entry_key."WrappingKeyVersion")))
                  """,
                 ct);
             if (updated == 0)
@@ -359,21 +469,24 @@ internal sealed class CredentialDeliveryService(
         }
 
         return new CredentialDeliveryResult.Granted(
-            material.GrantEnvelopeRevision,
-            material.EntryRevision,
-            material.ProtocolVersion,
-            material.CryptoSuiteId,
-            material.GrantKeyVersion,
-            material.MemberKeyGeneration,
-            material.RecipientAgentKeyVersion,
-            material.DeliveryPolicy,
-            material.FieldIds.Split('\n', StringSplitOptions.RemoveEmptyEntries),
-            material.EncodedSuitePayload,
-            material.AgentWrappedGrantDek,
-            material.WrapperSuiteId,
-            material.AgentKeyFingerprint,
-            material.ExpiresAt,
-            material.RemainingUses,
+            material?.GrantEnvelopeRevision ?? 0,
+            materialEntryRevision,
+            material?.ProtocolVersion ?? VaultProtocol.CurrentVersion,
+            material?.CryptoSuiteId ?? string.Empty,
+            material?.GrantKeyVersion ?? 0,
+            material?.MemberKeyGeneration ?? 0,
+            material?.RecipientAgentKeyVersion ?? 0,
+            deliveryPolicy,
+            material?.FieldIds.Split('\n', StringSplitOptions.RemoveEmptyEntries) ?? [],
+            material?.EncodedSuitePayload ?? [],
+            material?.AgentWrappedGrantDek ?? [],
+            material?.WrapperSuiteId ?? string.Empty,
+            material?.AgentKeyFingerprint ?? [],
+            material?.ExpiresAt,
+            material?.RemainingUses,
+            agentWrappedVaultKey,
+            entryKey,
+            memberSecret,
             remainingUses,
             consumed,
             agentName ?? CredentialAccessedEvent.UnknownAgent,

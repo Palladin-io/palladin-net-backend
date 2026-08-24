@@ -111,7 +111,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_ActiveFullGrantExists_Then_NewEntryFailsClosed()
+    public async Task When_ActiveFullGrantExists_Then_NewEntrySucceedsWithoutPerEntryFanOut()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -129,20 +129,17 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
             .POSTAsync<CreateEntryEndpoint, CreateEntryRequest, CreateEntryResponse>(
                 EntryEnvelopeFaker.CreateRequest(organization.Id, vault.Id, entryId));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await readContext.Entries.AnyAsync(x => x.OrganizationId == organization.Id
                                                  && x.VaultId == vault.Id
-                                                 && x.Id == entryId)).ShouldBeFalse();
+                                                 && x.Id == entryId)).ShouldBeTrue();
         (await readContext.EntryCreationChallenges.SingleAsync(x => x.OrganizationId == organization.Id
                                                                      && x.VaultId == vault.Id
                                                                      && x.EntryId == entryId))
-            .ConsumedAt.ShouldBeNull();
-        var unchangedVault = await readContext.Vaults.SingleAsync(x => x.OrganizationId == organization.Id
-                                                                   && x.Id == vault.Id);
-        unchangedVault.MemberSequence.Value.ShouldBe(0UL);
-        unchangedVault.DiscoverySequence.Value.ShouldBe(0UL);
+            .ConsumedAt.ShouldNotBeNull();
+        (await readContext.GrantEntryEnvelopes.AnyAsync(x => x.EntryId == entryId)).ShouldBeFalse();
     }
 
     [Fact]
@@ -243,7 +240,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_ActiveFullGrantExists_Then_EncryptedImportWrapsEveryEntryAtomically()
+    public async Task When_ActiveFullGrantExists_Then_EncryptedImportDoesNotFanOutGrantMaterial()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -265,24 +262,8 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
                 organizationId: organization.Id,
                 agentId: agent.Id,
                 createdBy: user.Id).Generate());
-        var first = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[0]) with
-        {
-            GrantEnvelopes =
-            [
-                GrantEnvelopeTestData.Contract(
-                    organization.Id, vault.Id, full.Id, entryIds[0], agent.PublicKey,
-                    full.ExpiresAt, full.QueryLimit, agentId: agent.Id, methods: full.Methods),
-            ],
-        };
-        var second = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[1], seed: 64) with
-        {
-            GrantEnvelopes =
-            [
-                GrantEnvelopeTestData.Contract(
-                    organization.Id, vault.Id, full.Id, entryIds[1], agent.PublicKey,
-                    full.ExpiresAt, full.QueryLimit, agentId: agent.Id, methods: full.Methods),
-            ],
-        };
+        var first = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[0]);
+        var second = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[1], seed: 64);
         var request = new ImportEntriesRequest
         {
             VaultId = vault.Id,
@@ -303,7 +284,8 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
         var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await readContext.Entries.CountAsync(x => x.OrganizationId == organization.Id
                                                    && x.VaultId == vault.Id)).ShouldBe(2);
-        (await readContext.GrantEntryEnvelopes.CountAsync(x => x.GrantId == full.Id)).ShouldBe(2);
+        (await readContext.GrantEntryEnvelopes.CountAsync(x => x.GrantId == full.Id)).ShouldBe(0);
+        (await readContext.AgentWrappedVaultKeys.CountAsync(x => x.GrantId == full.Id)).ShouldBe(1);
         var unchangedChallenges = await readContext.EntryCreationChallenges
             .Where(x => x.OrganizationId == organization.Id
                         && x.VaultId == vault.Id
@@ -318,7 +300,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_EncryptedImportOmitsAFullGrantEnvelope_Then_WholeBatchRollsBack()
+    public async Task When_EncryptedImportOmitsFullGrantEnvelopes_Then_WholeBatchSucceeds()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -340,15 +322,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
                 organizationId: organization.Id,
                 agentId: agent.Id,
                 createdBy: user.Id).Generate());
-        var first = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[0]) with
-        {
-            GrantEnvelopes =
-            [
-                GrantEnvelopeTestData.Contract(
-                    organization.Id, vault.Id, full.Id, entryIds[0], agent.PublicKey,
-                    full.ExpiresAt, full.QueryLimit, agentId: agent.Id),
-            ],
-        };
+        var first = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[0]);
         var second = EntryEnvelopeFaker.CreateImportItem(organization.Id, vault.Id, entryIds[1], seed: 64);
 
         var (response, _) = await client.POSTAsync<
@@ -361,11 +335,11 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
                 Entries = [first, second],
             });
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await readContext.Entries.AnyAsync(x => x.OrganizationId == organization.Id
-                                                 && x.VaultId == vault.Id)).ShouldBeFalse();
+        (await readContext.Entries.CountAsync(x => x.OrganizationId == organization.Id
+                                                   && x.VaultId == vault.Id)).ShouldBe(2);
         (await readContext.GrantEntryEnvelopes.AnyAsync(x => x.GrantId == full.Id)).ShouldBeFalse();
         var challenges = await readContext.EntryCreationChallenges
             .Where(x => x.OrganizationId == organization.Id
@@ -373,11 +347,11 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
                         && entryIds.Contains(x.EntryId))
             .ToListAsync();
         challenges.Count.ShouldBe(2);
-        challenges.ShouldAllBe(x => x.ConsumedAt == null);
-        var unchangedVault = await readContext.Vaults.SingleAsync(x => x.OrganizationId == organization.Id
-                                                                   && x.Id == vault.Id);
-        unchangedVault.MemberSequence.Value.ShouldBe(0UL);
-        unchangedVault.DiscoverySequence.Value.ShouldBe(0UL);
+        challenges.ShouldAllBe(x => x.ConsumedAt != null);
+        var updatedVault = await readContext.Vaults.SingleAsync(x => x.OrganizationId == organization.Id
+                                                                 && x.Id == vault.Id);
+        updatedVault.MemberSequence.Value.ShouldBe(2UL);
+        updatedVault.DiscoverySequence.Value.ShouldBe(2UL);
     }
 
     [Fact]
@@ -665,7 +639,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_StaleAndCurrentActiveScopesExist_Then_UpdateRefreshesAllCoverage()
+    public async Task When_StaleLegacyFullScopeAndCurrentGranularScopeExist_Then_UpdateRefreshesOnlyGranularCoverage()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -714,19 +688,6 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
                 GrantEnvelopeTestData.Contract(
                     organization.Id,
                     vault.Id,
-                    staleFull.Id,
-                    entryId,
-                    agent.PublicKey,
-                    staleFull.ExpiresAt,
-                    staleFull.QueryLimit,
-                    entryRevision: 3,
-                    envelopeRevision: 2,
-                    grantKeyVersion: 2,
-                    agentId: agent.Id,
-                    methods: staleFull.Methods),
-                GrantEnvelopeTestData.Contract(
-                    organization.Id,
-                    vault.Id,
                     currentGranular.Id,
                     entryId,
                     agent.PublicKey,
@@ -748,7 +709,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await db.GrantEntryEnvelopes.SingleAsync(x => x.GrantId == staleFull.Id))
-            .EntryRevision.ShouldBe(3UL);
+            .EntryRevision.ShouldBe(1UL);
         (await db.GrantEntryEnvelopes.SingleAsync(x => x.GrantId == currentGranular.Id))
             .EntryRevision.ShouldBe(3UL);
     }

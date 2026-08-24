@@ -49,6 +49,12 @@ internal sealed class GrantConfiguration : IEntityTypeConfiguration<Grant>
             .HasPrincipalKey(x => new { x.OrganizationId, x.VaultId, x.Id })
             .OnDelete(DeleteBehavior.Cascade);
 
+        builder.HasOne(x => x.AgentWrappedVaultKey)
+            .WithOne()
+            .HasForeignKey<AgentWrappedVaultKey>(x => new { x.OrganizationId, x.VaultId, x.GrantId })
+            .HasPrincipalKey<Grant>(x => new { x.OrganizationId, x.VaultId, x.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
         builder.HasOne(x => x.EncryptedReason)
             .WithOne()
             .HasForeignKey<EncryptedReasonEnvelope>(x => new { x.OrganizationId, x.VaultId, x.GrantRequestId })

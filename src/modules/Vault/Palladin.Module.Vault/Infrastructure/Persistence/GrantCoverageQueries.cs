@@ -39,10 +39,11 @@ internal static class GrantCoverageQueries
             && g.VaultId == vaultId
             && g.Status == GrantStatus.Active
             && (excludingGrantId == null || g.Id != excludingGrantId)
-            && g.GrantEntryScopes.Any(scope =>
-                scope.EntryId == entryId
-                && scope.Envelope != null
-                && scope.Envelope.EntryRevision == currentRevision.Value),
+            && ((g is FullGrant && g.AgentWrappedVaultKey != null)
+                || (g is GranularGrant && g.GrantEntryScopes.Any(scope =>
+                    scope.EntryId == entryId
+                    && scope.Envelope != null
+                    && scope.Envelope.EntryRevision == currentRevision.Value))),
             ct);
     }
 

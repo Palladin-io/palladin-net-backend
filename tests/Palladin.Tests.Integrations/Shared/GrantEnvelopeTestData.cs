@@ -126,6 +126,33 @@ internal static class GrantEnvelopeTestData
             contract, methods, recipientAgentId);
     }
 
+    internal static AgentWrappedVaultKey AgentVaultKey(
+        Guid organizationId,
+        Guid vaultId,
+        Guid grantId,
+        Guid agentId,
+        uint agentAccessEpoch = 1,
+        uint vaultKeyVersion = 1,
+        uint recipientAgentKeyVersion = 1,
+        string? agentPublicKey = null)
+    {
+        var publicKey = Convert.FromBase64String(
+            agentPublicKey ?? Convert.ToBase64String(new byte[32]));
+        var fingerprint = VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentX25519);
+        return AgentWrappedVaultKey.Create(
+            organizationId,
+            vaultId,
+            grantId,
+            agentId,
+            agentAccessEpoch,
+            VaultProtocol.CurrentVersion,
+            X25519SealedBoxContract.SuiteId,
+            vaultKeyVersion,
+            recipientAgentKeyVersion,
+            fingerprint,
+            [.. Enumerable.Range(0, 120).Select(i => (byte)i)]);
+    }
+
     private static string Base64Url(int length) =>
         WebEncoders.Base64UrlEncode([.. Enumerable.Range(0, length).Select(i => (byte)i)]);
 }

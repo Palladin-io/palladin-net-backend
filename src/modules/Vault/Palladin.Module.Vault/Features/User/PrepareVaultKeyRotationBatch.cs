@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Palladin.Core.Api;
 using Palladin.Core.Security;
+using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Authorization;
@@ -37,6 +38,7 @@ public sealed record PrepareVaultKeyRotationBatchRequest : IRequiresVaultMembers
     public IReadOnlyList<VaultEntryKeyContract> EntryKeys { get; init; } = [];
     public IReadOnlyList<RotationEntryDiscoveryContract> EntryDiscoveries { get; init; } = [];
     public IReadOnlyList<RotationAgentDiscoveryContract> AgentDiscoveries { get; init; } = [];
+    public IReadOnlyList<AgentWrappedVaultKeyContract> AgentWrappedVaultKeys { get; init; } = [];
     public VaultDiscoveryKeyEnvelopeContract? DiscoveryKey { get; init; }
     public IReadOnlyList<VaultPrivateKeyEnvelopeContract> VaultPrivateKeys { get; init; } = [];
     public VaultPublicKeyContract? VaultAgentMessagePublicKey { get; init; }
@@ -58,6 +60,7 @@ internal sealed class PrepareVaultKeyRotationBatchValidator : Validator<PrepareV
         RuleFor(x => x.EntryKeys).NotNull();
         RuleFor(x => x.EntryDiscoveries).NotNull();
         RuleFor(x => x.AgentDiscoveries).NotNull();
+        RuleFor(x => x.AgentWrappedVaultKeys).NotNull();
         When(x => x.DiscoveryKey is not null, () =>
             RuleFor(x => x.DiscoveryKey!).SetValidator(new VaultDiscoveryKeyContractValidator()));
         RuleFor(x => x.VaultPrivateKeys).NotNull();
@@ -89,12 +92,15 @@ internal sealed class PrepareVaultKeyRotationBatchValidator : Validator<PrepareV
             item.RuleFor(x => x.Envelope).NotNull();
             item.RuleFor(x => x.Manifest).NotNull();
         });
+        RuleForEach(x => x.AgentWrappedVaultKeys)
+            .SetValidator(new AgentWrappedVaultKeyContractValidator());
         RuleFor(x => x).Must(x =>
                 (x.MemberVaultMetadata is null ? 0 : 1)
                 + (x.MemberVaultKeys?.Count ?? 0)
                 + (x.EntryKeys?.Count ?? 0)
                 + (x.EntryDiscoveries?.Count ?? 0)
                 + (x.AgentDiscoveries?.Count ?? 0)
+                + (x.AgentWrappedVaultKeys?.Count ?? 0)
                 + (x.DiscoveryKey is null ? 0 : 1)
                 + (x.VaultPrivateKeys?.Count ?? 0)
                 + (x.VaultAgentMessagePublicKey is null ? 0 : 1)
@@ -158,7 +164,8 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                                      || rotation.Scope.HasFlag(VaultKeyRotationScope.AgentMessage)
                                      || rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning);
         if ((!rotatesVaultKey
-             && (req.MemberVaultMetadata is not null || req.MemberVaultKeys.Count > 0 || req.EntryKeys.Count > 0))
+             && (req.MemberVaultMetadata is not null || req.MemberVaultKeys.Count > 0
+                 || req.EntryKeys.Count > 0 || req.AgentWrappedVaultKeys.Count > 0))
             || (!rotatesVdk && req.EntryDiscoveries.Count > 0)
             || (!rotatesAgentProjection && req.AgentDiscoveries.Count > 0)
             || (req.DiscoveryKey is not null && !IsKeyMaterialInScope(VaultKeyMaterialKind.DiscoveryKey, rotation.Scope))
@@ -247,6 +254,43 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
 
             accepted += Prepare(rotation, VaultKeyRotationPreparedItemKind.MemberVaultKey, envelope.MemberId, 0, 0,
                 contract, userId, req.FencingToken, now);
+        }
+
+        if (req.AgentWrappedVaultKeys.Count > 0)
+        {
+            var grantIds = req.AgentWrappedVaultKeys.Select(x => x.GrantId).Distinct().ToArray();
+            var grants = await domainWriteContext.Grants
+                .OfType<FullGrant>()
+                .Where(x => x.OrganizationId == organizationId
+                    && x.VaultId == req.VaultId
+                    && x.Status == GrantStatus.Active
+                    && grantIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+            var agentIds = grants.Values.Select(x => x.AgentId).Distinct().ToArray();
+            var agents = await domainWriteContext.Agents
+                .Where(x => x.OrganizationId == organizationId && agentIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
+            foreach (var contract in req.AgentWrappedVaultKeys)
+            {
+                if (!grants.TryGetValue(contract.GrantId, out var grant)
+                    || grant.AgentId == rotation.ExcludedAgentId
+                    || !agents.TryGetValue(grant.AgentId, out var agent)
+                    || agent.Status != AgentStatus.Active
+                    || agent.AccessEpoch != grant.AgentAccessEpoch)
+                {
+                    throw new DomainException("Prepared Agent Vault-key recipient is not an active FULL grant.");
+                }
+
+                var fingerprint = VaultKeyFingerprint.Compute(
+                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                _ = AgentWrappedVaultKeyContractMapper.ToDomain(
+                    contract, organizationId, req.VaultId, grant.Id, grant.AgentId,
+                    grant.AgentAccessEpoch, rotation.TargetKeyEpoch.VaultKeyVersion.Value,
+                    agent.RecipientKeyVersion, fingerprint);
+                accepted += Prepare(rotation, VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey,
+                    grant.Id, 0, rotation.BaseKeyEpoch.VaultKeyVersion.Value, contract,
+                    userId, req.FencingToken, now);
+            }
         }
 
         foreach (var contract in req.EntryKeys)
@@ -348,6 +392,8 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
             new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.EntryDiscovery, x.Envelope.EntryId, 0)))
         .Concat(request.AgentDiscoveries.Select(x =>
             new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.AgentDiscoveryEnvelope, x.AgentId, 0)))
+        .Concat(request.AgentWrappedVaultKeys.Select(x =>
+            new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey, x.GrantId, 0)))
         .Concat(request.DiscoveryKey is null
             ? []
             : new[] { new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.VaultKeyMaterial,

@@ -71,8 +71,6 @@ internal static class InfrastructureModule
 
         services.AddScopedCronJob<ExpireGrantsJob, ExpireGrantsJobOptions>(
             configuration.GetSection(ExpireGrantsJobOptions.Position));
-        services.AddScopedCronJob<CleanupFullGrantPreparationsJob, CleanupFullGrantPreparationsJobOptions>(
-            configuration.GetSection(CleanupFullGrantPreparationsJobOptions.Position));
         services.AddScopedCronJob<VaultEntryLifecycleJob, VaultEntryLifecycleOptions>(
             configuration.GetSection(VaultEntryLifecycleOptions.Position));
 

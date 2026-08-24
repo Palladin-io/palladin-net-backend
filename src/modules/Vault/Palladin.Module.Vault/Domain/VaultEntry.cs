@@ -12,6 +12,7 @@ internal sealed class VaultEntry : EventEntityBase
     public Guid VaultId { get; private set; }
     public Guid Id { get; private set; }
     public EntryState State { get; private set; }
+    public GrantDeliveryPolicy DeliveryPolicy { get; private set; }
     internal EntryRevision CurrentRevision { get; private set; }
     internal MemberIndexRevision MemberIndexRevision { get; private set; }
     internal AgentDiscoveryRevision? AgentDiscoveryRevision { get; private set; }
@@ -54,6 +55,7 @@ internal sealed class VaultEntry : EventEntityBase
         VaultEntryVersion version,
         MemberIndexCiphertext memberIndex,
         AgentDiscoveryCiphertext? agentDiscovery,
+        GrantDeliveryPolicy deliveryPolicy,
         MemberKeyGeneration currentMemberKeyGeneration,
         VaultKeyVersion currentVaultKeyVersion,
         VdkVersion currentVdkVersion,
@@ -62,6 +64,10 @@ internal sealed class VaultEntry : EventEntityBase
         bool viaImport = false)
     {
         scope.Validate();
+        if (!deliveryPolicy.IsValid())
+        {
+            throw new DomainException("Entry delivery policy is invalid.");
+        }
         ValidateCreate(
             scope,
             entryKey,
@@ -79,6 +85,7 @@ internal sealed class VaultEntry : EventEntityBase
             VaultId = scope.VaultId,
             Id = scope.EntryId,
             State = EntryState.Active,
+            DeliveryPolicy = deliveryPolicy,
             CurrentRevision = version.Revision,
             MemberIndexRevision = memberIndex.Revision,
             AgentDiscoveryRevision = agentDiscovery?.Revision,
@@ -106,14 +113,16 @@ internal sealed class VaultEntry : EventEntityBase
         VaultEntryKey entryKey,
         MemberSecretCiphertext memberSecret,
         MemberIndexCiphertext memberIndex,
-        AgentDiscoveryCiphertext? agentDiscovery) =>
+        AgentDiscoveryCiphertext? agentDiscovery,
+        GrantDeliveryPolicy deliveryPolicy) =>
         State == EntryState.Active
         && CurrentRevision.Value == 1
         && CurrentKeyVersion.Value == 1
         && Keys.SingleOrDefault(x => x.KeyVersion.Value == 1)?.HasSameContent(entryKey) == true
         && Versions.SingleOrDefault(x => x.Revision.Value == 1)?.GetMemberSecret().HasSameContent(memberSecret) == true
         && GetMemberIndex().HasSameContent(memberIndex)
-        && AgentDiscoveryEquals(agentDiscovery);
+        && AgentDiscoveryEquals(agentDiscovery)
+        && DeliveryPolicy == deliveryPolicy;
 
     internal bool IsExactUpdateRetry(
         EntryRevision baseRevision,
@@ -121,7 +130,8 @@ internal sealed class VaultEntry : EventEntityBase
         MemberSecretCiphertext memberSecret,
         MemberIndexCiphertext? memberIndex,
         bool agentDiscoveryChanged,
-        AgentDiscoveryCiphertext? agentDiscovery)
+        AgentDiscoveryCiphertext? agentDiscovery,
+        GrantDeliveryPolicy deliveryPolicy)
     {
         if (baseRevision.Value == ulong.MaxValue
             || CurrentRevision.Value != baseRevision.Value + 1
@@ -148,7 +158,8 @@ internal sealed class VaultEntry : EventEntityBase
 
         var expectedAgentDiscoveryChange = currentVersion.DiscoverySequence is not null;
         return agentDiscoveryChanged == expectedAgentDiscoveryChange
-               && (!agentDiscoveryChanged || AgentDiscoveryEquals(agentDiscovery));
+               && (!agentDiscoveryChanged || AgentDiscoveryEquals(agentDiscovery))
+               && DeliveryPolicy == deliveryPolicy;
     }
 
     internal bool IsExactLifecycleRetry(
@@ -247,6 +258,7 @@ internal sealed class VaultEntry : EventEntityBase
         MemberIndexCiphertext? memberIndex,
         bool agentDiscoveryChanged,
         AgentDiscoveryCiphertext? agentDiscovery,
+        GrantDeliveryPolicy deliveryPolicy,
         AllocatedVaultSequences sequences,
         Instant now,
         Guid updatedBy)
@@ -254,6 +266,11 @@ internal sealed class VaultEntry : EventEntityBase
         if (State != EntryState.Active)
         {
             throw new InvalidEntryStateTransitionException("update", State);
+        }
+
+        if (!deliveryPolicy.IsValid())
+        {
+            throw new DomainException("Entry delivery policy is invalid.");
         }
 
         if (baseRevision != CurrentRevision)
@@ -301,6 +318,7 @@ internal sealed class VaultEntry : EventEntityBase
         Versions.Add(version);
         CurrentRevision = version.Revision;
         CurrentKeyVersion = targetKey.KeyVersion;
+        DeliveryPolicy = deliveryPolicy;
         UpdatedAt = now;
         UpdatedBy = updatedBy;
 

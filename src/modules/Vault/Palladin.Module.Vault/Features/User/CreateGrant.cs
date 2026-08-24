@@ -24,6 +24,7 @@ public sealed record CreateGrantRequest : IRequiresVaultMembership
     public GrantType Type { get; init; }
     public Guid? EntryId { get; init; }
     public IReadOnlyList<GrantEntryEnvelopeContract> GrantEntries { get; init; } = [];
+    public AgentWrappedVaultKeyContract? AgentWrappedVaultKey { get; init; }
     public Instant? ExpiresAt { get; init; }
     public int? QueryLimit { get; init; }
 
@@ -56,7 +57,12 @@ internal sealed class CreateGrantValidator : Validator<CreateGrantRequest>
         RuleFor(x => x.EntryId).NotNull().When(x => x.Type == GrantType.Granular);
         RuleFor(x => x.EntryId).Null().When(x => x.Type == GrantType.Full);
 
-        RuleFor(x => x.GrantEntries).NotEmpty();
+        RuleFor(x => x.GrantEntries).NotEmpty().When(x => x.Type == GrantType.Granular);
+        RuleFor(x => x.GrantEntries).Empty().When(x => x.Type == GrantType.Full);
+        RuleFor(x => x.AgentWrappedVaultKey).Null().When(x => x.Type == GrantType.Granular);
+        RuleFor(x => x.AgentWrappedVaultKey).NotNull()
+            .SetValidator(new AgentWrappedVaultKeyContractValidator()!)
+            .When(x => x.Type == GrantType.Full);
         RuleFor(x => x.GrantEntries.Count)
             .LessThanOrEqualTo(crypto.MaxGrantEntriesPerGrant);
         RuleFor(x => x.GrantEntries.Count)
@@ -91,7 +97,7 @@ internal sealed class CreateGrantEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Create a grant proactively (user-initiated)";
-            summary.Description = "Creates an Active grant for an agent. Revision-bound grant envelopes are produced client-side. The server stores ciphertext only and never wraps VK for an agent.";
+            summary.Description = "Creates an Active grant for an agent. GRANULAR carries one revision-bound Entry envelope; FULL carries one current VK sealed to the authoritative Agent key. The server stores ciphertext only.";
         });
         Tags("Vault/Grants");
     }
@@ -122,7 +128,7 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
-        if (!await EntriesBelongToVaultAsync(req, ct))
+        if (req.Type == GrantType.Granular && !await EntriesBelongToVaultAsync(req, ct))
         {
             AddError(r => r.GrantEntries, "One or more entries do not belong to the vault.");
             await Send.ErrorsAsync(cancellation: ct);
@@ -147,21 +153,6 @@ internal sealed class CreateGrantEndpoint(
         {
             await Send.NotFoundAsync(ct);
             return;
-        }
-
-        if (req.Type == GrantType.Full)
-        {
-            var requestedEntryIds = req.GrantEntries.Select(x => x.EntryId).ToArray();
-            var currentEntryCount = await domainWriteContext.Entries.CountAsync(x =>
-                x.OrganizationId == organizationId
-                && x.VaultId == req.VaultId
-                && x.State == EntryState.Active, ct);
-            if (currentEntryCount != requestedEntryIds.Length)
-            {
-                AddError(r => r.GrantEntries, "FULL grant entries must exactly match the current active Vault entries. Use the bounded preparation flow for large Vaults.");
-                await Send.ErrorsAsync(409, ct);
-                return;
-            }
         }
 
         var lockedRevisions = new Dictionary<Guid, ulong>(req.GrantEntries.Count);
@@ -283,6 +274,7 @@ internal sealed class CreateGrantEndpoint(
         var names = await domainReadContext.ResolveAsync(req.AgentId, nameEntryId, req.VaultId, userId, ct);
 
         var scopes = new List<GrantEntryScope>(req.GrantEntries.Count);
+        AgentWrappedVaultKey? agentWrappedVaultKey = null;
         try
         {
             foreach (var contract in req.GrantEntries)
@@ -291,20 +283,30 @@ internal sealed class CreateGrantEndpoint(
                     contract, req, organizationId, agent.PublicKey,
                     lockedVault.MemberKeyGeneration.Value, agent.RecipientKeyVersion, lockedRevisions));
             }
+
+            if (req.Type == GrantType.Full)
+            {
+                var fingerprint = VaultKeyFingerprint.Compute(
+                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                agentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToDomain(
+                    req.AgentWrappedVaultKey!, organizationId, req.VaultId, req.GrantId, req.AgentId,
+                    agent.AccessEpoch, lockedVault.CurrentVaultKeyVersion.Value,
+                    agent.RecipientKeyVersion, fingerprint);
+            }
         }
         catch (StaleGrantEnvelopeException)
         {
-            AddError(r => r.GrantEntries, "Grant envelope is invalid or stale.");
+            AddCryptoError(req);
             await Send.ErrorsAsync(409, ct);
             return;
         }
         catch (Exception ex) when (ex is FormatException or Palladin.Core.Types.Exceptions.DomainException)
         {
-            AddError(r => r.GrantEntries, "Grant envelope is invalid or stale.");
+            AddCryptoError(req);
             await Send.ErrorsAsync(cancellation: ct);
             return;
         }
-        var grant = BuildGrant(req, scopes, organizationId, agent.AccessEpoch, agent.PublicKey, userId, names, now, expirySource);
+        var grant = BuildGrant(req, scopes, agentWrappedVaultKey, organizationId, agent.AccessEpoch, agent.PublicKey, userId, names, now, expirySource);
 
         domainWriteContext.Add(grant);
         agent.FenceAccessMutation();
@@ -320,6 +322,16 @@ internal sealed class CreateGrantEndpoint(
         })
         {
             AddError(r => r.GrantId, "Grant identifier has already been used.");
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+        {
+            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "IX_AgentWrappedVaultKeys_OrganizationId_VaultId_AgentId",
+        })
+        {
+            AddError(r => r.AgentId, "Agent already has active FULL access to this vault.");
             await Send.ErrorsAsync(409, ct);
             return;
         }
@@ -342,7 +354,28 @@ internal sealed class CreateGrantEndpoint(
         return matching == entryIds.Length;
     }
 
-    private Grant BuildGrant(CreateGrantRequest req, IReadOnlyCollection<GrantEntryScope> scopes, Guid organizationId, uint agentAccessEpoch, string agentPublicKey, Guid userId, GrantNames names, Instant now, string expirySource)
+    private void AddCryptoError(CreateGrantRequest req)
+    {
+        if (req.Type == GrantType.Full)
+        {
+            AddError(r => r.AgentWrappedVaultKey, "Agent Vault-key wrapper is invalid or stale.");
+            return;
+        }
+
+        AddError(r => r.GrantEntries, "Grant envelope is invalid or stale.");
+    }
+
+    private Grant BuildGrant(
+        CreateGrantRequest req,
+        IReadOnlyCollection<GrantEntryScope> scopes,
+        AgentWrappedVaultKey? agentWrappedVaultKey,
+        Guid organizationId,
+        uint agentAccessEpoch,
+        string agentPublicKey,
+        Guid userId,
+        GrantNames names,
+        Instant now,
+        string expirySource)
     {
         return req.Type switch
         {
@@ -368,7 +401,7 @@ internal sealed class CreateGrantEndpoint(
                 organizationId,
                 req.AgentId,
                 agentPublicKey,
-                scopes,
+                agentWrappedVaultKey!,
                 req.ExpiresAt,
                 req.QueryLimit,
                 expirySource,

@@ -67,6 +67,7 @@ internal enum X25519WrapperPurpose : ushort
     AgentDiscoveryVdk = 2,
     ReasonDek = 3,
     GrantDek = 4,
+    AgentVaultKey = 5,
 }
 
 internal sealed record X25519WrapperContext(

@@ -169,6 +169,24 @@ internal sealed class X25519WrappedKeyContractValidator : AbstractValidator<X255
     }
 }
 
+internal sealed class AgentWrappedVaultKeyContractValidator : AbstractValidator<AgentWrappedVaultKeyContract>
+{
+    internal AgentWrappedVaultKeyContractValidator()
+    {
+        RuleFor(x => x.WrappedVaultKey).NotNull()
+            .SetValidator(new X25519WrappedKeyContractValidator()!);
+        RuleFor(x => x.WrappedVaultKey.Descriptor.Purpose)
+            .Equal(X25519WrapperPurposeContract.AgentVaultKey)
+            .When(x => x.WrappedVaultKey?.Descriptor is not null);
+        RuleFor(x => x.WrappedVaultKey.Descriptor.Scope.GrantOrRequestId)
+            .NotEmpty()
+            .When(x => x.WrappedVaultKey?.Descriptor?.Scope is not null);
+        RuleFor(x => x.WrappedVaultKey.Descriptor.Scope.AgentId)
+            .NotEmpty()
+            .When(x => x.WrappedVaultKey?.Descriptor?.Scope is not null);
+    }
+}
+
 internal sealed class X25519WrapperDescriptorContractValidator
     : AbstractValidator<X25519WrapperDescriptorContract>
 {

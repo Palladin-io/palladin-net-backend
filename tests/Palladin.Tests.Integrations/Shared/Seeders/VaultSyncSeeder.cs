@@ -51,6 +51,7 @@ internal static class VaultSyncSeeder
             version,
             memberIndex,
             agentDiscovery,
+            GrantDeliveryPolicy.Standard,
             vault.MemberKeyGeneration,
             vault.CurrentVaultKeyVersion,
             vault.CurrentVdkVersion,
@@ -106,6 +107,7 @@ internal static class VaultSyncSeeder
             request.MemberIndex is null ? null : VaultEnvelopeContractMapper.ToDomain(request.MemberIndex),
             request.AgentDiscoveryChanged,
             request.AgentDiscovery is null ? null : VaultEnvelopeContractMapper.ToDomain(request.AgentDiscovery),
+            GrantDeliveryPolicy.Standard,
             sequences,
             now,
             actorId);

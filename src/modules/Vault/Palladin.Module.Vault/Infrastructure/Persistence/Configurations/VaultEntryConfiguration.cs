@@ -14,6 +14,7 @@ internal sealed class VaultEntryConfiguration : IEntityTypeConfiguration<Domain.
         builder.Property(x => x.CurrentRevision)
             .HasConversion(x => (decimal)x.Value, x => new Domain.EntryRevision((ulong)x))
             .HasPrecision(20, 0);
+        builder.Property(x => x.DeliveryPolicy).IsRequired();
         builder.Property(x => x.MemberIndexRevision)
             .HasConversion(x => (decimal)x.Value, x => new Domain.MemberIndexRevision((ulong)x))
             .HasPrecision(20, 0);

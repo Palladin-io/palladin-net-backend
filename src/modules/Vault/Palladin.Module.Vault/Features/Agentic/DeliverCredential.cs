@@ -36,9 +36,16 @@ public sealed record DeliverCredentialResponse(
     Guid VaultId,
     Guid GrantId,
     Guid AgentId,
+    uint AgentAccessEpoch,
     Guid EntryId,
     ushort ApprovedMethods,
-    GrantEntryEnvelopeContract GrantEnvelope);
+    GrantType GrantType,
+    GrantDeliveryPolicy DeliveryPolicy,
+    Instant? ExpiresAt,
+    GrantEntryEnvelopeContract? GrantEnvelope,
+    AgentWrappedVaultKeyContract? AgentWrappedVaultKey,
+    VaultEntryKeyContract? EntryKey,
+    MemberSecretEnvelopeContract? MemberSecret);
 
 [UsedImplicitly]
 internal sealed class DeliverCredentialValidator : Validator<DeliverCredentialRequest>
@@ -66,7 +73,7 @@ internal sealed class DeliverCredentialEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Deliver an encrypted credential to an agent";
-            summary.Description = "Returns the canonical authenticated grant envelope and agent-wrapped DEK for an entry the agent has an active grant for. The agent decrypts locally with its X25519 private key. The server is a zero-knowledge relay and never receives entry labels, URL domains, plaintext secrets, or client keys.";
+            summary.Description = "Returns disjoint encrypted material for an active grant: GRANULAR receives one canonical grant envelope, while FULL receives its Agent-wrapped Vault key plus the current Entry key and MemberSecret. The native Agent decrypts locally. The server remains a zero-knowledge relay and never receives entry labels, URL domains, plaintext secrets, or client keys.";
         });
         Tags("Vault/Grants");
     }
@@ -97,8 +104,7 @@ internal sealed class DeliverCredentialEndpoint(
                             && agent.Status == AgentStatus.Active
                             && agent.AccessEpoch == accessEpoch.Value)
                         && (g.Status == GrantStatus.Active || g.Status == GrantStatus.Consumed)
-                        && ((g is FullGrant && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
-                            && (g.Status == GrantStatus.Consumed || scope.Envelope != null)))
+                        && ((g is FullGrant && (g.Status == GrantStatus.Consumed || g.AgentWrappedVaultKey != null))
                             || (g as GranularGrant)!.EntryId == req.EntryId))
             .Select(g => new
             {
@@ -191,10 +197,19 @@ internal sealed class DeliverCredentialEndpoint(
                         req.VaultId,
                         grant.Id,
                         agentId.Value,
+                        accessEpoch.Value,
                         req.EntryId,
                         (ushort)grant.Methods,
-                        GrantDeliveryContractMapper.ToContract(granted, grant.OrganizationId, req.VaultId,
-                            grant.Id, agentId.Value, req.EntryId, grant.Methods)),
+                        grant.Type,
+                        granted.DeliveryPolicy,
+                        grant.ExpiresAt,
+                        grant.Type == GrantType.Granular
+                            ? GrantDeliveryContractMapper.ToContract(granted, grant.OrganizationId, req.VaultId,
+                                grant.Id, agentId.Value, req.EntryId, grant.Methods)
+                            : null,
+                        granted.AgentWrappedVaultKey,
+                        granted.EntryKey,
+                        granted.MemberSecret),
                     ct);
 
                 // Expiry is type-dependent and mutually exclusive: time-based grants carry ExpiresAt, use-based

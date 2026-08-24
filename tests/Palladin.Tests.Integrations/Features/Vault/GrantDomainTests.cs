@@ -338,15 +338,16 @@ public sealed class GrantDomainTests
     }
 
     [Fact]
-    public void FullGrant_CoversOnlyScopesWithLivePayload()
+    public void FullGrant_CoversEntriesOnlyWhileWrappedVaultKeyIsLive()
     {
         var organizationId = Guid.NewGuid();
         var vaultId = Guid.NewGuid();
         var grantId = Guid.NewGuid();
         var entryId = Guid.NewGuid();
-        var scope = GrantEnvelopeTestData.Scope(organizationId, vaultId, grantId, entryId);
+        var agentId = Guid.NewGuid();
         var grant = FullGrant.CreateProactively(
-            grantId, vaultId, organizationId, Guid.NewGuid(), "pk", [scope],
+            grantId, vaultId, organizationId, agentId, "pk",
+            GrantEnvelopeTestData.AgentVaultKey(organizationId, vaultId, grantId, agentId),
             null, null, "lifetime", GrantMethods.Get, Guid.NewGuid(),
             new GrantNames("agent", null, "vault", "actor"), Now, 1);
 

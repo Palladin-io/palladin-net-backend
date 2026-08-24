@@ -25,11 +25,10 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<VaultEntryKey> EntryKeys => Track<VaultEntryKey>();
     public IQueryable<VaultEntryVersion> EntryVersions => Track<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Track<AgentVaultDiscoveryEnvelope>();
+    public IQueryable<AgentWrappedVaultKey> AgentWrappedVaultKeys => Track<AgentWrappedVaultKey>();
     public IQueryable<Grant> Grants => Track<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Track<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Track<GrantEntryEnvelope>();
-    public IQueryable<FullGrantPreparation> FullGrantPreparations => Track<FullGrantPreparation>();
-    public IQueryable<FullGrantPreparationEntry> FullGrantPreparationEntries => Track<FullGrantPreparationEntry>();
     public IQueryable<EncryptedReasonEnvelope> EncryptedReasonEnvelopes => Track<EncryptedReasonEnvelope>();
     public IQueryable<Agent> Agents => Track<Agent>();
     public IQueryable<User> Users => Track<User>();
@@ -61,43 +60,6 @@ internal sealed class VaultDomainWriteContext(
              WHERE "UserId" = ANY ({memberIds})
              ORDER BY "UserId"
              FOR UPDATE
-             """);
-
-    public IQueryable<int> FullGrantPreparationSnapshotMismatchCount(
-        Guid organizationId,
-        Guid vaultId,
-        Guid preparationId) =>
-        SqlQuery<int>(
-            $"""
-             SELECT CAST(
-                 (SELECT COUNT(*)
-                  FROM "VaultEntries" AS entry
-                  WHERE entry."OrganizationId" = {organizationId}
-                    AND entry."VaultId" = {vaultId}
-                    AND entry."State" = {(int)EntryState.Active}
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM "FullGrantPreparationEntries" AS prepared
-                        WHERE prepared."OrganizationId" = entry."OrganizationId"
-                          AND prepared."VaultId" = entry."VaultId"
-                          AND prepared."PreparationId" = {preparationId}
-                          AND prepared."EntryId" = entry."Id"
-                          AND prepared."EntryRevision" = entry."CurrentRevision"))
-                 +
-                 (SELECT COUNT(*)
-                  FROM "FullGrantPreparationEntries" AS prepared
-                  WHERE prepared."OrganizationId" = {organizationId}
-                    AND prepared."VaultId" = {vaultId}
-                    AND prepared."PreparationId" = {preparationId}
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM "VaultEntries" AS entry
-                        WHERE entry."OrganizationId" = prepared."OrganizationId"
-                          AND entry."VaultId" = prepared."VaultId"
-                          AND entry."Id" = prepared."EntryId"
-                          AND entry."State" = {(int)EntryState.Active}
-                          AND entry."CurrentRevision" = prepared."EntryRevision"))
-                 AS integer) AS "Value"
              """);
 
     public IQueryable<VaultKeyRotationPreparedItem> RequestedRotationItems(
@@ -205,6 +167,20 @@ internal sealed class VaultDomainWriteContext(
                               WHERE material."OrganizationId" = item."OrganizationId"
                                 AND material."VaultId" = item."VaultId"
                                 AND material."Kind" = item."SubjectVersion")))
+                 OR (item."Kind" = {(int)VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey}
+                     AND (item."SubjectVersion" <> 0 OR NOT EXISTS (
+                         SELECT 1
+                         FROM "Grants" AS candidate_grant
+                         JOIN "Agents" AS agent
+                           ON agent."OrganizationId" = candidate_grant."OrganizationId"
+                          AND agent."Id" = candidate_grant."AgentId"
+                         WHERE candidate_grant."OrganizationId" = item."OrganizationId"
+                           AND candidate_grant."VaultId" = item."VaultId"
+                           AND candidate_grant."Id" = item."SubjectId"
+                           AND candidate_grant."GrantType" = 'Full'
+                           AND candidate_grant."Status" = {(int)GrantStatus.Active}
+                           AND agent."Status" = {(int)AgentStatus.Active}
+                           AND agent."AccessEpoch" = candidate_grant."AgentAccessEpoch")))
                )
              """,
             cancellationToken);
@@ -225,7 +201,14 @@ internal sealed class VaultDomainWriteContext(
                AND (("Kind" = {(int)VaultKeyRotationPreparedItemKind.MemberVaultKey}
                      AND "SubjectId" = {excludedMemberId})
                  OR ("Kind" = {(int)VaultKeyRotationPreparedItemKind.AgentDiscoveryEnvelope}
-                     AND "SubjectId" = {excludedAgentId}))
+                     AND "SubjectId" = {excludedAgentId})
+                 OR ("Kind" = {(int)VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey}
+                     AND EXISTS (
+                         SELECT 1 FROM "Grants" AS candidate_grant
+                         WHERE candidate_grant."OrganizationId" = {organizationId}
+                           AND candidate_grant."VaultId" = {vaultId}
+                           AND candidate_grant."Id" = "VaultKeyRotationPreparedItems"."SubjectId"
+                           AND candidate_grant."AgentId" = {excludedAgentId})))
              """,
             cancellationToken);
 

@@ -55,6 +55,7 @@ public enum X25519WrapperPurposeContract : ushort
     AgentDiscoveryVdk = 2,
     ReasonDek = 3,
     GrantDek = 4,
+    AgentVaultKey = 5,
 }
 
 [PublicAPI]
@@ -83,6 +84,21 @@ public sealed record X25519WrapperDescriptorContract(
 public sealed record X25519WrappedKeyContract(
     X25519WrapperDescriptorContract Descriptor,
     string EncodedSealedKeyPackage);
+
+[PublicAPI]
+public sealed record AgentWrappedVaultKeyContract(
+    X25519WrappedKeyContract WrappedVaultKey)
+{
+    [JsonIgnore] public Guid OrganizationId => WrappedVaultKey.Descriptor.Scope.OrganizationId;
+    [JsonIgnore] public Guid VaultId => WrappedVaultKey.Descriptor.Scope.VaultId;
+    [JsonIgnore] public Guid GrantId => WrappedVaultKey.Descriptor.Scope.GrantOrRequestId!.Value;
+    [JsonIgnore] public Guid AgentId => WrappedVaultKey.Descriptor.Scope.AgentId!.Value;
+    [JsonIgnore] public string AgentAccessEpoch => WrappedVaultKey.Descriptor.ResourceRevision;
+    [JsonIgnore] public uint VaultKeyVersion => WrappedVaultKey.Descriptor.WrappedKeyVersion;
+    [JsonIgnore] public uint RecipientAgentKeyVersion => WrappedVaultKey.Descriptor.RecipientKeyVersion;
+    [JsonIgnore] public string RecipientAgentKeyFingerprint => WrappedVaultKey.Descriptor.RecipientFingerprint;
+    [JsonIgnore] public string EncodedSealedVaultKeyPackage => WrappedVaultKey.EncodedSealedKeyPackage;
+}
 
 [PublicAPI]
 public sealed record MemberVaultMetadataEnvelopeContract(

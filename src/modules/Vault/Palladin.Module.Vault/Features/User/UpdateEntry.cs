@@ -27,6 +27,7 @@ public sealed record UpdateEntryRequest : IRequiresVaultMembership
     public AgentDiscoveryEnvelopeContract? AgentDiscovery { get; init; }
     public GrantDeliveryPolicy DeliveryPolicy { get; init; } = GrantDeliveryPolicy.Standard;
     public IReadOnlyList<GrantEntryEnvelopeContract> GrantEnvelopes { get; init; } = [];
+    public IReadOnlyList<ScriptExecutionPackageContract> ScriptGrantPackages { get; init; } = [];
 }
 
 [PublicAPI]
@@ -44,6 +45,8 @@ internal sealed class UpdateEntryValidator : Validator<UpdateEntryRequest>
         RuleFor(x => x.DeliveryPolicy).Must(x => x.IsValid());
         RuleFor(x => x.AgentDiscovery).Null().When(x => !x.AgentDiscoveryChanged);
         RuleForEach(x => x.GrantEnvelopes).SetValidator(new GrantEntryEnvelopeContractValidator());
+        RuleForEach(x => x.ScriptGrantPackages)
+            .SetValidator(new ScriptExecutionPackageContractValidator());
     }
 }
 
@@ -126,6 +129,30 @@ internal sealed class UpdateEntryEndpoint(
                  && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
                                                     && scope.Envelope != null))
             .ToListAsync(ct);
+        var activeScriptGrants = await domainWriteContext.Grants
+            .OfType<ScriptExecutionGrant>()
+            .Include(grant => grant.ScriptExecutionPackage)
+            .Include(grant => grant.ScriptExecutionScopes)
+            .Where(grant => grant.OrganizationId == organizationId
+                && grant.VaultId == req.VaultId
+                && grant.Status == GrantStatus.Active
+                && grant.ScriptExecutionScopes.Any(scope => scope.EntryId == req.EntryId))
+            .ToListAsync(ct);
+        var coveringFullExecExists = (entry.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly
+                || req.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly)
+            && await domainWriteContext.Grants
+                .OfType<FullGrant>()
+                .AnyAsync(grant => grant.OrganizationId == organizationId
+                    && grant.VaultId == req.VaultId
+                    && grant.Status == GrantStatus.Active
+                    && (grant.Methods & GrantMethods.Exec) == GrantMethods.Exec
+                    && grant.AgentWrappedVaultKey != null, ct);
+        if ((activeScriptGrants.Count > 0 || coveringFullExecExists)
+            && !User.GetPermissions().HasFlag(Permission.GrantManage))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
         var scopes = activeGrants.SelectMany(g => g.GrantEntryScopes)
             .Where(scope => scope.EntryId == req.EntryId
                             && scope.Envelope is not null)
@@ -134,6 +161,14 @@ internal sealed class UpdateEntryEndpoint(
                 req.GrantEnvelopes.Select(envelope => envelope.GrantId).Order()))
         {
             AddError(r => r.GrantEnvelopes, "Every active covering grant must be refreshed exactly once.");
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
+        if (!activeScriptGrants.Select(grant => grant.Id).Order().SequenceEqual(
+                req.ScriptGrantPackages.Select(package => package.GrantId).Order()))
+        {
+            AddError(r => r.ScriptGrantPackages,
+                "Every affected ScriptExecution grant must be refreshed exactly once.");
             await Send.StatusCodeAsync(409, ct);
             return;
         }
@@ -157,8 +192,12 @@ internal sealed class UpdateEntryEndpoint(
             now,
             userId);
 
+        var affectedAgentIds = activeGrants.Select(grant => grant.AgentId)
+            .Concat(activeScriptGrants.Select(grant => grant.AgentId))
+            .Distinct()
+            .ToArray();
         var agents = await domainWriteContext.Agents
-            .Where(agent => activeGrants.Select(grant => grant.AgentId).Contains(agent.Id)
+            .Where(agent => affectedAgentIds.Contains(agent.Id)
                             && agent.OrganizationId == organizationId)
             .ToDictionaryAsync(agent => agent.Id, ct);
         try
@@ -190,10 +229,65 @@ internal sealed class UpdateEntryEndpoint(
                 }
                 scope.RefreshScope(refreshed);
             }
+
+            if (activeScriptGrants.Count > 0)
+            {
+                var packageScopeIds = req.ScriptGrantPackages
+                    .SelectMany(package => package.Scopes)
+                    .Select(scope => scope.EntryId)
+                    .Distinct()
+                    .ToArray();
+                var currentPackageEntries = await domainWriteContext.Entries
+                    .Where(candidate => candidate.OrganizationId == organizationId
+                        && candidate.VaultId == req.VaultId
+                        && candidate.State == EntryState.Active
+                        && packageScopeIds.Contains(candidate.Id))
+                    .Select(candidate => new { candidate.Id, Revision = candidate.CurrentRevision.Value })
+                    .ToListAsync(ct);
+                var currentRevisions = currentPackageEntries
+                    .ToDictionary(candidate => candidate.Id, candidate => candidate.Revision);
+                currentRevisions[entry.Id] = entry.CurrentRevision.Value;
+
+                foreach (var grant in activeScriptGrants)
+                {
+                    var contract = req.ScriptGrantPackages.Single(package => package.GrantId == grant.Id);
+                    var (replacement, replacementScopes) =
+                        ScriptExecutionPackageContractMapper.ToDomain(contract);
+                    var grantAgent = agents[grant.AgentId];
+                    var fingerprint = VaultKeyFingerprint.Compute(
+                        Convert.FromBase64String(grantAgent.PublicKey), VaultKeyKind.AgentX25519);
+                    if (replacement.OrganizationId != organizationId
+                        || replacement.VaultId != req.VaultId
+                        || replacement.GrantId != grant.Id
+                        || replacement.AgentId != grant.AgentId
+                        || replacement.AgentAccessEpoch != grant.AgentAccessEpoch
+                        || replacement.ScriptEntryId != grant.ScriptEntryId
+                        || replacement.RecipientAgentKeyVersion != grantAgent.RecipientKeyVersion
+                        || !replacement.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint)
+                        || replacementScopes.Any(scope =>
+                            !currentRevisions.TryGetValue(scope.EntryId, out var revision)
+                            || scope.EntryRevision != revision)
+                        || !currentRevisions.TryGetValue(grant.ScriptEntryId, out var scriptRevision)
+                        || replacement.ScriptRevision != scriptRevision)
+                    {
+                        throw new Palladin.Core.Types.Exceptions.DomainException(
+                            "Script execution package refresh scope is invalid.");
+                    }
+
+                    if (grant.ScriptEntryId != req.EntryId
+                        && !grant.ScriptExecutionScopes.Select(scope => scope.EntryId).Order()
+                            .SequenceEqual(replacementScopes.Select(scope => scope.EntryId).Order()))
+                    {
+                        throw new Palladin.Core.Types.Exceptions.DomainException(
+                            "A referenced Entry update cannot change the Script scope set.");
+                    }
+                    grant.RefreshPackage(replacement, replacementScopes);
+                }
+            }
         }
         catch (Exception ex) when (ex is FormatException or Palladin.Core.Types.Exceptions.DomainException)
         {
-            AddError(r => r.GrantEnvelopes, "Grant envelope refresh is invalid or stale.");
+            AddError("Grant or Script execution package refresh is invalid or stale.");
             await Send.ErrorsAsync(409, ct);
             return;
         }

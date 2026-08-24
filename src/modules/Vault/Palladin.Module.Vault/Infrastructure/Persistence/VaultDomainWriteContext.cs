@@ -26,6 +26,8 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<VaultEntryVersion> EntryVersions => Track<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Track<AgentVaultDiscoveryEnvelope>();
     public IQueryable<AgentWrappedVaultKey> AgentWrappedVaultKeys => Track<AgentWrappedVaultKey>();
+    public IQueryable<ScriptExecutionScope> ScriptExecutionScopes => Track<ScriptExecutionScope>();
+    public IQueryable<ScriptExecutionPackage> ScriptExecutionPackages => Track<ScriptExecutionPackage>();
     public IQueryable<Grant> Grants => Track<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Track<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Track<GrantEntryEnvelope>();

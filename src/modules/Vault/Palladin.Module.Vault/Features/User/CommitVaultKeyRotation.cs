@@ -343,11 +343,13 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         {
             var query = domainWriteContext.Grants
                 .Include(x => x.AgentWrappedVaultKey)
+                .Include(x => x.ScriptExecutionPackage)
                 .Include(x => x.GrantEntryScopes).ThenInclude(x => x.Envelope)
                 .Where(x => x.OrganizationId == organizationId
                             && x.VaultId == vaultId
                             && x.AgentId == agentId
                             && (x.AgentWrappedVaultKey != null
+                                || x.ScriptExecutionPackage != null
                                 || x.GrantEntryScopes.Any(scope => scope.Envelope != null)));
             if (lastGrantId is not null)
             {

@@ -23,8 +23,10 @@ public sealed record CreateGrantRequest : IRequiresVaultMembership
     public Guid AgentId { get; init; }
     public GrantType Type { get; init; }
     public Guid? EntryId { get; init; }
+    public Guid? ScriptEntryId { get; init; }
     public IReadOnlyList<GrantEntryEnvelopeContract> GrantEntries { get; init; } = [];
     public AgentWrappedVaultKeyContract? AgentWrappedVaultKey { get; init; }
+    public ScriptExecutionPackageContract? ScriptPackage { get; init; }
     public Instant? ExpiresAt { get; init; }
     public int? QueryLimit { get; init; }
 
@@ -55,14 +57,23 @@ internal sealed class CreateGrantValidator : Validator<CreateGrantRequest>
         RuleFor(x => x.QueryLimit!.Value).GreaterThan(0).When(x => x.QueryLimit.HasValue);
 
         RuleFor(x => x.EntryId).NotNull().When(x => x.Type == GrantType.Granular);
-        RuleFor(x => x.EntryId).Null().When(x => x.Type == GrantType.Full);
+        RuleFor(x => x.EntryId).Null().When(x => x.Type != GrantType.Granular);
+        RuleFor(x => x.ScriptEntryId).NotNull().When(x => x.Type == GrantType.ScriptExecution);
+        RuleFor(x => x.ScriptEntryId).Null().When(x => x.Type != GrantType.ScriptExecution);
 
         RuleFor(x => x.GrantEntries).NotEmpty().When(x => x.Type == GrantType.Granular);
-        RuleFor(x => x.GrantEntries).Empty().When(x => x.Type == GrantType.Full);
+        RuleFor(x => x.GrantEntries).Empty().When(x => x.Type != GrantType.Granular);
         RuleFor(x => x.AgentWrappedVaultKey).Null().When(x => x.Type == GrantType.Granular);
+        RuleFor(x => x.AgentWrappedVaultKey).Null().When(x => x.Type == GrantType.ScriptExecution);
         RuleFor(x => x.AgentWrappedVaultKey).NotNull()
             .SetValidator(new AgentWrappedVaultKeyContractValidator()!)
             .When(x => x.Type == GrantType.Full);
+        RuleFor(x => x.ScriptPackage).Null().When(x => x.Type != GrantType.ScriptExecution);
+        RuleFor(x => x.ScriptPackage).NotNull()
+            .SetValidator(new ScriptExecutionPackageContractValidator()!)
+            .When(x => x.Type == GrantType.ScriptExecution);
+        RuleFor(x => x.Methods).Equal(GrantMethods.Exec)
+            .When(x => x.Type == GrantType.ScriptExecution);
         RuleFor(x => x.GrantEntries.Count)
             .LessThanOrEqualTo(crypto.MaxGrantEntriesPerGrant);
         RuleFor(x => x.GrantEntries.Count)
@@ -97,7 +108,7 @@ internal sealed class CreateGrantEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Create a grant proactively (user-initiated)";
-            summary.Description = "Creates an Active grant for an agent. GRANULAR carries one revision-bound Entry envelope; FULL carries one current VK sealed to the authoritative Agent key. The server stores ciphertext only.";
+            summary.Description = "Creates an Active grant for an Agent. GRANULAR carries one revision-bound Entry envelope, FULL carries one current VK, and ScriptExecution carries one complete Script package sealed to the authoritative Agent key. The server stores ciphertext only.";
         });
         Tags("Vault/Grants");
     }
@@ -128,7 +139,7 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
-        if (req.Type == GrantType.Granular && !await EntriesBelongToVaultAsync(req, ct))
+        if (req.Type != GrantType.Full && !await EntriesBelongToVaultAsync(req, ct))
         {
             AddError(r => r.GrantEntries, "One or more entries do not belong to the vault.");
             await Send.ErrorsAsync(cancellation: ct);
@@ -155,8 +166,15 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
-        var lockedRevisions = new Dictionary<Guid, ulong>(req.GrantEntries.Count);
-        foreach (var entryId in req.GrantEntries.Select(x => x.EntryId).Distinct().Order())
+        var requestedEntryIds = req.Type switch
+        {
+            GrantType.Granular => req.GrantEntries.Select(x => x.EntryId),
+            GrantType.ScriptExecution => req.ScriptPackage!.Scopes.Select(x => x.EntryId),
+            _ => [],
+        };
+        var lockedRevisions = new Dictionary<Guid, ulong>();
+        var lockedDeliveryPolicies = new Dictionary<Guid, GrantDeliveryPolicy>();
+        foreach (var entryId in requestedEntryIds.Distinct().Order())
         {
             var lockedEntry = await domainWriteContext.Entries.SingleOrDefaultAsync(
                 x => x.OrganizationId == organizationId
@@ -170,6 +188,7 @@ internal sealed class CreateGrantEndpoint(
                 return;
             }
             lockedRevisions.Add(entryId, lockedEntry.CurrentRevision.Value);
+            lockedDeliveryPolicies.Add(entryId, lockedEntry.DeliveryPolicy);
         }
 
         // TODO: enforce an anti-scraping policy. An agent may access exactly one entry at a time
@@ -235,7 +254,7 @@ internal sealed class CreateGrantEndpoint(
                 return;
             }
         }
-        else
+        else if (req.Type == GrantType.Full)
         {
             // Creating a FULL grant. 409 only on a real duplicate (an existing active FULL on the vault).
             if (await domainReadContext.HasActiveFullCoverageAsync(req.AgentId, agent.AccessEpoch, req.VaultId, ct))
@@ -265,16 +284,79 @@ internal sealed class CreateGrantEndpoint(
                     granular.RevokeBySystem(supersedeNamesByEntry[granular.EntryId], now);
                 }
             }
+
+            if (req.Methods.HasFlag(GrantMethods.Exec))
+            {
+                var scriptSupersedeSet = await domainWriteContext.Grants
+                    .OfType<ScriptExecutionGrant>()
+                    .Include(grant => grant.ScriptExecutionPackage)
+                    .Where(grant => grant.AgentId == req.AgentId
+                        && grant.AgentAccessEpoch == agent.AccessEpoch
+                        && grant.VaultId == req.VaultId
+                        && grant.Status == GrantStatus.Active)
+                    .ToListAsync(ct);
+                foreach (var scriptGrant in scriptSupersedeSet)
+                {
+                    var supersedeNames = await domainReadContext.ResolveAsync(
+                        req.AgentId, scriptGrant.ScriptEntryId, req.VaultId, userId, ct);
+                    scriptGrant.RevokeBySystem(supersedeNames, now);
+                }
+            }
+        }
+        else
+        {
+            var scriptEntryId = req.ScriptEntryId!.Value;
+            if (lockedDeliveryPolicies[scriptEntryId] != GrantDeliveryPolicy.ExecOnly)
+            {
+                AddError(r => r.ScriptEntryId, "Script Entry must use the exec-only delivery policy.");
+                await Send.ErrorsAsync(409, ct);
+                return;
+            }
+
+            var coveringFull = await domainReadContext.Grants
+                .OfType<FullGrant>()
+                .AnyAsync(grant => grant.AgentId == req.AgentId
+                    && grant.AgentAccessEpoch == agent.AccessEpoch
+                    && grant.VaultId == req.VaultId
+                    && grant.Status == GrantStatus.Active
+                    && (grant.Methods & GrantMethods.Exec) == GrantMethods.Exec
+                    && grant.AgentWrappedVaultKey != null, ct);
+            var duplicateScriptGrant = await domainReadContext.Grants
+                .OfType<ScriptExecutionGrant>()
+                .AnyAsync(grant => grant.AgentId == req.AgentId
+                    && grant.AgentAccessEpoch == agent.AccessEpoch
+                    && grant.VaultId == req.VaultId
+                    && grant.ScriptEntryId == scriptEntryId
+                    && grant.Status == GrantStatus.Active
+                    && grant.ScriptExecutionPackage != null, ct);
+            if (coveringFull || duplicateScriptGrant)
+            {
+                throw new AgentAlreadyHasActiveAccessException("script");
+            }
+
+            if (await domainReadContext.Grants.AnyAsync(g => g.Id == req.GrantId, ct))
+            {
+                AddError(r => r.GrantId, "Grant identifier has already been used.");
+                await Send.ErrorsAsync(409, ct);
+                return;
+            }
         }
 
         // Resolve denormalized names for the GrantCreated event in one round-trip — audit/analytics
         // consumers render "who created what" without a re-resolve hop. EntryId is null for FULL
         // (leaves EntryLabel null); userId is the creator.
-        var nameEntryId = req.Type == GrantType.Granular ? req.EntryId : null;
+        var nameEntryId = req.Type switch
+        {
+            GrantType.Granular => req.EntryId,
+            GrantType.ScriptExecution => req.ScriptEntryId,
+            _ => null,
+        };
         var names = await domainReadContext.ResolveAsync(req.AgentId, nameEntryId, req.VaultId, userId, ct);
 
         var scopes = new List<GrantEntryScope>(req.GrantEntries.Count);
         AgentWrappedVaultKey? agentWrappedVaultKey = null;
+        ScriptExecutionPackage? scriptExecutionPackage = null;
+        IReadOnlyList<ScriptExecutionScope> scriptExecutionScopes = [];
         try
         {
             foreach (var contract in req.GrantEntries)
@@ -293,6 +375,19 @@ internal sealed class CreateGrantEndpoint(
                     agent.AccessEpoch, lockedVault.CurrentVaultKeyVersion.Value,
                     agent.RecipientKeyVersion, fingerprint);
             }
+
+            if (req.Type == GrantType.ScriptExecution)
+            {
+                (scriptExecutionPackage, scriptExecutionScopes) =
+                    ScriptExecutionPackageContractMapper.ToDomain(req.ScriptPackage!);
+                ValidateScriptPackage(
+                    req,
+                    scriptExecutionPackage,
+                    scriptExecutionScopes,
+                    organizationId,
+                    agent,
+                    lockedRevisions);
+            }
         }
         catch (StaleGrantEnvelopeException)
         {
@@ -306,7 +401,19 @@ internal sealed class CreateGrantEndpoint(
             await Send.ErrorsAsync(cancellation: ct);
             return;
         }
-        var grant = BuildGrant(req, scopes, agentWrappedVaultKey, organizationId, agent.AccessEpoch, agent.PublicKey, userId, names, now, expirySource);
+        var grant = BuildGrant(
+            req,
+            scopes,
+            agentWrappedVaultKey,
+            scriptExecutionPackage,
+            scriptExecutionScopes,
+            organizationId,
+            agent.AccessEpoch,
+            agent.PublicKey,
+            userId,
+            names,
+            now,
+            expirySource);
 
         domainWriteContext.Add(grant);
         agent.FenceAccessMutation();
@@ -335,6 +442,16 @@ internal sealed class CreateGrantEndpoint(
             await Send.ErrorsAsync(409, ct);
             return;
         }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+        {
+            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "IX_Grants_OrganizationId_VaultId_ScriptEntryId_AgentId_AgentAc~",
+        })
+        {
+            AddError(r => r.AgentId, "Agent already has active direct access to this Script.");
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
 
         await Send.CreatedAtAsync<GetGrantEndpoint>(
             new { vaultId = req.VaultId, grantId = grant.Id },
@@ -344,7 +461,11 @@ internal sealed class CreateGrantEndpoint(
 
     private async Task<bool> EntriesBelongToVaultAsync(CreateGrantRequest req, CancellationToken ct)
     {
-        var entryIds = req.GrantEntries.Select(e => e.EntryId).Distinct().ToArray();
+        var entryIds = (req.Type == GrantType.ScriptExecution
+                ? req.ScriptPackage!.Scopes.Select(scope => scope.EntryId)
+                : req.GrantEntries.Select(entry => entry.EntryId))
+            .Distinct()
+            .ToArray();
         var organizationId = User.GetOrganizationId()!.Value;
         var matching = await domainReadContext.Entries
             .CountAsync(e => e.OrganizationId == organizationId
@@ -362,6 +483,12 @@ internal sealed class CreateGrantEndpoint(
             return;
         }
 
+        if (req.Type == GrantType.ScriptExecution)
+        {
+            AddError(r => r.ScriptPackage, "Script execution package is invalid or stale.");
+            return;
+        }
+
         AddError(r => r.GrantEntries, "Grant envelope is invalid or stale.");
     }
 
@@ -369,6 +496,8 @@ internal sealed class CreateGrantEndpoint(
         CreateGrantRequest req,
         IReadOnlyCollection<GrantEntryScope> scopes,
         AgentWrappedVaultKey? agentWrappedVaultKey,
+        ScriptExecutionPackage? scriptExecutionPackage,
+        IReadOnlyCollection<ScriptExecutionScope> scriptExecutionScopes,
         Guid organizationId,
         uint agentAccessEpoch,
         string agentPublicKey,
@@ -410,8 +539,51 @@ internal sealed class CreateGrantEndpoint(
                 names,
                 now,
                 agentAccessEpoch),
+            GrantType.ScriptExecution => ScriptExecutionGrant.CreateProactively(
+                req.GrantId,
+                req.VaultId,
+                organizationId,
+                req.AgentId,
+                agentPublicKey,
+                req.ScriptEntryId!.Value,
+                scriptExecutionScopes,
+                scriptExecutionPackage!,
+                req.ExpiresAt,
+                req.QueryLimit,
+                expirySource,
+                userId,
+                names,
+                now,
+                agentAccessEpoch),
             _ => throw new ArgumentOutOfRangeException(nameof(req)),
         };
+    }
+
+    private static void ValidateScriptPackage(
+        CreateGrantRequest req,
+        ScriptExecutionPackage package,
+        IReadOnlyCollection<ScriptExecutionScope> scopes,
+        Guid organizationId,
+        Agent agent,
+        IReadOnlyDictionary<Guid, ulong> lockedRevisions)
+    {
+        var fingerprint = VaultKeyFingerprint.Compute(
+            Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+        if (package.OrganizationId != organizationId || package.VaultId != req.VaultId
+            || package.GrantId != req.GrantId || package.AgentId != req.AgentId
+            || package.AgentAccessEpoch != agent.AccessEpoch
+            || package.ScriptEntryId != req.ScriptEntryId
+            || package.PackageRevision != 1
+            || package.RecipientAgentKeyVersion != agent.RecipientKeyVersion
+            || !package.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint)
+            || scopes.Count != lockedRevisions.Count
+            || scopes.Any(scope => !lockedRevisions.TryGetValue(scope.EntryId, out var revision)
+                || scope.EntryRevision != revision)
+            || package.ScriptRevision != lockedRevisions[req.ScriptEntryId!.Value])
+        {
+            throw new Palladin.Core.Types.Exceptions.DomainException(
+                "Script execution package binding is invalid or stale.");
+        }
     }
 
     private static GrantEntryScope ToScope(

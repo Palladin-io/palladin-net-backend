@@ -180,6 +180,40 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_ScriptExecutionAccessed_Then_WritesOnlyStructuralExecutionMetadata()
+    {
+        var organizationId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var scriptEntryId = Guid.NewGuid();
+        var evt = new CredentialAccessedEvent(
+            grantId,
+            Guid.NewGuid(),
+            organizationId,
+            agentId,
+            scriptEntryId,
+            GrantType.ScriptExecution,
+            CredentialAccessedEvent.UnknownAgent,
+            string.Empty,
+            string.Empty,
+            null,
+            2,
+            GrantMethods.Exec,
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        await RunAsync(p => new OnCredentialAccessedAudit(p), evt);
+
+        var entry = await FindAsync(AuditEventType.CredentialAccessed, organizationId);
+        entry.ShouldNotBeNull();
+        entry.EntryId.ShouldBe(scriptEntryId);
+        entry.Metadata.Count.ShouldBe(4);
+        entry.Metadata["grantId"].ShouldBe(grantId.ToString());
+        entry.Metadata["grantType"].ShouldBe(GrantType.ScriptExecution.ToString());
+        entry.Metadata["method"].ShouldBe(GrantMethods.Exec.ToString());
+        entry.Metadata["remainingUses"].ShouldBe("2");
+    }
+
+    [Fact]
     public async Task When_GrantExpiredConsumed_Then_ResolvesOrgFromVaultAndWritesSystemEntry()
     {
         // Given

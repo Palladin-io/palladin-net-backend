@@ -51,6 +51,8 @@ public sealed record GrantResponse(
     string? EntryLabel,
     string? UrlDomain,
     IReadOnlyList<GrantEntryScopeResponse> EntryScopes,
+    IReadOnlyList<ScriptExecutionScopeResponse> ScriptScopes,
+    string? ScriptPackageRevision,
     EncryptedReasonEnvelopeContract? EncryptedReason,
     Instant? ExpiresAt,
     int? QueryLimit,
@@ -82,6 +84,12 @@ public sealed record GrantEntryScopeResponse(
     uint? RecipientAgentKeyVersion,
     [property: JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] byte[]? AgentKeyFingerprint);
 
+[PublicAPI]
+public sealed record ScriptExecutionScopeResponse(
+    Guid EntryId,
+    string EntryRevision,
+    bool IsScript);
+
 [UsedImplicitly]
 internal sealed class GetGrantValidator : Validator<GetGrantRequest>
 {
@@ -105,7 +113,7 @@ internal sealed class GetGrantEndpoint(VaultDomainReadContext domainReadContext)
         Summary(summary =>
         {
             summary.Summary = "Get a single grant";
-            summary.Description = "Returns grant metadata and the encrypted Agent reason envelope for local Member decryption. Credential grant payload ciphertext, plaintext secrets and private or unwrapped keys are never included.";
+            summary.Description = "Returns grant metadata, structural Script package revision/scopes, and the encrypted Agent reason envelope for local Member decryption. Credential or Script payload ciphertext, plaintext secrets, and private or unwrapped keys are never included.";
         });
         Tags("Vault/Grants");
     }
@@ -127,11 +135,23 @@ internal sealed class GetGrantEndpoint(VaultDomainReadContext domainReadContext)
             .Where(x => x.VaultId == req.VaultId && x.GrantRequestId == req.GrantId)
             .Select(x => new
             {
-                x.ProtocolVersion, x.CryptoSuiteId, x.OrganizationId, x.VaultId, x.EntryId,
-                x.GrantRequestId, x.AgentId, x.ResourceRevision, x.ReasonKeyVersion,
-                x.MemberKeyGeneration, x.WrapperSuiteId, x.AgentMessageKeyVersion,
-                x.RecipientAgentMessageKeyFingerprint, x.RequestedMethods, x.EncodedSuitePayload,
-                x.AgentMessageWrappedReasonDek, x.AgentSignature,
+                x.ProtocolVersion,
+                x.CryptoSuiteId,
+                x.OrganizationId,
+                x.VaultId,
+                x.EntryId,
+                x.GrantRequestId,
+                x.AgentId,
+                x.ResourceRevision,
+                x.ReasonKeyVersion,
+                x.MemberKeyGeneration,
+                x.WrapperSuiteId,
+                x.AgentMessageKeyVersion,
+                x.RecipientAgentMessageKeyFingerprint,
+                x.RequestedMethods,
+                x.EncodedSuitePayload,
+                x.AgentMessageWrappedReasonDek,
+                x.AgentSignature,
             })
             .FirstOrDefaultAsync(ct);
         if (encryptedReason is not null)
@@ -208,10 +228,18 @@ internal static class GrantProjection
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.SigningPublicKey).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => (uint?)1).FirstOrDefault(),
             null,
-            g is GranularGrant ? GrantType.Granular : GrantType.Full,
+            g is GranularGrant
+                ? GrantType.Granular
+                : g is ScriptExecutionGrant
+                    ? GrantType.ScriptExecution
+                    : GrantType.Full,
             g.Status,
             g.Methods,
-            g is GranularGrant ? ((GranularGrant)g).EntryId : null,
+            g is GranularGrant
+                ? ((GranularGrant)g).EntryId
+                : g is ScriptExecutionGrant
+                    ? ((ScriptExecutionGrant)g).ScriptEntryId
+                    : null,
             null,
             null,
             g.GrantEntryScopes.Select(scope => new GrantEntryScopeResponse(
@@ -223,6 +251,13 @@ internal static class GrantProjection
                 scope.Envelope == null ? null : scope.Envelope.MemberKeyGeneration.Value,
                 scope.Envelope == null ? null : scope.Envelope.RecipientAgentKeyVersion.Value,
                 scope.Envelope == null ? null : scope.Envelope.AgentKeyFingerprint)).ToArray(),
+            g.ScriptExecutionScopes.Select(scope => new ScriptExecutionScopeResponse(
+                scope.EntryId,
+                scope.EntryRevision.ToString(),
+                scope.IsScript)).ToArray(),
+            g.ScriptExecutionPackage == null
+                ? null
+                : g.ScriptExecutionPackage.PackageRevision.ToString(),
             null,
             g.ExpiresAt,
             g.QueryLimit,
@@ -297,11 +332,22 @@ internal static class GrantProjection
             .Where(envelope => grantIds.Contains(envelope.GrantRequestId))
             .Select(envelope => new
             {
-                envelope.ProtocolVersion, envelope.CryptoSuiteId, envelope.OrganizationId, envelope.VaultId,
-                envelope.EntryId, envelope.GrantRequestId, envelope.AgentId, envelope.ResourceRevision,
-                envelope.ReasonKeyVersion, envelope.MemberKeyGeneration, envelope.WrapperSuiteId,
-                envelope.AgentMessageKeyVersion, envelope.RecipientAgentMessageKeyFingerprint,
-                envelope.RequestedMethods, envelope.EncodedSuitePayload, envelope.AgentMessageWrappedReasonDek,
+                envelope.ProtocolVersion,
+                envelope.CryptoSuiteId,
+                envelope.OrganizationId,
+                envelope.VaultId,
+                envelope.EntryId,
+                envelope.GrantRequestId,
+                envelope.AgentId,
+                envelope.ResourceRevision,
+                envelope.ReasonKeyVersion,
+                envelope.MemberKeyGeneration,
+                envelope.WrapperSuiteId,
+                envelope.AgentMessageKeyVersion,
+                envelope.RecipientAgentMessageKeyFingerprint,
+                envelope.RequestedMethods,
+                envelope.EncodedSuitePayload,
+                envelope.AgentMessageWrappedReasonDek,
                 envelope.AgentSignature,
             })
             .ToDictionaryAsync(envelope => envelope.GrantRequestId, ct);
@@ -374,6 +420,25 @@ internal static class GrantProjection
                 .ToListAsync(ct))
             .Select(value => (value.AgentId, value.VaultId))
             .ToHashSet();
+        var activeFullExec = (await ctx.Grants.OfType<FullGrant>()
+                .Where(grant => grant.Status == GrantStatus.Active
+                                && (grant.Methods & GrantMethods.Exec) == GrantMethods.Exec
+                                && agentIds.Contains(grant.AgentId)
+                                && vaultIds.Contains(grant.VaultId))
+                .Select(grant => new { grant.AgentId, grant.VaultId })
+                .ToListAsync(ct))
+            .Select(value => (value.AgentId, value.VaultId))
+            .ToHashSet();
+        var activeScript = (await ctx.Grants.OfType<ScriptExecutionGrant>()
+                .Where(grant => grant.Status == GrantStatus.Active
+                                && agentIds.Contains(grant.AgentId)
+                                && vaultIds.Contains(grant.VaultId)
+                                && entryIds.Contains(grant.ScriptEntryId)
+                                && grant.ScriptExecutionPackage != null)
+                .Select(grant => new { grant.AgentId, grant.VaultId, grant.ScriptEntryId })
+                .ToListAsync(ct))
+            .Select(value => (value.AgentId, value.VaultId, value.ScriptEntryId))
+            .ToHashSet();
         var currentRevisions = (await ctx.Entries
                 .Where(entry => entry.State == EntryState.Active
                                 && vaultIds.Contains(entry.VaultId)
@@ -405,14 +470,19 @@ internal static class GrantProjection
                 continue;
             }
 
-            var hasCoverage = row.Type == GrantType.Full
-                ? activeFull.Contains((row.AgentId.Value, row.VaultId))
-                : row.EntryId is not null
+            var hasCoverage = row.Type switch
+            {
+                GrantType.Full => activeFull.Contains((row.AgentId.Value, row.VaultId)),
+                GrantType.ScriptExecution => row.EntryId is not null
+                    && (activeFullExec.Contains((row.AgentId.Value, row.VaultId))
+                        || activeScript.Contains((row.AgentId.Value, row.VaultId, row.EntryId.Value))),
+                _ => row.EntryId is not null
                   && currentRevisions.TryGetValue((row.VaultId, row.EntryId.Value), out var currentRevision)
                   && activeMaterial.Any(material => material.AgentId == row.AgentId.Value
                                                     && material.VaultId == row.VaultId
                                                     && material.EntryId == row.EntryId.Value
-                                                    && material.Revision == currentRevision);
+                                                    && material.Revision == currentRevision),
+            };
             rows[index] = row with { CanGrantAgain = !hasCoverage };
         }
     }

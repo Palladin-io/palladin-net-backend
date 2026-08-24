@@ -76,6 +76,7 @@ internal static class InfrastructureModule
 
         services.AddScoped<IVaultDirectory, VaultDirectory>();
         services.AddScoped<CredentialDeliveryService>();
+        services.AddScoped<ScriptExecutionPackageDeliveryService>();
         services.AddScoped<VaultPrincipalDeprovisioningCoordinator>();
         services.AddScoped<EntryLifecycleService>();
         services.AddScoped<EntryPurgeService>();

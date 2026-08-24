@@ -14,7 +14,12 @@ internal static class GrantNotificationMapping
     internal const string ViewEntryActionType = "view_entry";
 
     internal static string GrantTypeWire(GrantType type) =>
-        type == GrantType.Full ? "full" : "granular";
+        type switch
+        {
+            GrantType.Full => "full",
+            GrantType.ScriptExecution => "script_execution",
+            _ => "granular",
+        };
 
     internal static string CredentialFailureErrorHint(string code) => code switch
     {

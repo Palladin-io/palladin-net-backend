@@ -22,6 +22,8 @@ internal sealed class VaultDbReadContext(DbContextOptions<VaultDbReadContext> op
     public DbSet<VaultEntryVersion> EntryVersions => Set<VaultEntryVersion>();
     public DbSet<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Set<AgentVaultDiscoveryEnvelope>();
     public DbSet<AgentWrappedVaultKey> AgentWrappedVaultKeys => Set<AgentWrappedVaultKey>();
+    public DbSet<ScriptExecutionScope> ScriptExecutionScopes => Set<ScriptExecutionScope>();
+    public DbSet<ScriptExecutionPackage> ScriptExecutionPackages => Set<ScriptExecutionPackage>();
     public DbSet<Grant> Grants => Set<Grant>();
     public DbSet<GrantEntryScope> GrantEntryScopes => Set<GrantEntryScope>();
     public DbSet<GrantEntryEnvelope> GrantEntryEnvelopes => Set<GrantEntryEnvelope>();

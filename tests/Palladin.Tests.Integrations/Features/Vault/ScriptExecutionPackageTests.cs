@@ -1,0 +1,519 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
+using Palladin.Core.Types;
+using Palladin.Module.Agents.Infrastructure.AgentAuth;
+using Palladin.Module.Vault.Domain;
+using Palladin.Module.Vault.Features;
+using Palladin.Module.Vault.Infrastructure.Crypto;
+using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Module.Vault.Shared;
+using Palladin.Tests.Integrations.Shared;
+using Palladin.Tests.Integrations.Shared.Extensions;
+using Palladin.Tests.Integrations.Shared.Fakers;
+using Palladin.Tests.Integrations.Shared.Seeders;
+using Shouldly;
+
+namespace Palladin.Tests.Integrations.Features.Vault;
+
+[Collection<ApiFactoryCollection>]
+public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBase
+{
+    private async Task<Setup> SetupScriptAsync()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var script = await apiFactory.Services.SeedEntryAsync(
+            vault.Id,
+            user.Id,
+            EntryFaker.Create(organizationId: organization.Id, vaultId: vault.Id, createdBy: user.Id)
+                .RuleFor(entry => entry.DeliveryPolicy, GrantDeliveryPolicy.ExecOnly));
+        var reference = await apiFactory.Services.SeedEntryAsync(vault.Id, user.Id);
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var seedContext = seedScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            var seededVault = await seedContext.Vaults.SingleAsync(value => value.Id == vault.Id);
+            while (seededVault.MemberSequence.Value < 2)
+            {
+                seededVault.AllocateSequences(false, user.Id, SystemClock.Instance.GetCurrentInstant());
+            }
+            await seedContext.SaveChangesAsync();
+        }
+        var (_, apiKey) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        var publicKey = AgentFaker.GeneratePublicKey();
+        var signing = AgentRequestSigning.Generate();
+        var identityAgent = await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(
+                    organizationId: organization.Id,
+                    publicKey: publicKey,
+                    signingPublicKey: signing.PublicKeyBase64)
+                .RuleFor(agent => agent.Status, AgentStatus.Active)
+                .RuleFor(agent => agent.AccessEpoch, (_, _) => 1u));
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            status: AgentStatus.Active,
+            id: identityAgent.Id,
+            publicKey: publicKey);
+        return new Setup(
+            apiFactory.CreateSignedAgentClient(identityAgent.Id, apiKey, publicKey, signing),
+            apiFactory.CreateAuthenticatedClient(user),
+            organization.Id,
+            vault.Id,
+            script.Id,
+            reference.Id,
+            identityAgent.Id,
+            publicKey);
+    }
+
+    [Fact]
+    public async Task DirectGrant_DeliversOneOpaquePackageAndCountsOneUse()
+    {
+        var setup = await SetupScriptAsync();
+        var grant = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(grant);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        body.RootElement.GetProperty("authorizationSource").GetString().ShouldBe("scriptExecution");
+        body.RootElement.GetProperty("queryCount").GetInt32().ShouldBe(1);
+        body.RootElement.GetProperty("scriptPackage").GetProperty("scopes").GetArrayLength().ShouldBe(2);
+        body.RootElement.GetProperty("agentWrappedVaultKey").ValueKind.ShouldBe(JsonValueKind.Null);
+        body.RootElement.GetProperty("vaultEntries").ValueKind.ShouldBe(JsonValueKind.Null);
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.SingleAsync(value => value.Id == grant.Id);
+        persisted.QueryCount.ShouldBe(1);
+        persisted.Status.ShouldBe(GrantStatus.Active);
+    }
+
+    [Fact]
+    public async Task CreateDirectGrant_PersistsOneGrantForScriptAndAllReferences()
+    {
+        var setup = await SetupScriptAsync();
+        var grantId = Guid.NewGuid();
+        var package = PackageContract(setup, grantId);
+
+        var response = await setup.UserClient.PostAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/grants",
+            new CreateGrantRequest
+            {
+                GrantId = grantId,
+                VaultId = setup.VaultId,
+                AgentId = setup.AgentId,
+                Type = GrantType.ScriptExecution,
+                ScriptEntryId = setup.ScriptEntryId,
+                ScriptPackage = package,
+                Methods = GrantMethods.Exec,
+                QueryLimit = 5,
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var grants = await readContext.Grants.OfType<ScriptExecutionGrant>()
+            .Include(value => value.ScriptExecutionPackage)
+            .Include(value => value.ScriptExecutionScopes)
+            .Where(value => value.AgentId == setup.AgentId && value.VaultId == setup.VaultId)
+            .ToListAsync();
+        grants.Count.ShouldBe(1);
+        var direct = grants.Single();
+        direct.Id.ShouldBe(grantId);
+        direct.ScriptExecutionScopes.Count.ShouldBe(2);
+        direct.Covers(setup.ScriptEntryId).ShouldBeTrue();
+        direct.Covers(setup.ReferenceEntryId).ShouldBeFalse();
+
+        var grantHttpResponse = await setup.UserClient.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{grantId}",
+            TestContext.Current.CancellationToken);
+        grantHttpResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var grantBody = JsonDocument.Parse(await grantHttpResponse.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        grantBody.RootElement.GetProperty("scriptPackageRevision").GetString().ShouldBe("1");
+        var scriptScopes = grantBody.RootElement.GetProperty("scriptScopes");
+        scriptScopes.GetArrayLength().ShouldBe(2);
+        scriptScopes.EnumerateArray().Single(scope => scope.GetProperty("isScript").GetBoolean())
+            .GetProperty("entryId").GetGuid().ShouldBe(setup.ScriptEntryId);
+    }
+
+    [Fact]
+    public async Task ReferencedEntryUpdate_RefreshesWholePackageWithoutReplacingGrantLifecycle()
+    {
+        var setup = await SetupScriptAsync();
+        var grant = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(grant);
+        var request = EntryEnvelopeFaker.CreateUpdateRequest(
+            setup.OrganizationId,
+            setup.VaultId,
+            setup.ReferenceEntryId,
+            baseRevision: 1) with
+        {
+            ScriptGrantPackages =
+            [
+                PackageContract(
+                    setup,
+                    grant.Id,
+                    scriptRevision: 1,
+                    packageRevision: 2,
+                    referenceRevision: 2),
+            ],
+        };
+
+        var response = await setup.UserClient.PutAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/entries/{setup.ReferenceEntryId}",
+            request,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.OfType<ScriptExecutionGrant>()
+            .Include(value => value.ScriptExecutionPackage)
+            .Include(value => value.ScriptExecutionScopes)
+            .SingleAsync(value => value.Id == grant.Id);
+        persisted.Id.ShouldBe(grant.Id);
+        persisted.QueryCount.ShouldBe(0);
+        persisted.QueryLimit.ShouldBe(5);
+        persisted.Status.ShouldBe(GrantStatus.Active);
+        persisted.ScriptExecutionPackage!.PackageRevision.ShouldBe(2UL);
+        persisted.ScriptExecutionScopes.Single(value => value.EntryId == setup.ReferenceEntryId)
+            .EntryRevision.ShouldBe(2UL);
+    }
+
+    [Fact]
+    public async Task DirectGrant_WithOneRemainingUse_AllowsExactlyOneConcurrentPackage()
+    {
+        var setup = await SetupScriptAsync();
+        var grant = DirectGrant(setup, queryLimit: 1);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(grant);
+        var route = $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package";
+        var body = new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" };
+
+        var responses = await Task.WhenAll(
+            setup.Client.PostAsJsonAsync(route, body, TestContext.Current.CancellationToken),
+            setup.Client.PostAsJsonAsync(route, body, TestContext.Current.CancellationToken));
+
+        responses.Count(response => response.StatusCode == HttpStatusCode.OK).ShouldBe(1);
+        responses.Count(response => response.StatusCode == HttpStatusCode.TooManyRequests).ShouldBe(1);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.SingleAsync(value => value.Id == grant.Id);
+        persisted.QueryCount.ShouldBe(1);
+        persisted.Status.ShouldBe(GrantStatus.Consumed);
+        (await readContext.ScriptExecutionPackages.AnyAsync(value => value.GrantId == grant.Id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task FullExec_ReturnsCurrentVaultCiphertextsWithoutCreatingScriptGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var grantId = Guid.NewGuid();
+        var full = FullGrant.CreateProactively(
+            grantId,
+            setup.VaultId,
+            setup.OrganizationId,
+            setup.AgentId,
+            setup.PublicKey,
+            GrantEnvelopeTestData.AgentVaultKey(
+                setup.OrganizationId, setup.VaultId, grantId, setup.AgentId,
+                agentPublicKey: setup.PublicKey),
+            null,
+            4,
+            "uses",
+            GrantMethods.Exec,
+            Guid.NewGuid(),
+            new GrantNames("agent", null, "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(),
+            1);
+        await apiFactory.Services.SeedFullGrantAsync(full);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        body.RootElement.GetProperty("authorizationSource").GetString().ShouldBe("full");
+        body.RootElement.GetProperty("scriptPackage").ValueKind.ShouldBe(JsonValueKind.Null);
+        body.RootElement.GetProperty("agentWrappedVaultKey").ValueKind.ShouldBe(JsonValueKind.Object);
+        body.RootElement.GetProperty("vaultEntries").GetArrayLength().ShouldBe(2);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.OfType<ScriptExecutionGrant>().AnyAsync(grant =>
+            grant.AgentId == setup.AgentId && grant.VaultId == setup.VaultId)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CreatingFullExec_SupersedesDirectScriptGrantAndDeletesItsPackage()
+    {
+        var setup = await SetupScriptAsync();
+        var direct = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(direct);
+        var fullGrantId = Guid.NewGuid();
+        var request = new CreateGrantRequest
+        {
+            GrantId = fullGrantId,
+            VaultId = setup.VaultId,
+            AgentId = setup.AgentId,
+            Type = GrantType.Full,
+            Methods = GrantMethods.Exec,
+            AgentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToContract(
+                GrantEnvelopeTestData.AgentVaultKey(
+                    setup.OrganizationId,
+                    setup.VaultId,
+                    fullGrantId,
+                    setup.AgentId,
+                    agentPublicKey: setup.PublicKey)),
+        };
+
+        var response = await setup.UserClient.PostAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/grants",
+            request,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.SingleAsync(value => value.Id == direct.Id)).Status
+            .ShouldBe(GrantStatus.Revoked);
+        (await readContext.ScriptExecutionPackages.AnyAsync(value => value.GrantId == direct.Id))
+            .ShouldBeFalse();
+        (await readContext.Grants.OfType<FullGrant>().AnyAsync(value => value.Id == fullGrantId))
+            .ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task FullExec_WithStaleRecipientFingerprint_FailsWithoutConsumingGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var grantId = Guid.NewGuid();
+        var full = FullGrant.CreateProactively(
+            grantId,
+            setup.VaultId,
+            setup.OrganizationId,
+            setup.AgentId,
+            setup.PublicKey,
+            GrantEnvelopeTestData.AgentVaultKey(
+                setup.OrganizationId, setup.VaultId, grantId, setup.AgentId),
+            null,
+            4,
+            "uses",
+            GrantMethods.Exec,
+            Guid.NewGuid(),
+            new GrantNames("agent", null, "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(),
+            1);
+        await apiFactory.Services.SeedFullGrantAsync(full);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.SingleAsync(value => value.Id == grantId)).QueryCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task OverlappingDirectAndFullExec_FailsWithoutConsumingEitherGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var direct = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(direct);
+        var fullId = Guid.NewGuid();
+        var full = FullGrant.CreateProactively(
+            fullId, setup.VaultId, setup.OrganizationId, setup.AgentId, setup.PublicKey,
+            GrantEnvelopeTestData.AgentVaultKey(
+                setup.OrganizationId, setup.VaultId, fullId, setup.AgentId,
+                agentPublicKey: setup.PublicKey),
+            null, 5, "uses", GrantMethods.Exec, Guid.NewGuid(),
+            new GrantNames("agent", null, "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(), 1);
+        await apiFactory.Services.SeedFullGrantAsync(full);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.SingleAsync(value => value.Id == direct.Id)).QueryCount.ShouldBe(0);
+        (await readContext.Grants.SingleAsync(value => value.Id == full.Id)).QueryCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task StaleScriptRevision_FailsWithoutConsumingGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var grant = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(grant);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "2" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.SingleAsync(value => value.Id == grant.Id);
+        persisted.QueryCount.ShouldBe(0);
+        persisted.Status.ShouldBe(GrantStatus.Active);
+    }
+
+    [Fact]
+    public async Task StaleReferenceScope_FailsWithoutReturningPartialMaterialOrConsumingGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var grant = DirectGrant(setup, queryLimit: 5, referenceRevision: 2);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(grant);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var responseText = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        responseText.ShouldNotContain("scriptPackage");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.SingleAsync(value => value.Id == grant.Id)).QueryCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task AccessImpact_CountsOverlappingDirectAndFullAgentOnlyOnce()
+    {
+        var setup = await SetupScriptAsync();
+        var direct = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(direct);
+        var fullId = Guid.NewGuid();
+        var full = FullGrant.CreateProactively(
+            fullId, setup.VaultId, setup.OrganizationId, setup.AgentId, setup.PublicKey,
+            GrantEnvelopeTestData.AgentVaultKey(
+                setup.OrganizationId, setup.VaultId, fullId, setup.AgentId,
+                agentPublicKey: setup.PublicKey),
+            null, 5, "uses", GrantMethods.Exec, Guid.NewGuid(),
+            new GrantNames("agent", null, "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(), 1);
+        await apiFactory.Services.SeedFullGrantAsync(full);
+
+        var response = await setup.UserClient.GetAsync(
+            $"api/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/access-impact",
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        body.RootElement.GetProperty("effectiveAgentCount").GetInt32().ShouldBe(1);
+        body.RootElement.GetProperty("directAgentCount").GetInt32().ShouldBe(1);
+        body.RootElement.GetProperty("fullAgentCount").GetInt32().ShouldBe(1);
+        body.RootElement.GetProperty("hasOverlappingCoverage").GetBoolean().ShouldBeTrue();
+    }
+
+    private static ScriptExecutionGrant DirectGrant(
+        Setup setup,
+        int queryLimit,
+        ulong referenceRevision = 1)
+    {
+        var grantId = Guid.NewGuid();
+        var fingerprint = VaultKeyFingerprint.Compute(
+            Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519);
+        var package = ScriptExecutionPackage.Create(
+            setup.OrganizationId,
+            setup.VaultId,
+            grantId,
+            setup.AgentId,
+            1,
+            setup.ScriptEntryId,
+            1,
+            1,
+            1,
+            1,
+            fingerprint,
+            Enumerable.Repeat((byte)0xA5, 32).ToArray(),
+            Enumerable.Repeat((byte)0x5A, 64).ToArray());
+        return ScriptExecutionGrant.CreateProactively(
+            grantId,
+            setup.VaultId,
+            setup.OrganizationId,
+            setup.AgentId,
+            setup.PublicKey,
+            setup.ScriptEntryId,
+            [
+                ScriptExecutionScope.Create(
+                    setup.OrganizationId, setup.VaultId, grantId, setup.ScriptEntryId, 1, true),
+                ScriptExecutionScope.Create(
+                    setup.OrganizationId, setup.VaultId, grantId, setup.ReferenceEntryId,
+                    referenceRevision, false),
+            ],
+            package,
+            null,
+            queryLimit,
+            "uses",
+            Guid.NewGuid(),
+            new GrantNames("agent", "script", "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(),
+            1);
+    }
+
+    private static ScriptExecutionPackageContract PackageContract(
+        Setup setup,
+        Guid grantId,
+        ulong scriptRevision = 1,
+        ulong packageRevision = 1,
+        ulong referenceRevision = 1) =>
+        new(
+            1,
+            setup.OrganizationId,
+            setup.VaultId,
+            grantId,
+            setup.AgentId,
+            1,
+            setup.ScriptEntryId,
+            scriptRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            packageRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            1,
+            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
+                Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519)),
+            WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0xA5, 32).ToArray()),
+            WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0x5A, 64).ToArray()),
+            [
+                new ScriptExecutionScopeContract(
+                    setup.ScriptEntryId,
+                    scriptRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    true),
+                new ScriptExecutionScopeContract(
+                    setup.ReferenceEntryId,
+                    referenceRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    false),
+            ]);
+
+    private sealed record Setup(
+        HttpClient Client,
+        HttpClient UserClient,
+        Guid OrganizationId,
+        Guid VaultId,
+        Guid ScriptEntryId,
+        Guid ReferenceEntryId,
+        Guid AgentId,
+        string PublicKey);
+}

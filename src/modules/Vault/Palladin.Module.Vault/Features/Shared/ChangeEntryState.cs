@@ -139,11 +139,14 @@ internal sealed class EntryLifecycleService(
         var now = clock.GetCurrentInstant();
         var grants = await domainWriteContext.Grants
             .Include(x => x.EncryptedReason)
+            .Include(x => x.ScriptExecutionPackage)
+            .Include(x => x.ScriptExecutionScopes)
             .Include(x => x.GrantEntryScopes)
             .ThenInclude(scope => scope.Envelope)
             .Where(x => x.OrganizationId == organizationId
                         && x.VaultId == request.VaultId
                         && (x.GrantEntryScopes.Any(scope => scope.EntryId == request.EntryId)
+                            || x.ScriptExecutionScopes.Any(scope => scope.EntryId == request.EntryId)
                             || (x is GranularGrant && ((GranularGrant)x).EntryId == request.EntryId)))
             .ToListAsync(cancellationToken);
         foreach (var grant in grants)

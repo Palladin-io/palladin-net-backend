@@ -149,6 +149,51 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         scriptScopes.GetArrayLength().ShouldBe(2);
         scriptScopes.EnumerateArray().Single(scope => scope.GetProperty("isScript").GetBoolean())
             .GetProperty("entryId").GetGuid().ShouldBe(setup.ScriptEntryId);
+
+        var deliveryResponse = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+        deliveryResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var deliveryBody = JsonDocument.Parse(await deliveryResponse.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var deliveredPackage = deliveryBody.RootElement.GetProperty("scriptPackage");
+        deliveredPackage.GetProperty("producerSignature").GetString().ShouldBe(package.ProducerSignature);
+        deliveredPackage.GetProperty("scopes").EnumerateArray()
+            .Select(scope => scope.GetProperty("entryId").GetGuid())
+            .ShouldBe(package.Scopes.Select(scope => scope.EntryId), ignoreOrder: false);
+    }
+
+    [Fact]
+    public async Task CreateDirectGrant_RejectsNonCanonicalSignedScopeOrder()
+    {
+        var setup = await SetupScriptAsync();
+        var grantId = Guid.NewGuid();
+        var canonical = PackageContract(setup, grantId);
+        var nonCanonical = SignPackage(canonical with
+        {
+            ProducerSignature = string.Empty,
+            Scopes = canonical.Scopes.Reverse().ToArray(),
+        });
+
+        var response = await setup.UserClient.PostAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/grants",
+            new CreateGrantRequest
+            {
+                GrantId = grantId,
+                VaultId = setup.VaultId,
+                AgentId = setup.AgentId,
+                Type = GrantType.ScriptExecution,
+                ScriptEntryId = setup.ScriptEntryId,
+                ScriptPackage = nonCanonical,
+                Methods = GrantMethods.Exec,
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.AnyAsync(value => value.Id == grantId)).ShouldBeFalse();
     }
 
     [Fact]
@@ -540,7 +585,8 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0xA5, 32).ToArray()),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0x5A, 64).ToArray()),
             string.Empty,
-            [
+            new[]
+            {
                 new ScriptExecutionScopeContract(
                     setup.ScriptEntryId,
                     scriptRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -549,7 +595,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
                     setup.ReferenceEntryId,
                     referenceRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     false),
-            ]);
+            }.OrderBy(scope => scope.EntryId.ToString("D"), StringComparer.Ordinal).ToArray());
+        return SignPackage(unsigned);
+    }
+
+    private static ScriptExecutionPackageContract SignPackage(ScriptExecutionPackageContract unsigned)
+    {
         var canonical = ScriptExecutionPackageCryptoValidator.CanonicalizeUnsigned(unsigned);
         var prefix = Encoding.ASCII.GetBytes("PLDNV2SIG:SCRIPT-EXECUTION-PACKAGE:");
         var signatureInput = new byte[prefix.Length + sizeof(ushort) + canonical.Length];

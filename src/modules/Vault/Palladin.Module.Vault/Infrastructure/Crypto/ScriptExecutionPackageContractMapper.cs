@@ -76,7 +76,7 @@ internal static class ScriptExecutionPackageContractMapper
             WebEncoders.Base64UrlEncode(package.EncodedPackageCiphertext),
             WebEncoders.Base64UrlEncode(package.ProducerSignature),
             scopes
-                .OrderBy(scope => scope.EntryId)
+                .OrderBy(scope => scope.EntryId.ToString("D"), StringComparer.Ordinal)
                 .Select(scope => new ScriptExecutionScopeContract(
                     scope.EntryId,
                     scope.EntryRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),

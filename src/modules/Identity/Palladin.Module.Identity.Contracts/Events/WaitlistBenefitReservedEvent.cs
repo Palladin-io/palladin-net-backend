@@ -11,4 +11,4 @@ public sealed record WaitlistBenefitReservedEvent(
     string Plan,
     Instant StartsAt,
     Instant EndsAt,
-    Instant OccurredAt) : IIntegrationEvent;
+    Instant UpdatedAt) : IIntegrationEvent;

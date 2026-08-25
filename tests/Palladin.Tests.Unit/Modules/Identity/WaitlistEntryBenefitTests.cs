@@ -1,4 +1,5 @@
 using NodaTime;
+using Palladin.Module.Identity.Contracts.Events;
 using Palladin.Module.Identity.Domain;
 
 namespace Palladin.Tests.Unit.Modules.Identity;
@@ -95,6 +96,28 @@ public sealed class WaitlistEntryBenefitTests
         reserved.ShouldBeTrue();
         entry.BenefitStartsAt.ShouldBe(accountCreatedAt);
         entry.BenefitEndsAt.ShouldBe(Instant.FromUtc(2027, 1, 1, 1, 0));
+    }
+
+    [Fact]
+    public void When_BenefitIsReserved_Then_IntegrationEventCarriesReservationUpdatedAt()
+    {
+        // Given
+        var entry = VerifiedEntry(PublicLaunch - Duration.FromDays(1));
+        var userId = Guid.NewGuid();
+        var accountCreatedAt = PublicLaunch + Duration.FromHours(1);
+
+        // When
+        entry.TryReserveDeveloperBenefit(
+                userId, PublicLaunch, ClaimDeadline, 1,
+                WaitlistEntry.CurrentPromotionTermsVersion, accountCreatedAt)
+            .ShouldBeTrue();
+
+        // Then
+        var @event = entry.FetchEvents()
+            .OfType<WaitlistBenefitReservedEvent>()
+            .ShouldHaveSingleItem();
+        @event.UserId.ShouldBe(userId);
+        @event.UpdatedAt.ShouldBe(accountCreatedAt);
     }
 
     [Fact]

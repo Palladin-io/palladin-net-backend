@@ -356,6 +356,7 @@ internal sealed class CreateGrantEndpoint(
                     organizationId,
                     agent,
                     lockedRevisions);
+                ScriptExecutionPackageCryptoValidator.ValidateProducer(req.ScriptPackage!, lockedVault);
             }
         }
         catch (StaleGrantEnvelopeException)

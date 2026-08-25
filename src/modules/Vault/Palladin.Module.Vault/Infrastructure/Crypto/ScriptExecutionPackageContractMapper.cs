@@ -14,10 +14,14 @@ internal static class ScriptExecutionPackageContractMapper
         var packageRevision = VaultEnvelopeContractMapper.ParseUInt64(contract.PackageRevision);
         var fingerprint = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.RecipientAgentKeyFingerprint);
+        var vaultSigningFingerprint = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
+            contract.VaultSigningKeyFingerprint);
         var manifestDigest = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.ManifestDigest);
         var ciphertext = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.EncodedPackageCiphertext);
+        var producerSignature = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.ProducerSignature);
         if (fingerprint.Length != VaultProtocol.FingerprintBytes || manifestDigest.Length != 32
-            || ciphertext.Length is < 16 or > 2_097_152)
+            || vaultSigningFingerprint.Length != VaultProtocol.FingerprintBytes
+            || ciphertext.Length is < 16 or > 2_097_152 || producerSignature.Length != 64)
         {
             throw new DomainException("Script execution package encoding is invalid.");
         }
@@ -43,8 +47,11 @@ internal static class ScriptExecutionPackageContractMapper
             contract.ContractVersion,
             contract.RecipientAgentKeyVersion,
             fingerprint,
+            contract.VaultSigningKeyVersion,
+            vaultSigningFingerprint,
             manifestDigest,
-            ciphertext);
+            ciphertext,
+            producerSignature);
         return (package, scopes);
     }
 
@@ -63,8 +70,11 @@ internal static class ScriptExecutionPackageContractMapper
             package.PackageRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             package.RecipientAgentKeyVersion,
             WebEncoders.Base64UrlEncode(package.RecipientAgentKeyFingerprint),
+            package.VaultSigningKeyVersion,
+            WebEncoders.Base64UrlEncode(package.VaultSigningKeyFingerprint),
             WebEncoders.Base64UrlEncode(package.ManifestDigest),
             WebEncoders.Base64UrlEncode(package.EncodedPackageCiphertext),
+            WebEncoders.Base64UrlEncode(package.ProducerSignature),
             scopes
                 .OrderBy(scope => scope.EntryId)
                 .Select(scope => new ScriptExecutionScopeContract(

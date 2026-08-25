@@ -281,6 +281,7 @@ internal sealed class UpdateEntryEndpoint(
                         throw new Palladin.Core.Types.Exceptions.DomainException(
                             "A referenced Entry update cannot change the Script scope set.");
                     }
+                    ScriptExecutionPackageCryptoValidator.ValidateProducer(contract, vault);
                     grant.RefreshPackage(replacement, replacementScopes);
                 }
             }

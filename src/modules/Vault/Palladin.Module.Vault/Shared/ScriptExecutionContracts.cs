@@ -22,8 +22,11 @@ public sealed record ScriptExecutionPackageContract(
     string PackageRevision,
     uint RecipientAgentKeyVersion,
     string RecipientAgentKeyFingerprint,
+    uint VaultSigningKeyVersion,
+    string VaultSigningKeyFingerprint,
     string ManifestDigest,
     string EncodedPackageCiphertext,
+    string ProducerSignature,
     IReadOnlyList<ScriptExecutionScopeContract> Scopes);
 
 internal sealed class ScriptExecutionPackageContractValidator
@@ -44,10 +47,13 @@ internal sealed class ScriptExecutionPackageContractValidator
         RuleFor(x => x.PackageRevision).NotEmpty();
         RuleFor(x => x.RecipientAgentKeyVersion).GreaterThan(0u);
         RuleFor(x => x.RecipientAgentKeyFingerprint).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.VaultSigningKeyVersion).GreaterThan(0u);
+        RuleFor(x => x.VaultSigningKeyFingerprint).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ManifestDigest).NotEmpty().MaximumLength(128);
         RuleFor(x => x.EncodedPackageCiphertext)
             .NotEmpty()
             .MaximumLength(MaximumEncodedPackageCharacters);
+        RuleFor(x => x.ProducerSignature).NotEmpty().MaximumLength(128);
         RuleFor(x => x.Scopes).NotEmpty().Must(scopes => scopes.Count <= 65);
         RuleFor(x => x.Scopes)
             .Must(scopes => scopes.Select(scope => scope.EntryId).Distinct().Count() == scopes.Count)

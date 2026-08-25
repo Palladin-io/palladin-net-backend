@@ -367,7 +367,7 @@ public sealed class GrantDomainTests
         var referenceEntryId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            3, 1, 1, 1, new byte[32], new byte[32], new byte[32]);
+            3, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
         var scopes = new[]
         {
             ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 3, true),
@@ -398,7 +398,7 @@ public sealed class GrantDomainTests
         var secondReferenceId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], new byte[32], new byte[32]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
         var grant = ScriptExecutionGrant.CreateProactively(
             grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
             [
@@ -409,7 +409,8 @@ public sealed class GrantDomainTests
             new GrantNames("agent", "script", "vault", "actor"), Now, 1);
         var replacement = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            2, 2, 1, 1, new byte[32], Enumerable.Repeat((byte)1, 32).ToArray(), new byte[48]);
+            2, 2, 1, 1, new byte[32], 1, new byte[32],
+            Enumerable.Repeat((byte)1, 32).ToArray(), new byte[48], new byte[64]);
 
         grant.RefreshPackage(replacement,
         [
@@ -437,7 +438,7 @@ public sealed class GrantDomainTests
         var scriptEntryId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], new byte[32], new byte[32]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
         var grant = ScriptExecutionGrant.CreateProactively(
             grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
             [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)],
@@ -445,7 +446,7 @@ public sealed class GrantDomainTests
             new GrantNames("agent", "script", "vault", "actor"), Now, 1);
         var replay = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], new byte[32], new byte[32]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
 
         Should.Throw<DomainException>(() => grant.RefreshPackage(replay,
             [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)]));

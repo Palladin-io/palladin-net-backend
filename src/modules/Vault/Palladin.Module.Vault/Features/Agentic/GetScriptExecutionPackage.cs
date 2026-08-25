@@ -229,6 +229,14 @@ internal sealed class ScriptExecutionPackageDeliveryService(
 
         if (directGrants.Count == 1)
         {
+            var vaultTrustAnchor = await domainReadContext.Vaults
+                .Where(value => value.OrganizationId == organizationId && value.Id == vaultId)
+                .Select(value => new
+                {
+                    SigningKeyVersion = value.CurrentManifestSigningKeyVersion.Value,
+                    SigningKeyFingerprint = value.ManifestSigningKeyFingerprint,
+                })
+                .SingleOrDefaultAsync(ct);
             var package = await domainReadContext.ScriptExecutionPackages
                 .SingleOrDefaultAsync(value => value.OrganizationId == organizationId
                     && value.VaultId == vaultId
@@ -242,8 +250,11 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                     && scope.GrantId == selected.Id)
                 .OrderBy(scope => scope.EntryId)
                 .ToListAsync(ct);
-            if (package is null || package.ScriptRevision != scriptRevision
+            if (package is null || vaultTrustAnchor is null || package.ScriptRevision != scriptRevision
                 || package.RecipientAgentKeyVersion != agent.RecipientKeyVersion
+                || package.VaultSigningKeyVersion != vaultTrustAnchor.SigningKeyVersion
+                || !package.VaultSigningKeyFingerprint.AsSpan()
+                    .SequenceEqual(vaultTrustAnchor.SigningKeyFingerprint)
                 || scopes.Count is < 1 or > 65
                 || scopes.Count(scope => scope.IsScript) != 1
                 || scopes.Single(scope => scope.IsScript).EntryId != scriptEntryId)

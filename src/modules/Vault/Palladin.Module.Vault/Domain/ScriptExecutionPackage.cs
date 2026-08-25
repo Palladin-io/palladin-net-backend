@@ -15,8 +15,11 @@ internal sealed class ScriptExecutionPackage
     internal ushort ContractVersion { get; private set; }
     internal uint RecipientAgentKeyVersion { get; private set; }
     internal byte[] RecipientAgentKeyFingerprint { get; private set; } = [];
+    internal uint VaultSigningKeyVersion { get; private set; }
+    internal byte[] VaultSigningKeyFingerprint { get; private set; } = [];
     internal byte[] ManifestDigest { get; private set; } = [];
     internal byte[] EncodedPackageCiphertext { get; private set; } = [];
+    internal byte[] ProducerSignature { get; private set; } = [];
 
     private ScriptExecutionPackage() { }
 
@@ -32,16 +35,22 @@ internal sealed class ScriptExecutionPackage
         ushort contractVersion,
         uint recipientAgentKeyVersion,
         byte[] recipientAgentKeyFingerprint,
+        uint vaultSigningKeyVersion,
+        byte[] vaultSigningKeyFingerprint,
         byte[] manifestDigest,
-        byte[] encodedPackageCiphertext)
+        byte[] encodedPackageCiphertext,
+        byte[] producerSignature)
     {
         if (organizationId == Guid.Empty || vaultId == Guid.Empty || grantId == Guid.Empty
             || agentId == Guid.Empty || agentAccessEpoch == 0 || scriptEntryId == Guid.Empty
             || scriptRevision == 0 || packageRevision == 0 || contractVersion != 1
             || recipientAgentKeyVersion == 0
             || recipientAgentKeyFingerprint.Length != VaultProtocol.FingerprintBytes
+            || vaultSigningKeyVersion == 0
+            || vaultSigningKeyFingerprint.Length != VaultProtocol.FingerprintBytes
             || manifestDigest.Length != 32
-            || encodedPackageCiphertext.Length is < 16 or > 2_097_152)
+            || encodedPackageCiphertext.Length is < 16 or > 2_097_152
+            || producerSignature.Length != 64)
         {
             throw new DomainException("Script execution package is invalid.");
         }
@@ -59,8 +68,11 @@ internal sealed class ScriptExecutionPackage
             ContractVersion = contractVersion,
             RecipientAgentKeyVersion = recipientAgentKeyVersion,
             RecipientAgentKeyFingerprint = recipientAgentKeyFingerprint.ToArray(),
+            VaultSigningKeyVersion = vaultSigningKeyVersion,
+            VaultSigningKeyFingerprint = vaultSigningKeyFingerprint.ToArray(),
             ManifestDigest = manifestDigest.ToArray(),
             EncodedPackageCiphertext = encodedPackageCiphertext.ToArray(),
+            ProducerSignature = producerSignature.ToArray(),
         };
     }
 
@@ -80,7 +92,10 @@ internal sealed class ScriptExecutionPackage
         ContractVersion = replacement.ContractVersion;
         RecipientAgentKeyVersion = replacement.RecipientAgentKeyVersion;
         RecipientAgentKeyFingerprint = replacement.RecipientAgentKeyFingerprint.ToArray();
+        VaultSigningKeyVersion = replacement.VaultSigningKeyVersion;
+        VaultSigningKeyFingerprint = replacement.VaultSigningKeyFingerprint.ToArray();
         ManifestDigest = replacement.ManifestDigest.ToArray();
         EncodedPackageCiphertext = replacement.EncodedPackageCiphertext.ToArray();
+        ProducerSignature = replacement.ProducerSignature.ToArray();
     }
 }

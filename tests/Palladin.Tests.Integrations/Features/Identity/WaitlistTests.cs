@@ -3,6 +3,7 @@ using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Tests.Integrations.Shared;
+using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
 using Microsoft.AspNetCore.Http;
 using FastEndpoints.Testing;
@@ -84,6 +85,49 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_VerifyingWaitlistAfterVerifiedAccountCreation_Then_DeveloperBenefitIsActivated()
+    {
+        // Given — the waitlist entry existed before the account, but the account was verified first.
+        var token = $"token-{Guid.NewGuid():N}";
+        var email = $"waitlist-order-{Guid.NewGuid():N}@example.com";
+        var entryId = await SeedEntryAsync(
+            token,
+            apiFactory.FakeClock.GetCurrentInstant() - Duration.FromDays(1),
+            email);
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            new byte[32],
+            email: email,
+            emailVerified: true);
+        var expectedEndsAt = apiFactory.FakeClock.GetCurrentInstant()
+            .InUtc()
+            .LocalDateTime
+            .PlusMonths(1)
+            .InUtc()
+            .ToInstant();
+        var client = apiFactory.CreateClient(new ClientOptions { AllowAutoRedirect = false });
+
+        // When
+        var response = await client.GetAsync(
+            $"api/waitlist/verify?token={token}",
+            TestContext.Current.CancellationToken);
+
+        // Then
+        ((int)response.StatusCode).ShouldBe(StatusCodes.Status302Found);
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var entry = await readContext.WaitlistEntries.SingleAsync(
+            candidate => candidate.Id == entryId,
+            TestContext.Current.CancellationToken);
+        var persistedUser = await readContext.Users.SingleAsync(
+            candidate => candidate.Id == user.Id,
+            TestContext.Current.CancellationToken);
+        entry.DeveloperBenefitUserId.ShouldBe(user.Id);
+        entry.DeveloperBenefitEndsAt.ShouldBe(expectedEndsAt);
+        persistedUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(expectedEndsAt);
+    }
+
+    [Fact]
     public async Task When_VerifyingWithUnknownToken_Then_RedirectedToFailure()
     {
         // Given
@@ -115,10 +159,10 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
         response.Headers.Location!.ToString().ShouldBe("https://palladin.io/waitlist/invalid");
     }
 
-    private async Task<Guid> SeedEntryAsync(string token, Instant issuedAt)
+    private async Task<Guid> SeedEntryAsync(string token, Instant issuedAt, string? email = null)
     {
         var entry = WaitlistEntry.Join(
-            Guid.NewGuid(), $"seed-{Guid.NewGuid():N}@example.com", "en",
+            Guid.NewGuid(), email ?? $"seed-{Guid.NewGuid():N}@example.com", "en",
             token, TokenService.HashToken(token), Duration.FromHours(24), issuedAt);
 
         await using var scope = apiFactory.Services.CreateAsyncScope();

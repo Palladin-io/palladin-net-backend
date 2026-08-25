@@ -34,6 +34,8 @@ public sealed class EmailTemplateRendererTests
         ["windowMinutes"] = "5",
         ["ipAddresses"] = "198.51.100.10, 203.0.113.11",
         ["lockedUntil"] = "10 Jul 2026, 12:15 UTC",
+        ["startsAtUtc"] = "2026-08-25T12:00:00Z",
+        ["endsAtUtc"] = "2026-09-25T12:00:00Z",
     };
 
     private static readonly string[] AllTemplates =
@@ -44,6 +46,7 @@ public sealed class EmailTemplateRendererTests
         EmailTemplates.SecurityAlert,
         EmailTemplates.LoginLockoutAlert,
         EmailTemplates.WaitlistVerification,
+        EmailTemplates.WaitlistDeveloperBenefitActivated,
     ];
 
     [Fact]
@@ -178,6 +181,41 @@ public sealed class EmailTemplateRendererTests
         // Then
         fallback.Subject.ShouldBe(english.Subject);
         fallback.HtmlBody.ShouldBe(english.HtmlBody);
+    }
+
+    [Fact]
+    public void When_WaitlistEmailsRendered_Then_DeveloperBenefitIsAccurateAndPremiumIsNotClaimed()
+    {
+        var renderer = CreateRenderer();
+
+        var verificationEnglish = renderer.Render(EmailTemplates.WaitlistVerification, "en", Model);
+        var verificationPolish = renderer.Render(EmailTemplates.WaitlistVerification, "pl", Model);
+        var activatedEnglish = renderer.Render(EmailTemplates.WaitlistDeveloperBenefitActivated, "en", Model);
+        var activatedPolish = renderer.Render(EmailTemplates.WaitlistDeveloperBenefitActivated, "pl", Model);
+
+        foreach (var rendered in new[]
+                 {
+                     verificationEnglish,
+                     verificationPolish,
+                     activatedEnglish,
+                     activatedPolish,
+                 })
+        {
+            rendered.Subject.ShouldNotContain("Premium", Case.Insensitive);
+            rendered.HtmlBody.ShouldNotContain("Premium", Case.Insensitive);
+            rendered.TextBody.ShouldNotContain("Premium", Case.Insensitive);
+            rendered.HtmlBody.ShouldContain("Developer");
+            rendered.TextBody.ShouldContain("Developer");
+        }
+
+        activatedEnglish.TextBody.ShouldContain("2026-08-25T12:00:00Z");
+        activatedEnglish.TextBody.ShouldContain("2026-09-25T12:00:00Z");
+        activatedEnglish.TextBody.ShouldContain("No card");
+        activatedEnglish.TextBody.ShouldContain("Free plan");
+        activatedPolish.TextBody.ShouldContain("2026-08-25T12:00:00Z");
+        activatedPolish.TextBody.ShouldContain("2026-09-25T12:00:00Z");
+        activatedPolish.TextBody.ShouldContain("karty");
+        activatedPolish.TextBody.ShouldContain("Free");
     }
 
     [Fact]

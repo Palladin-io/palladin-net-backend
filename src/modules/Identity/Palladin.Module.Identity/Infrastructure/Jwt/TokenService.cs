@@ -25,12 +25,18 @@ internal sealed class TokenService(
         Guid organizationId,
         Permission permissions,
         PlanType plan,
-        uint authorizationVersion)
+        uint authorizationVersion,
+        Instant? expiresAtCap = null)
     {
         var options = jwtOptions.Value;
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.Secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var now = clock.GetCurrentInstant().ToDateTimeUtc();
+        var nowInstant = clock.GetCurrentInstant();
+        var now = nowInstant.ToDateTimeUtc();
+        var defaultExpiresAt = nowInstant + Duration.FromMinutes(options.AccessTokenExpiryMinutes);
+        var expiresAt = expiresAtCap is { } cap && cap < defaultExpiresAt
+            ? cap
+            : defaultExpiresAt;
 
         var claims = new[]
         {
@@ -51,7 +57,7 @@ internal sealed class TokenService(
             audience: options.Audience,
             claims: claims,
             notBefore: now,
-            expires: now.AddMinutes(options.AccessTokenExpiryMinutes),
+            expires: expiresAt.ToDateTimeUtc(),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

@@ -18,5 +18,6 @@ internal sealed class WaitlistEntryConfiguration : IEntityTypeConfiguration<Wait
         // Normalized email is the business key; token hash is the verification lookup.
         builder.HasIndex(x => x.Email).IsUnique();
         builder.HasIndex(x => x.TokenHash);
+        builder.HasIndex(x => x.DeveloperBenefitUserId).IsUnique();
     }
 }

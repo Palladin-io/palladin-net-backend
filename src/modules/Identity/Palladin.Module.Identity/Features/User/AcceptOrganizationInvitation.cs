@@ -184,6 +184,8 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             refreshToken,
             user.Id,
             user.IsOnboarded,
-            user.EmailVerified), ct);
+            user.EmailVerified,
+            user.ActiveWaitlistDeveloperBenefitStartedAt(now),
+            user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 }

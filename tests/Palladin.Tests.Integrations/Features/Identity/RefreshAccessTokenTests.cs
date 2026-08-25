@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Features;
@@ -70,6 +71,49 @@ public sealed class RefreshAccessTokenTests(ApiFactory apiFactory) : TestBase
             .ReadJwtToken(result!.AccessToken)
             .Claims.First(c => c.Type == JwtClaimNames.Plan).Value;
         plan.ShouldBe(PlanType.Pro.ToString());
+    }
+
+    [Fact]
+    public async Task When_RefreshingDuringWaitlistBenefit_Then_DeveloperAccessEndsWithBenefit()
+    {
+        // Given
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var benefitEndsAt = now + Duration.FromMinutes(15);
+        var userFaker = UserFaker.Create()
+            .RuleFor(user => user.EmailVerified, true)
+            .RuleFor(user => user.IsOnboarded, true)
+            .RuleFor(user => user.WaitlistDeveloperBenefitStartedAt, now - Duration.FromDays(1))
+            .RuleFor(user => user.WaitlistDeveloperBenefitEndsAt, benefitEndsAt);
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(userFaker: userFaker);
+        var rawToken = Convert.ToBase64String(
+            Enumerable.Range(100, 32).Select(value => (byte)value).ToArray());
+        await apiFactory.Services.SeedRefreshTokenAsync(user.Id, rawToken);
+
+        // When
+        var response = await apiFactory.CreateClient().PostAsJsonAsync(
+            "api/auth/refresh",
+            new { RefreshToken = rawToken },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var responseStream = await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken);
+        using var result = await JsonDocument.ParseAsync(
+            responseStream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var responseRoot = result.RootElement;
+        responseRoot.GetProperty("userId").GetGuid().ShouldBe(user.Id);
+        responseRoot.GetProperty("waitlistDeveloperBenefitStartedAt").GetDateTimeOffset()
+            .ShouldBe((now - Duration.FromDays(1)).ToDateTimeOffset(), TimeSpan.FromMilliseconds(1));
+        responseRoot.GetProperty("waitlistDeveloperBenefitEndsAt").GetDateTimeOffset()
+            .ShouldBe(benefitEndsAt.ToDateTimeOffset(), TimeSpan.FromMilliseconds(1));
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(
+            responseRoot.GetProperty("accessToken").GetString());
+        jwt.Claims.First(claim => claim.Type == JwtClaimNames.Plan).Value
+            .ShouldBe(PlanType.Pro.ToString());
+        jwt.ValidTo.ShouldBe(benefitEndsAt.ToDateTimeUtc(), TimeSpan.FromSeconds(1));
     }
 
     [Fact]

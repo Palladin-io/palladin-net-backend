@@ -8,6 +8,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.OAuth;
 using Palladin.Module.Identity.Infrastructure.Options;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -31,7 +32,9 @@ public sealed record OAuthAuthenticateResponse(
     string RefreshToken,
     Guid UserId,
     bool IsOnboarded,
-    bool EmailVerified);
+    bool EmailVerified,
+    Instant? WaitlistDeveloperBenefitStartedAt,
+    Instant? WaitlistDeveloperBenefitEndsAt);
 
 [UsedImplicitly]
 internal sealed class OAuthAuthenticateValidator : Validator<OAuthAuthenticateRequest>
@@ -52,6 +55,7 @@ internal sealed class OAuthAuthenticateEndpoint(
     IClock clock,
     IOptions<JwtOptions> jwtOptions,
     ITransportContext transportContext,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     ILogger logger) : Endpoint<OAuthAuthenticateRequest, OAuthAuthenticateResponse>
 {
     public override void Configure()
@@ -98,6 +102,8 @@ internal sealed class OAuthAuthenticateEndpoint(
             await Send.UnauthorizedAsync(ct);
             return;
         }
+
+        externalUser = externalUser with { Email = externalUser.Email.Trim().ToLowerInvariant() };
 
         var now = clock.GetCurrentInstant();
         var platform = transportContext.Platform ?? "unknown";
@@ -146,9 +152,20 @@ internal sealed class OAuthAuthenticateEndpoint(
             ? 1u
             : activeMembership!.AuthorizationVersion;
 
-        var plan = isNewUser ? PlanType.Basic : user.Organization.PlanType;
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
+
+        var organizationPlan = isNewUser ? PlanType.Basic : user.Organization.PlanType;
+        var plan = user.EffectivePlan(organizationPlan, now);
+        var accessTokenExpiresAtCap = organizationPlan < PlanType.Pro
+            ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
+            : null;
         var accessToken = tokenService.GenerateAccessToken(
-            user, user.OrganizationId, permissions, plan, authorizationVersion);
+            user,
+            user.OrganizationId,
+            permissions,
+            plan,
+            authorizationVersion,
+            accessTokenExpiresAtCap);
         var (rawRefreshToken, refreshTokenHash) = tokenService.GenerateRefreshToken();
 
         var refreshTokenId = guidProvider.Generate();
@@ -160,7 +177,14 @@ internal sealed class OAuthAuthenticateEndpoint(
 
         await domainWriteContext.CommitAsync(ct);
 
-        await Send.OkAsync(new OAuthAuthenticateResponse(accessToken, rawRefreshToken, user.Id, user.IsOnboarded, user.EmailVerified), ct);
+        await Send.OkAsync(new OAuthAuthenticateResponse(
+            accessToken,
+            rawRefreshToken,
+            user.Id,
+            user.IsOnboarded,
+            user.EmailVerified,
+            user.ActiveWaitlistDeveloperBenefitStartedAt(now),
+            user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 
     private User CreateNewUser(AuthProvider authProvider, ExternalUserInfo externalUser, string platform, Instant now)

@@ -66,16 +66,23 @@ internal sealed class SwitchOrganizationEndpoint(
         }
 
         var permissions = member.EffectivePermissions();
+        var now = clock.GetCurrentInstant();
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             member.User,
             member.OrganizationId,
             permissions,
             member.Organization.PlanType,
             member.AuthorizationVersion,
-            clock.GetCurrentInstant());
+            now);
         await domainWriteContext.CommitAsync(ct);
 
         await Send.OkAsync(new AuthSessionResponse(
-            accessToken, refreshToken, member.UserId, member.User.IsOnboarded, member.User.EmailVerified), ct);
+            accessToken,
+            refreshToken,
+            member.UserId,
+            member.User.IsOnboarded,
+            member.User.EmailVerified,
+            member.User.ActiveWaitlistDeveloperBenefitStartedAt(now),
+            member.User.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 }

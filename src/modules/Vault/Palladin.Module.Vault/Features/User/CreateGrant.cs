@@ -87,6 +87,8 @@ internal sealed class CreateGrantEndpoint(
     VaultDomainWriteContext domainWriteContext,
     IClock clock) : Endpoint<CreateGrantRequest, CreateGrantResponse>
 {
+    private const int FullSupersedePageSize = 100;
+
     public override void Configure()
     {
         Post("api/vaults/{vaultId:guid}/grants");
@@ -250,21 +252,6 @@ internal sealed class CreateGrantEndpoint(
                 return;
             }
 
-            // FULL promotes access: supersede the agent's active GRANULAR grants in the vault
-            // (revoke-by-system) so exactly one active grant covers each entry. Atomic with the create.
-            // Pre-load the denormalized names for the full supersede set in one query — the set is small
-            // and fully known after LoadActiveGranularInVaultAsync, so we avoid N×ResolveAsync round-trips.
-            var supersedeSet = await domainWriteContext.LoadActiveGranularInVaultAsync(req.AgentId, agent.AccessEpoch, req.VaultId, ct);
-            if (supersedeSet.Count > 0)
-            {
-                var supersedeEntryIds = supersedeSet.Select(g => g.EntryId).Distinct().ToArray();
-                var supersedeNamesByEntry = await domainReadContext.ResolveForSupersedeAsync(
-                    req.AgentId, req.VaultId, supersedeEntryIds, ct);
-                foreach (var granular in supersedeSet)
-                {
-                    granular.RevokeBySystem(supersedeNamesByEntry[granular.EntryId], now);
-                }
-            }
         }
 
         // Resolve denormalized names for the GrantCreated event in one round-trip — audit/analytics
@@ -308,12 +295,82 @@ internal sealed class CreateGrantEndpoint(
         }
         var grant = BuildGrant(req, scopes, agentWrappedVaultKey, organizationId, agent.AccessEpoch, agent.PublicKey, userId, names, now, expirySource);
 
+        // FULL promotion is a hard-atomic coverage transition. Persist superseded GRANULAR grants in
+        // deterministic, bounded tracking pages inside one database transaction, but publish their
+        // domain events only after the new FULL grant commits. Clearing EF tracking after every flush
+        // keeps memory proportional to the page size even for a Vault with thousands of grants.
+        await using var fullTransaction = req.Type == GrantType.Full
+            ? await domainWriteContext.BeginTransactionAsync(ct)
+            : null;
+        if (fullTransaction is not null)
+        {
+            var expectedAccessEpoch = agent.AccessEpoch;
+            var expectedPublicKey = agent.PublicKey;
+            var expectedRecipientKeyVersion = agent.RecipientKeyVersion;
+            var expectedVaultKeyVersion = lockedVault.CurrentVaultKeyVersion;
+            var expectedMemberKeyGeneration = lockedVault.MemberKeyGeneration;
+
+            var stableAgent = await domainWriteContext.LockAgent(organizationId, req.AgentId)
+                .SingleAsync(ct);
+            var stableVault = await domainWriteContext.LockVault(organizationId, req.VaultId)
+                .SingleAsync(ct);
+            if (stableAgent.Status != AgentStatus.Active
+                || stableAgent.AccessEpoch != expectedAccessEpoch
+                || stableAgent.PublicKey != expectedPublicKey
+                || stableAgent.RecipientKeyVersion != expectedRecipientKeyVersion
+                || stableVault.CurrentVaultKeyVersion != expectedVaultKeyVersion
+                || stableVault.MemberKeyGeneration != expectedMemberKeyGeneration)
+            {
+                await fullTransaction.RollbackAsync(ct);
+                AddError(r => r.AgentWrappedVaultKey, "Agent or Vault key context changed during grant creation.");
+                await Send.ErrorsAsync(409, ct);
+                return;
+            }
+
+            domainWriteContext.Clear();
+            Guid? afterGrantId = null;
+            while (true)
+            {
+                var page = await domainWriteContext.LoadActiveGranularInVaultPageAsync(
+                    req.AgentId, expectedAccessEpoch, req.VaultId, afterGrantId, FullSupersedePageSize, ct);
+                if (page.Count == 0)
+                {
+                    break;
+                }
+
+                domainWriteContext.EnsureFullGrantCommitTrackingIsBounded(FullSupersedePageSize);
+                var entryIds = page.Select(g => g.EntryId).Distinct().ToArray();
+                var namesByEntry = await domainReadContext.ResolveForSupersedeAsync(
+                    req.AgentId, req.VaultId, entryIds, ct);
+                foreach (var granular in page)
+                {
+                    granular.RevokeBySystem(namesByEntry[granular.EntryId], now);
+                }
+
+                afterGrantId = page[^1].Id;
+                await domainWriteContext.FlushAsync(ct);
+                domainWriteContext.Clear();
+            }
+
+            agent = await domainWriteContext.Agents.SingleAsync(
+                x => x.OrganizationId == organizationId && x.Id == req.AgentId, ct);
+            lockedVault = await domainWriteContext.Vaults.SingleAsync(
+                x => x.OrganizationId == organizationId && x.Id == req.VaultId, ct);
+        }
+
         domainWriteContext.Add(grant);
         agent.FenceAccessMutation();
         lockedVault.FenceAccessMutation(userId, now);
         try
         {
-            await domainWriteContext.CommitAsync(ct);
+            if (fullTransaction is null)
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            else
+            {
+                await domainWriteContext.CommitAsync(fullTransaction, ct);
+            }
         }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
         {

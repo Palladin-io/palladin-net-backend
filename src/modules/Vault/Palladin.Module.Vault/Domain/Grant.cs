@@ -154,6 +154,10 @@ internal abstract class Grant : EventEntityBase
         {
             GrantEntryScopes.Remove(scope);
         }
+        foreach (var scope in ScriptExecutionScopes.Where(x => x.EntryId == entryId).ToList())
+        {
+            ScriptExecutionScopes.Remove(scope);
+        }
     }
 
     private void RevokeCore(Guid? revokedBy, bool isSystem, GrantNames names, Instant now)

@@ -81,9 +81,11 @@ internal sealed class EntryPurgeService(
             .Include(x => x.EncryptedReason)
             .Include(x => x.GrantEntryScopes)
             .ThenInclude(scope => scope.Envelope)
+            .Include(x => x.ScriptExecutionScopes)
             .Where(x => x.OrganizationId == scope.OrganizationId
                         && x.VaultId == scope.VaultId
                         && (x.GrantEntryScopes.Any(grantScope => grantScope.EntryId == scope.EntryId)
+                            || x.ScriptExecutionScopes.Any(scriptScope => scriptScope.EntryId == scope.EntryId)
                             || (x is GranularGrant && ((GranularGrant)x).EntryId == scope.EntryId)))
             .ToListAsync(cancellationToken);
         foreach (var grant in grants)

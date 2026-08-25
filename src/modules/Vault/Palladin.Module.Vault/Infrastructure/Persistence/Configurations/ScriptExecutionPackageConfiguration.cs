@@ -19,7 +19,10 @@ internal sealed class ScriptExecutionPackageConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ContractVersion).IsRequired();
         builder.Property(x => x.RecipientAgentKeyVersion).IsRequired();
         builder.Property(x => x.RecipientAgentKeyFingerprint).HasMaxLength(VaultProtocol.FingerprintBytes);
+        builder.Property(x => x.VaultSigningKeyVersion).IsRequired();
+        builder.Property(x => x.VaultSigningKeyFingerprint).HasMaxLength(VaultProtocol.FingerprintBytes);
         builder.Property(x => x.ManifestDigest).HasMaxLength(32);
         builder.Property(x => x.EncodedPackageCiphertext).HasMaxLength(2_097_152);
+        builder.Property(x => x.ProducerSignature).HasMaxLength(64);
     }
 }

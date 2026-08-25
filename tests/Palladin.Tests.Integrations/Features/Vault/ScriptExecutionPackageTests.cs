@@ -1,10 +1,13 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using NSec.Cryptography;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
@@ -146,6 +149,38 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         scriptScopes.GetArrayLength().ShouldBe(2);
         scriptScopes.EnumerateArray().Single(scope => scope.GetProperty("isScript").GetBoolean())
             .GetProperty("entryId").GetGuid().ShouldBe(setup.ScriptEntryId);
+    }
+
+    [Fact]
+    public async Task CreateDirectGrant_RejectsPackageWithInvalidVaultProducerSignature()
+    {
+        var setup = await SetupScriptAsync();
+        var grantId = Guid.NewGuid();
+        var signed = PackageContract(setup, grantId);
+        var signature = WebEncoders.Base64UrlDecode(signed.ProducerSignature);
+        signature[0] ^= 0x01;
+
+        var response = await setup.UserClient.PostAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/grants",
+            new CreateGrantRequest
+            {
+                GrantId = grantId,
+                VaultId = setup.VaultId,
+                AgentId = setup.AgentId,
+                Type = GrantType.ScriptExecution,
+                ScriptEntryId = setup.ScriptEntryId,
+                ScriptPackage = signed with
+                {
+                    ProducerSignature = WebEncoders.Base64UrlEncode(signature),
+                },
+                Methods = GrantMethods.Exec,
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.AnyAsync(value => value.Id == grantId)).ShouldBeFalse();
     }
 
     [Fact]
@@ -449,8 +484,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             1,
             1,
             fingerprint,
+            1,
+            VaultKeyFingerprint.Compute(
+                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
-            Enumerable.Repeat((byte)0x5A, 64).ToArray());
+            Enumerable.Repeat((byte)0x5A, 64).ToArray(),
+            new byte[64]);
         return ScriptExecutionGrant.CreateProactively(
             grantId,
             setup.VaultId,
@@ -480,8 +519,9 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         Guid grantId,
         ulong scriptRevision = 1,
         ulong packageRevision = 1,
-        ulong referenceRevision = 1) =>
-        new(
+        ulong referenceRevision = 1)
+    {
+        var unsigned = new ScriptExecutionPackageContract(
             1,
             setup.OrganizationId,
             setup.VaultId,
@@ -494,8 +534,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             1,
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
                 Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519)),
+            1,
+            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
+                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519)),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0xA5, 32).ToArray()),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0x5A, 64).ToArray()),
+            string.Empty,
             [
                 new ScriptExecutionScopeContract(
                     setup.ScriptEntryId,
@@ -506,6 +550,19 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
                     referenceRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     false),
             ]);
+        var canonical = ScriptExecutionPackageCryptoValidator.CanonicalizeUnsigned(unsigned);
+        var prefix = Encoding.ASCII.GetBytes("PLDNV2SIG:SCRIPT-EXECUTION-PACKAGE:");
+        var signatureInput = new byte[prefix.Length + sizeof(ushort) + canonical.Length];
+        prefix.CopyTo(signatureInput, 0);
+        BinaryPrimitives.WriteUInt16BigEndian(signatureInput.AsSpan(prefix.Length), 2);
+        canonical.CopyTo(signatureInput, prefix.Length + sizeof(ushort));
+        using var signingKey = VaultTrustAnchorFaker.CreateManifestSigningKey();
+        return unsigned with
+        {
+            ProducerSignature = WebEncoders.Base64UrlEncode(
+                SignatureAlgorithm.Ed25519.Sign(signingKey, signatureInput)),
+        };
+    }
 
     private sealed record Setup(
         HttpClient Client,

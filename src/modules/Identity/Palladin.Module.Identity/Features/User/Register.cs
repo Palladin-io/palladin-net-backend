@@ -9,6 +9,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
@@ -72,6 +73,7 @@ internal sealed class RegisterEndpoint(
     IAuthSessionIssuer sessionIssuer,
     IGuidProvider guidProvider,
     IOptions<EmailVerificationOptions> emailVerificationOptions,
+    WaitlistBenefitPolicy waitlistBenefitPolicy,
     ITransportContext transportContext,
     IClock clock) : Endpoint<RegisterRequest, AuthSessionResponse>
 {
@@ -103,6 +105,9 @@ internal sealed class RegisterEndpoint(
             return;
         }
 
+        var waitlistEntry = await domainWriteContext.WaitlistEntries
+            .FirstOrDefaultAsync(entry => entry.Email == email && entry.VerifiedAt != null, ct);
+
         var orgId = guidProvider.Generate();
         var userId = req.AccountId;
 
@@ -119,6 +124,7 @@ internal sealed class RegisterEndpoint(
             req.DeviceWrapperMetadata,
             transportContext.Platform ?? "unknown", now);
         domainWriteContext.Add(user);
+        waitlistBenefitPolicy.TryReserve(waitlistEntry, userId, now);
         domainWriteContext.Add(OrganizationMember.CreateOwner(orgId, userId, adminRole, now));
 
         var (serverHash, serverSalt) = passwordHasher.Hash(req.AuthCredential);

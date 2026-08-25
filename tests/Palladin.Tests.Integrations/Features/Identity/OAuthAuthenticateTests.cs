@@ -15,6 +15,7 @@ using NSubstitute.ExceptionExtensions;
 using Shouldly;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 
 namespace Palladin.Tests.Integrations.Features.Identity;
 
@@ -176,5 +177,72 @@ public sealed class OAuthAuthenticateTests(ApiFactory apiFactory) : TestBase
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task When_VerifiedWaitlistUserCreatesOAuthAccountInClaimWindow_Then_DeveloperBenefitIsReserved()
+    {
+        // Given
+        var originalNow = apiFactory.FakeClock.GetCurrentInstant();
+        var accountCreatedAt = Instant.FromUtc(2026, 12, 15, 8, 30);
+        apiFactory.FakeClock.Reset(accountCreatedAt);
+        apiFactory.MockId(Guid.NewGuid());
+        var email = $"oauth-benefit-{Guid.NewGuid():N}@example.com";
+        await SeedVerifiedWaitlistAsync(email, Instant.FromUtc(2026, 11, 30, 23, 59));
+        var providerUserId = $"google-waitlist-{Guid.NewGuid():N}";
+        apiFactory.GoogleOAuthProvider.ValidateTokenAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ExternalUserInfo(providerUserId, email.ToUpperInvariant(), true, "Waitlist User", null));
+
+        try
+        {
+            // When
+            var response = await apiFactory.CreateClient()
+                .PostAsJsonAsync("api/auth/oauth/google", new { Token = "valid-google-token" });
+
+            // Then
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var result = await response.Content.ReadFromJsonAsync<OAuthAuthenticateResponse>();
+            result.ShouldNotBeNull();
+
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var entry = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+                .WaitlistEntries.SingleAsync(x => x.Email == email, TestContext.Current.CancellationToken);
+            entry.BenefitUserId.ShouldBe(result.UserId);
+            entry.BenefitPlan.ShouldBe(WaitlistEntry.DeveloperPlan);
+            entry.BenefitStatus.ShouldBe(WaitlistEntry.ReservedBenefitStatus);
+            entry.BenefitStartsAt.ShouldBe(accountCreatedAt);
+            entry.BenefitEndsAt.ShouldBe(Instant.FromUtc(2027, 1, 15, 8, 30));
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalNow);
+        }
+    }
+
+    private async Task SeedVerifiedWaitlistAsync(string email, Instant createdAt)
+    {
+        var entry = WaitlistEntry.Join(
+            Guid.NewGuid(),
+            email,
+            "en",
+            WaitlistQualification.Create(
+                "team",
+                "codex",
+                null,
+                "Rotate API credentials for release automation",
+                null,
+                true,
+                "direct"),
+            WaitlistEntry.CurrentPromotionTermsVersion,
+            $"token-{Guid.NewGuid():N}",
+            $"{Guid.NewGuid():N}{Guid.NewGuid():N}",
+            Duration.FromHours(24),
+            createdAt);
+        entry.Verify(createdAt + Duration.FromMinutes(5));
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+        context.WaitlistEntries.Add(entry);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 }

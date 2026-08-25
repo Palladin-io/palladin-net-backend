@@ -10,6 +10,7 @@ using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 using NSubstitute;
 using Shouldly;
 
@@ -177,6 +178,72 @@ public sealed class RegisterTests(ApiFactory apiFactory) : TestBase
         credential.ServerHashSalt.Length.ShouldBe(16);
     }
 
+    [Fact]
+    public async Task When_VerifiedWaitlistUserRegistersInClaimWindow_Then_DeveloperBenefitIsReserved()
+    {
+        // Given
+        var originalNow = apiFactory.FakeClock.GetCurrentInstant();
+        var registrationAt = Instant.FromUtc(2026, 12, 31, 12, 0);
+        apiFactory.FakeClock.Reset(registrationAt);
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var email = $"waitlist-benefit-{Guid.NewGuid():N}@example.com";
+        await SeedVerifiedWaitlistAsync(email, Instant.FromUtc(2026, 11, 20, 12, 0));
+        var accountId = Guid.NewGuid();
+
+        try
+        {
+            // When
+            var (response, _) = await apiFactory.CreateClient()
+                .POSTAsync<RegisterEndpoint, RegisterRequest, AuthSessionResponse>(NewRequest(email, accountId: accountId));
+
+            // Then
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var entry = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+                .WaitlistEntries.SingleAsync(x => x.Email == email, TestContext.Current.CancellationToken);
+            entry.BenefitUserId.ShouldBe(accountId);
+            entry.BenefitPlan.ShouldBe(WaitlistEntry.DeveloperPlan);
+            entry.BenefitStatus.ShouldBe(WaitlistEntry.ReservedBenefitStatus);
+            entry.BenefitEligibleAt.ShouldBe(registrationAt);
+            entry.BenefitStartsAt.ShouldBe(registrationAt);
+            entry.BenefitEndsAt.ShouldBe(Instant.FromUtc(2027, 1, 31, 12, 0));
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalNow);
+        }
+    }
+
+    [Fact]
+    public async Task When_WaitlistEntryIsNotVerified_Then_RegistrationDoesNotReserveBenefit()
+    {
+        // Given
+        var originalNow = apiFactory.FakeClock.GetCurrentInstant();
+        apiFactory.FakeClock.Reset(Instant.FromUtc(2026, 12, 15, 12, 0));
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var email = $"pending-waitlist-{Guid.NewGuid():N}@example.com";
+        await SeedWaitlistAsync(email, Instant.FromUtc(2026, 11, 20, 12, 0), verified: false);
+
+        try
+        {
+            // When
+            var (response, _) = await apiFactory.CreateClient()
+                .POSTAsync<RegisterEndpoint, RegisterRequest, AuthSessionResponse>(NewRequest(email));
+
+            // Then
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var entry = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+                .WaitlistEntries.SingleAsync(x => x.Email == email, TestContext.Current.CancellationToken);
+            entry.BenefitUserId.ShouldBeNull();
+            entry.BenefitStatus.ShouldBeNull();
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalNow);
+        }
+    }
+
     private static RegisterRequest NewRequest(
         string email,
         byte[]? authHash = null,
@@ -195,6 +262,39 @@ public sealed class RegisterTests(ApiFactory apiFactory) : TestBase
         EncryptedPrivateKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 6)).ToArray(),
         EncryptedPrivateKeyByRecovery = Enumerable.Range(0, 32).Select(i => (byte)(i + 7)).ToArray(),
     };
+
+    private Task SeedVerifiedWaitlistAsync(string email, Instant createdAt) =>
+        SeedWaitlistAsync(email, createdAt, verified: true);
+
+    private async Task SeedWaitlistAsync(string email, Instant createdAt, bool verified)
+    {
+        var entry = WaitlistEntry.Join(
+            Guid.NewGuid(),
+            email,
+            "en",
+            WaitlistQualification.Create(
+                "individual",
+                "codex",
+                null,
+                "Rotate API credentials for release automation",
+                "Encrypted notes and manual copy-paste",
+                true,
+                "direct"),
+            WaitlistEntry.CurrentPromotionTermsVersion,
+            $"token-{Guid.NewGuid():N}",
+            $"{Guid.NewGuid():N}{Guid.NewGuid():N}",
+            Duration.FromHours(24),
+            createdAt);
+        if (verified)
+        {
+            entry.Verify(createdAt + Duration.FromHours(1));
+        }
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+        context.WaitlistEntries.Add(entry);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
 
     private sealed record RegistrationCounts(
         int Organizations,

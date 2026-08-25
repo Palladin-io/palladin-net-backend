@@ -92,6 +92,39 @@ public sealed class EmailTemplateRendererTests
     }
 
     [Fact]
+    public void When_WaitlistVerificationRendered_Then_BothLanguagesContainTheCompletePersonalBenefitTerms()
+    {
+        // Given
+        var renderer = CreateRenderer();
+
+        // When
+        var english = renderer.Render(EmailTemplates.WaitlistVerification, "en", Model);
+        var polish = renderer.Render(EmailTemplates.WaitlistVerification, "pl", Model);
+
+        // Then
+        foreach (var rendered in new[] { english, polish })
+        {
+            rendered.HtmlBody.ShouldContain("Developer");
+            rendered.HtmlBody.ShouldContain("Free");
+            rendered.HtmlBody.ShouldContain("14");
+            rendered.TextBody.ShouldContain("Developer");
+            rendered.TextBody.ShouldContain("Free");
+            rendered.TextBody.ShouldContain("14");
+            rendered.TextBody.ShouldNotContain("Premium");
+            rendered.TextBody.ShouldNotContain("Team Starter");
+            rendered.TextBody.ShouldNotContain("Family");
+            rendered.TextBody.ShouldNotContain("Enterprise");
+        }
+
+        english.TextBody.ShouldContain("six calendar months");
+        english.TextBody.ShouldContain("one per user");
+        english.TextBody.ShouldContain("No payment method");
+        polish.TextBody.ShouldContain("sześć miesięcy kalendarzowych");
+        polish.TextBody.ShouldContain("raz na użytkownika");
+        polish.TextBody.ShouldContain("Metoda płatności nie jest wymagana");
+    }
+
+    [Fact]
     public void When_ModelContainsHtml_Then_HtmlBodyEscapesIt()
     {
         // Given

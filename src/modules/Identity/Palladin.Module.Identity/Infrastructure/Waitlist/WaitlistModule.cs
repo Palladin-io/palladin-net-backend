@@ -17,6 +17,7 @@ internal static class WaitlistModule
             .Bind(configuration.GetSection($"{ConfigPrefix}:{WaitlistOptions.Position}"))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<WaitlistOptions>, WaitlistOptionsValidator>();
+        services.AddSingleton<WaitlistBenefitPolicy>();
 
         return services;
     }

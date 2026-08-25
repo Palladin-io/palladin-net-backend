@@ -1,6 +1,7 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Palladin.Module.Identity.Domain;
 
 namespace Palladin.Module.Identity.Infrastructure.Waitlist;
 
@@ -9,26 +10,31 @@ internal sealed class WaitlistOptionsValidator(IHostEnvironment environment) : I
 {
     public ValidateOptionsResult Validate(string? name, WaitlistOptions options)
     {
-        if (!options.Enabled)
-        {
-            return ValidateOptionsResult.Success;
-        }
-
         var failures = new List<string>();
 
-        if (options.TokenTtlHours <= 0)
+        if (options.Enabled || options.BenefitEnabled)
         {
-            failures.Add("TokenTtlHours must be greater than zero.");
+            if (options.TokenTtlHours <= 0)
+            {
+                failures.Add("TokenTtlHours must be greater than zero.");
+            }
+
+            if (options.ResendCooldownMinutes < 0)
+            {
+                failures.Add("ResendCooldownMinutes cannot be negative.");
+            }
+
+            ValidateUrl(options.VerificationUrlBase, nameof(options.VerificationUrlBase), failures);
+            ValidateUrl(options.VerifiedRedirectUrl, nameof(options.VerifiedRedirectUrl), failures);
+            ValidateUrl(options.AlreadyVerifiedRedirectUrl, nameof(options.AlreadyVerifiedRedirectUrl), failures);
+            ValidateUrl(options.InvalidRedirectUrl, nameof(options.InvalidRedirectUrl), failures);
+            ValidateUrl(options.TemporaryFailureRedirectUrl, nameof(options.TemporaryFailureRedirectUrl), failures);
         }
 
-        if (options.ResendCooldownMinutes < 0)
+        if (options.BenefitEnabled)
         {
-            failures.Add("ResendCooldownMinutes cannot be negative.");
+            ValidateBenefit(options, failures);
         }
-
-        ValidateUrl(options.VerificationUrlBase, nameof(options.VerificationUrlBase), failures);
-        ValidateUrl(options.VerifiedRedirectUrl, nameof(options.VerifiedRedirectUrl), failures);
-        ValidateUrl(options.FailedRedirectUrl, nameof(options.FailedRedirectUrl), failures);
 
         return failures.Count == 0
             ? ValidateOptionsResult.Success
@@ -48,6 +54,45 @@ internal sealed class WaitlistOptionsValidator(IHostEnvironment environment) : I
             && uri.Scheme != Uri.UriSchemeHttps)
         {
             failures.Add($"{property} must use HTTPS outside Development and Testing.");
+        }
+    }
+
+    private static void ValidateBenefit(WaitlistOptions options, ICollection<string> failures)
+    {
+        if (options.BenefitDurationMonths != 1)
+        {
+            failures.Add("BenefitDurationMonths must equal one.");
+        }
+
+        if (options.PromotionTermsVersion != WaitlistEntry.CurrentPromotionTermsVersion)
+        {
+            failures.Add($"PromotionTermsVersion must equal {WaitlistEntry.CurrentPromotionTermsVersion}.");
+        }
+
+        if (options.PublicLaunchAtUtc is null)
+        {
+            failures.Add("PublicLaunchAtUtc is required when the waitlist benefit is enabled.");
+        }
+
+        if (options.BenefitClaimDeadlineAtUtc is null)
+        {
+            failures.Add("BenefitClaimDeadlineAtUtc is required when the waitlist benefit is enabled.");
+        }
+
+        if (options.PublicLaunchAtUtc is not { } publicLaunch
+            || options.BenefitClaimDeadlineAtUtc is not { } claimDeadline)
+        {
+            return;
+        }
+
+        if (publicLaunch.Offset != TimeSpan.Zero || claimDeadline.Offset != TimeSpan.Zero)
+        {
+            failures.Add("Waitlist benefit dates must use UTC.");
+        }
+
+        if (claimDeadline != publicLaunch.AddMonths(6))
+        {
+            failures.Add("BenefitClaimDeadlineAtUtc must be exactly six calendar months after PublicLaunchAtUtc.");
         }
     }
 }

@@ -8,6 +8,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.OAuth;
 using Palladin.Module.Identity.Infrastructure.Options;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -51,6 +52,7 @@ internal sealed class OAuthAuthenticateEndpoint(
     IGuidProvider guidProvider,
     IClock clock,
     IOptions<JwtOptions> jwtOptions,
+    WaitlistBenefitPolicy waitlistBenefitPolicy,
     ITransportContext transportContext,
     ILogger logger) : Endpoint<OAuthAuthenticateRequest, OAuthAuthenticateResponse>
 {
@@ -99,6 +101,8 @@ internal sealed class OAuthAuthenticateEndpoint(
             return;
         }
 
+        externalUser = externalUser with { Email = externalUser.Email.Trim().ToLowerInvariant() };
+
         var now = clock.GetCurrentInstant();
         var platform = transportContext.Platform ?? "unknown";
 
@@ -135,7 +139,10 @@ internal sealed class OAuthAuthenticateEndpoint(
         }
         else
         {
+            var waitlistEntry = await domainWriteContext.WaitlistEntries
+                .FirstOrDefaultAsync(entry => entry.Email == externalUser.Email && entry.VerifiedAt != null, ct);
             user = CreateNewUser(provider.Provider, externalUser, platform, now);
+            waitlistBenefitPolicy.TryReserve(waitlistEntry, user.Id, now);
             isNewUser = true;
         }
 

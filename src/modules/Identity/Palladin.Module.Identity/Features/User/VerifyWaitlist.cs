@@ -7,6 +7,7 @@ using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NodaTime;
+using Serilog;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -29,7 +30,8 @@ internal sealed class VerifyWaitlistValidator : Validator<VerifyWaitlistRequest>
 internal sealed class VerifyWaitlistEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IOptions<WaitlistOptions> options,
-    IClock clock) : Endpoint<VerifyWaitlistRequest>
+    IClock clock,
+    ILogger logger) : Endpoint<VerifyWaitlistRequest>
 {
     public override void Configure()
     {
@@ -48,24 +50,40 @@ internal sealed class VerifyWaitlistEndpoint(
     public override async Task HandleAsync(VerifyWaitlistRequest req, CancellationToken ct)
     {
         var opts = options.Value;
-        if (!opts.Enabled)
+        if (!opts.Enabled && !opts.BenefitEnabled)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
-        var tokenHash = TokenService.HashToken(req.Token.Trim());
-        var entry = await domainWriteContext.WaitlistEntries.FirstOrDefaultAsync(x => x.TokenHash == tokenHash, ct);
-
-        if (entry is null || !entry.CanVerify(clock.GetCurrentInstant()))
+        string redirectUrl;
+        try
         {
-            await Send.RedirectAsync(opts.FailedRedirectUrl, allowRemoteRedirects: true);
-            return;
+            var tokenHash = TokenService.HashToken(req.Token.Trim());
+            var entry = await domainWriteContext.WaitlistEntries.FirstOrDefaultAsync(x => x.TokenHash == tokenHash, ct);
+            var now = clock.GetCurrentInstant();
+
+            if (entry is null || !entry.IsVerified && !entry.CanVerify(now))
+            {
+                redirectUrl = opts.InvalidRedirectUrl;
+            }
+            else if (entry.IsVerified)
+            {
+                redirectUrl = opts.AlreadyVerifiedRedirectUrl;
+            }
+            else
+            {
+                entry.Verify(now);
+                await domainWriteContext.CommitAsync(ct);
+                redirectUrl = opts.VerifiedRedirectUrl;
+            }
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            logger.Warning("Waitlist verification is temporarily unavailable");
+            redirectUrl = opts.TemporaryFailureRedirectUrl;
         }
 
-        entry.Verify(clock.GetCurrentInstant());
-        await domainWriteContext.CommitAsync(ct);
-
-        await Send.RedirectAsync(opts.VerifiedRedirectUrl, allowRemoteRedirects: true);
+        await Send.RedirectAsync(redirectUrl, allowRemoteRedirects: true);
     }
 }

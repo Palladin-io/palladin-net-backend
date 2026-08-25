@@ -273,6 +273,40 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
+    public async Task ScriptConversion_AtomicallyRevokesItsDirectExecutionGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var grant = DirectGrant(setup, queryLimit: 5);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(grant);
+        var request = EntryEnvelopeFaker.CreateUpdateRequest(
+            setup.OrganizationId,
+            setup.VaultId,
+            setup.ScriptEntryId,
+            baseRevision: 1) with
+        {
+            DeliveryPolicy = GrantDeliveryPolicy.Standard,
+            RevokedScriptGrantIds = [grant.Id],
+        };
+
+        var response = await setup.UserClient.PutAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/entries/{setup.ScriptEntryId}",
+            request,
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.OfType<ScriptExecutionGrant>()
+            .Include(value => value.ScriptExecutionPackage)
+            .SingleAsync(value => value.Id == grant.Id);
+        persisted.Status.ShouldBe(GrantStatus.Revoked);
+        persisted.RevokedBySystem.ShouldBeTrue();
+        persisted.ScriptExecutionPackage.ShouldBeNull();
+        (await readContext.Entries.SingleAsync(value => value.Id == setup.ScriptEntryId))
+            .DeliveryPolicy.ShouldBe(GrantDeliveryPolicy.Standard);
+    }
+
+    [Fact]
     public async Task DirectGrant_WithOneRemainingUse_AllowsExactlyOneConcurrentPackage()
     {
         var setup = await SetupScriptAsync();

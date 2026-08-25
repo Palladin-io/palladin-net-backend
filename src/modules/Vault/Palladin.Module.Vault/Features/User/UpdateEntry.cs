@@ -28,6 +28,7 @@ public sealed record UpdateEntryRequest : IRequiresVaultMembership
     public GrantDeliveryPolicy DeliveryPolicy { get; init; } = GrantDeliveryPolicy.Standard;
     public IReadOnlyList<GrantEntryEnvelopeContract> GrantEnvelopes { get; init; } = [];
     public IReadOnlyList<ScriptExecutionPackageContract> ScriptGrantPackages { get; init; } = [];
+    public IReadOnlyList<Guid> RevokedScriptGrantIds { get; init; } = [];
 }
 
 [PublicAPI]
@@ -47,6 +48,9 @@ internal sealed class UpdateEntryValidator : Validator<UpdateEntryRequest>
         RuleForEach(x => x.GrantEnvelopes).SetValidator(new GrantEntryEnvelopeContractValidator());
         RuleForEach(x => x.ScriptGrantPackages)
             .SetValidator(new ScriptExecutionPackageContractValidator());
+        RuleFor(x => x.RevokedScriptGrantIds)
+            .Must(ids => ids.Count <= 1000 && ids.All(id => id != Guid.Empty) && ids.Distinct().Count() == ids.Count)
+            .WithMessage("Revoked Script grant ids must be non-empty, unique, and within the request limit.");
     }
 }
 
@@ -164,7 +168,21 @@ internal sealed class UpdateEntryEndpoint(
             await Send.StatusCodeAsync(409, ct);
             return;
         }
-        if (!activeScriptGrants.Select(grant => grant.Id).Order().SequenceEqual(
+        var revokedScriptGrants = req.DeliveryPolicy == GrantDeliveryPolicy.ExecOnly
+            ? []
+            : activeScriptGrants.Where(grant => grant.ScriptEntryId == req.EntryId).ToList();
+        if (!revokedScriptGrants.Select(grant => grant.Id).Order().SequenceEqual(
+                req.RevokedScriptGrantIds.Order()))
+        {
+            AddError(r => r.RevokedScriptGrantIds,
+                "Every direct ScriptExecution grant invalidated by this Entry conversion must be revoked exactly once.");
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
+        var refreshedScriptGrants = activeScriptGrants
+            .Except(revokedScriptGrants)
+            .ToList();
+        if (!refreshedScriptGrants.Select(grant => grant.Id).Order().SequenceEqual(
                 req.ScriptGrantPackages.Select(package => package.GrantId).Order()))
         {
             AddError(r => r.ScriptGrantPackages,
@@ -202,6 +220,17 @@ internal sealed class UpdateEntryEndpoint(
             .ToDictionaryAsync(agent => agent.Id, ct);
         try
         {
+            foreach (var grant in revokedScriptGrants)
+            {
+                grant.RevokeBySystem(
+                    new GrantNames(
+                        agents.GetValueOrDefault(grant.AgentId)?.Name ?? GrantNames.UnknownAgent,
+                        GrantNames.UnknownEntry,
+                        string.Empty,
+                        GrantNames.SystemActor),
+                    now);
+            }
+
             foreach (var scope in scopes)
             {
                 var contract = req.GrantEnvelopes.Single(x => x.GrantId == scope.GrantId);
@@ -230,7 +259,7 @@ internal sealed class UpdateEntryEndpoint(
                 scope.RefreshScope(refreshed);
             }
 
-            if (activeScriptGrants.Count > 0)
+            if (refreshedScriptGrants.Count > 0)
             {
                 var packageScopeIds = req.ScriptGrantPackages
                     .SelectMany(package => package.Scopes)
@@ -248,7 +277,7 @@ internal sealed class UpdateEntryEndpoint(
                     .ToDictionary(candidate => candidate.Id, candidate => candidate.Revision);
                 currentRevisions[entry.Id] = entry.CurrentRevision.Value;
 
-                foreach (var grant in activeScriptGrants)
+                foreach (var grant in refreshedScriptGrants)
                 {
                     var contract = req.ScriptGrantPackages.Single(package => package.GrantId == grant.Id);
                     var (replacement, replacementScopes) =

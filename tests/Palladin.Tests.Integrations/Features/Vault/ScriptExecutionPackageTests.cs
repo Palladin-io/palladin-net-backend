@@ -351,13 +351,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             AgentId = setup.AgentId,
             Type = GrantType.Full,
             Methods = GrantMethods.Exec,
-            AgentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToContract(
-                GrantEnvelopeTestData.AgentVaultKey(
-                    setup.OrganizationId,
-                    setup.VaultId,
-                    fullGrantId,
-                    setup.AgentId,
-                    agentPublicKey: setup.PublicKey)),
+            AgentWrappedVaultKey = GrantEnvelopeTestData.AgentVaultKeyContract(
+                setup.OrganizationId,
+                setup.VaultId,
+                fullGrantId,
+                setup.AgentId,
+                agentPublicKey: setup.PublicKey),
         };
 
         var response = await setup.UserClient.PostAsJsonAsync(

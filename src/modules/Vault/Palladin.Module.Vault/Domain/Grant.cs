@@ -99,19 +99,13 @@ internal abstract class Grant : EventEntityBase
         RevokeCore(revokedBy: null, isSystem: true, names, now);
     }
 
-    internal void RemoveEntryAccess(Guid entryId, Instant now)
+    internal void RemoveEntryAccess(Guid entryId, GrantNames names, Instant now)
     {
         if (this is ScriptExecutionGrant scriptExecution
             && scriptExecution.ScriptExecutionScopes.Any(x => x.EntryId == entryId)
             && Status is GrantStatus.Active or GrantStatus.Pending)
         {
-            RevokeBySystem(
-                new GrantNames(
-                    GrantNames.UnknownAgent,
-                    GrantNames.UnknownEntry,
-                    string.Empty,
-                    GrantNames.SystemActor),
-                now);
+            RevokeBySystem(names, now);
             EncryptedReason = null;
             return;
         }
@@ -125,13 +119,7 @@ internal abstract class Grant : EventEntityBase
             && granular.EntryId == entryId
             && Status is GrantStatus.Active or GrantStatus.Pending)
         {
-            RevokeBySystem(
-                new GrantNames(
-                    GrantNames.UnknownAgent,
-                    GrantNames.UnknownEntry,
-                    string.Empty,
-                    GrantNames.SystemActor),
-                now);
+            RevokeBySystem(names, now);
             EncryptedReason = null;
         }
     }
@@ -147,9 +135,9 @@ internal abstract class Grant : EventEntityBase
         ScriptExecutionPackage = null;
     }
 
-    internal void RemoveEntryScope(Guid entryId, Instant now)
+    internal void RemoveEntryScope(Guid entryId, GrantNames names, Instant now)
     {
-        RemoveEntryAccess(entryId, now);
+        RemoveEntryAccess(entryId, names, now);
         foreach (var scope in GrantEntryScopes.Where(x => x.EntryId == entryId).ToList())
         {
             GrantEntryScopes.Remove(scope);

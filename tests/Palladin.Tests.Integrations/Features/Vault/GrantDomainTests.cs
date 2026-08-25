@@ -1,6 +1,7 @@
 using NodaTime;
 using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
+using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Shared;
@@ -384,6 +385,34 @@ public sealed class GrantDomainTests
         grant.ScriptExecutionScopes.Count.ShouldBe(2);
         grant.Covers(scriptEntryId).ShouldBeTrue();
         grant.Covers(referenceEntryId).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RemovingScriptEntryAccess_PreservesResolvedAgentNameInSystemRevocation()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var scriptEntryId = Guid.NewGuid();
+        var package = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+        var grant = ScriptExecutionGrant.CreateProactively(
+            grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
+            [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)],
+            package, null, null, "lifetime", Guid.NewGuid(),
+            new GrantNames("initial", "script", string.Empty, "actor"), Now, 1);
+        grant.FetchEvents();
+
+        grant.RemoveEntryAccess(
+            scriptEntryId,
+            new GrantNames("Deploy Agent", GrantNames.UnknownEntry, string.Empty, GrantNames.SystemActor),
+            Now + Duration.FromMinutes(1));
+
+        var revoked = grant.FetchEvents().OfType<GrantRevokedEvent>().ShouldHaveSingleItem();
+        revoked.AgentName.ShouldBe("Deploy Agent");
+        revoked.RevokedBySystem.ShouldBeTrue();
     }
 
     [Fact]

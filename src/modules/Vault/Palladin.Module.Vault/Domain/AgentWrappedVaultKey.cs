@@ -87,12 +87,17 @@ internal sealed class AgentWrappedVaultKey
 
     internal void ReplaceWith(AgentWrappedVaultKey replacement)
     {
+        var rotatesVaultKey = replacement.VaultKeyVersion.Value == checked(VaultKeyVersion.Value + 1)
+                              && replacement.VaultSigningKeyVersion.Value >= VaultSigningKeyVersion.Value;
+        var rotatesSigningKey = replacement.VaultKeyVersion == VaultKeyVersion
+                                && replacement.VaultSigningKeyVersion.Value
+                                == checked(VaultSigningKeyVersion.Value + 1);
         if (OrganizationId != replacement.OrganizationId
             || VaultId != replacement.VaultId
             || GrantId != replacement.GrantId
             || AgentId != replacement.AgentId
             || AgentAccessEpoch != replacement.AgentAccessEpoch
-            || replacement.VaultKeyVersion.Value != checked(VaultKeyVersion.Value + 1))
+            || !(rotatesVaultKey || rotatesSigningKey))
         {
             throw new DomainException("Rotated Agent Vault-key wrapper does not preserve its recipient identity.");
         }

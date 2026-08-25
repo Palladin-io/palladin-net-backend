@@ -268,6 +268,29 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task ProactiveFullGrant_WithForgedProducerSignature_FailsBeforePersistence()
+    {
+        var setup = await ArrangeAsync();
+        var request = FullRequest(setup);
+        request = request with
+        {
+            AgentWrappedVaultKey = request.AgentWrappedVaultKey! with
+            {
+                ProducerSignature = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(new byte[64]),
+            },
+        };
+
+        var (response, _) = await setup.Client
+            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.AnyAsync(g => g.Id == request.GrantId)).ShouldBeFalse();
+        (await db.AgentWrappedVaultKeys.AnyAsync(x => x.GrantId == request.GrantId)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task TerminalGranularGrant_WithOnlyStaleActiveFullMaterial_CanBeGrantedAgain()
     {
         var setup = await ArrangeAsync();
@@ -384,13 +407,12 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
             Type = GrantType.Full,
             EntryId = null,
             GrantEntries = [],
-            AgentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToContract(
-                GrantEnvelopeTestData.AgentVaultKey(
-                    setup.OrganizationId,
-                    setup.VaultId,
-                    request.GrantId,
-                    setup.AgentId,
-                    agentPublicKey: setup.AgentPublicKey)),
+            AgentWrappedVaultKey = GrantEnvelopeTestData.AgentVaultKeyContract(
+                setup.OrganizationId,
+                setup.VaultId,
+                request.GrantId,
+                setup.AgentId,
+                agentPublicKey: setup.AgentPublicKey),
         };
     }
 

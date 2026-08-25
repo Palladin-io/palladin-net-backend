@@ -211,11 +211,11 @@ public sealed class EmailTemplateRendererTests
         activatedEnglish.TextBody.ShouldContain("2026-08-25T12:00:00Z");
         activatedEnglish.TextBody.ShouldContain("2026-09-25T12:00:00Z");
         activatedEnglish.TextBody.ShouldContain("No card");
-        activatedEnglish.TextBody.ShouldContain("Free plan");
+        activatedEnglish.TextBody.ShouldContain("independently of this promotion");
         activatedPolish.TextBody.ShouldContain("2026-08-25T12:00:00Z");
         activatedPolish.TextBody.ShouldContain("2026-09-25T12:00:00Z");
         activatedPolish.TextBody.ShouldContain("karty");
-        activatedPolish.TextBody.ShouldContain("Free");
+        activatedPolish.TextBody.ShouldContain("niezależnie od tej promocji");
     }
 
     [Fact]

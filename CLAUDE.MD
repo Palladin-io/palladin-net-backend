@@ -259,8 +259,10 @@ public override void Configure()
 - Use records for request and response
 - Do not create separate DTOs for value objects — use them directly in request/response
 
-### UI responses resolve names server-side
-API responses meant for the UI must return human-readable names next to IDs (`agentName`, `entryLabel`, actor/user name…), resolved **server-side** via a join/projection (correlated subquery / `LEFT JOIN`) in the query — never make the client do `id→name` lookups, and never return a bare ID the user cannot read. Resolve from the module's own replicas/tables (e.g. Vault has the `Agent` replica with `Name` and `Entry` with `Label`); when the referenced entity no longer exists, return `null`/`""` (do not throw). These are metadata names, never crypto/secrets. For **audit**, denormalize names **at write time** (the Audit module has no replica of every module, e.g. Identity users), not at read time.
+### Human-readable identity in UI responses
+By default, UI-facing resource responses return human-readable names beside IDs, resolved server-side from the owning module's table or replica. Do not create per-row client lookups or return a bare identifier as the only user-facing label.
+
+Historical organization-member attribution is the reviewed exception: Vault history and Audit records keep immutable opaque actor IDs, while Identity owns a durable minimal member directory exposed by `GET api/organization/member-directory`. The web client may resolve those IDs from one organization-scoped, in-memory TanStack Query cache. The directory contains only `userId` and the last known `displayName`, retains former members so deletion cannot destroy attribution, and is deleted with the organization. Do not copy names into Vault history, add plaintext Entry metadata to history, or use the role/e-mail-heavy Team member endpoint as the shared resolver. See `src/modules/Identity/README.md` and the root Brain note `brain/Technical/Organization Member Directory.md`.
 
 ## Asynchronous (MassTransit)
 

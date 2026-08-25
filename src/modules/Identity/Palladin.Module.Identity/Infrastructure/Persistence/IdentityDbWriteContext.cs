@@ -9,6 +9,7 @@ internal sealed class IdentityDbWriteContext(DbContextOptions<IdentityDbWriteCon
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
+    public DbSet<OrganizationMemberDirectoryEntry> OrganizationMemberDirectoryEntries => Set<OrganizationMemberDirectoryEntry>();
     public DbSet<OrganizationMemberRole> OrganizationMemberRoles => Set<OrganizationMemberRole>();
     public DbSet<OrganizationInvitation> OrganizationInvitations => Set<OrganizationInvitation>();
     public DbSet<OAuthConnection> OAuthConnections => Set<OAuthConnection>();

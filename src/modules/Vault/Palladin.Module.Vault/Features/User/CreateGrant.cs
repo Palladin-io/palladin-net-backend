@@ -445,6 +445,34 @@ internal sealed class CreateGrantEndpoint(
                 domainWriteContext.Clear();
             }
 
+            if (req.Methods.HasFlag(GrantMethods.Exec))
+            {
+                Guid? afterScriptGrantId = null;
+                while (true)
+                {
+                    var page = await domainWriteContext.LoadActiveScriptExecutionsInVaultPageAsync(
+                        req.AgentId, expectedAccessEpoch, req.VaultId, afterScriptGrantId,
+                        FullSupersedePageSize, ct);
+                    if (page.Count == 0)
+                    {
+                        break;
+                    }
+
+                    domainWriteContext.EnsureFullGrantCommitTrackingIsBounded(FullSupersedePageSize);
+                    var scriptEntryIds = page.Select(g => g.ScriptEntryId).Distinct().ToArray();
+                    var namesByEntry = await domainReadContext.ResolveForSupersedeAsync(
+                        req.AgentId, req.VaultId, scriptEntryIds, ct);
+                    foreach (var scriptGrant in page)
+                    {
+                        scriptGrant.RevokeBySystem(namesByEntry[scriptGrant.ScriptEntryId], now);
+                    }
+
+                    afterScriptGrantId = page[^1].Id;
+                    await domainWriteContext.FlushAsync(ct);
+                    domainWriteContext.Clear();
+                }
+            }
+
             agent = await domainWriteContext.Agents.SingleAsync(
                 x => x.OrganizationId == organizationId && x.Id == req.AgentId, ct);
             lockedVault = await domainWriteContext.Vaults.SingleAsync(

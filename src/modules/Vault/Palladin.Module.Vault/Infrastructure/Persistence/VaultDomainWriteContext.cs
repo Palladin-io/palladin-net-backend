@@ -98,9 +98,11 @@ internal sealed class VaultDomainWriteContext(
     {
         if (writeContext.ChangeTracker.Entries<GranularGrant>().Count() > maximumGrants
             || writeContext.ChangeTracker.Entries<GrantEntryScope>().Count() > maximumGrants
-            || writeContext.ChangeTracker.Entries<GrantEntryEnvelope>().Count() > maximumGrants)
+            || writeContext.ChangeTracker.Entries<GrantEntryEnvelope>().Count() > maximumGrants
+            || writeContext.ChangeTracker.Entries<ScriptExecutionGrant>().Count() > maximumGrants
+            || writeContext.ChangeTracker.Entries<ScriptExecutionPackage>().Count() > maximumGrants)
         {
-            throw new InvalidOperationException("Full grant commit exceeded its bounded granular grant page.");
+            throw new InvalidOperationException("Full grant commit exceeded its bounded superseded grant page.");
         }
     }
 

@@ -335,6 +335,40 @@ public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
         grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
             organization.Id, vault.Id, grant.Id, entryId, grant.Methods));
         await apiFactory.Services.SeedGranularGrantAsync(grant);
+        var scriptGrantId = Guid.NewGuid();
+        var scriptGrant = ScriptExecutionGrant.CreateProactively(
+            scriptGrantId,
+            vault.Id,
+            organization.Id,
+            agent.Id,
+            agent.PublicKey,
+            entryId,
+            [ScriptExecutionScope.Create(organization.Id, vault.Id, scriptGrantId, entryId, 1, true)],
+            ScriptExecutionPackage.Create(
+                organization.Id,
+                vault.Id,
+                scriptGrantId,
+                agent.Id,
+                1,
+                entryId,
+                1,
+                1,
+                1,
+                1,
+                new byte[32],
+                1,
+                new byte[32],
+                new byte[32],
+                new byte[32],
+                new byte[64]),
+            null,
+            null,
+            "lifetime",
+            user.Id,
+            new GrantNames("agent", "script", "vault", "actor"),
+            apiFactory.FakeClock.GetCurrentInstant(),
+            1);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(scriptGrant);
         await client.POSTAsync<DeleteEntryEndpoint, ChangeEntryStateRequest, ChangeEntryStateResponse>(
             EntryEnvelopeFaker.CreateStateChangeRequest(
                 organization.Id,
@@ -371,6 +405,7 @@ public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
         (await readContext.EntryVersions.AnyAsync(x => x.EntryId == entryId)).ShouldBeFalse();
         (await readContext.EntryKeys.AnyAsync(x => x.EntryId == entryId)).ShouldBeFalse();
         (await readContext.GrantEntryScopes.AnyAsync(x => x.EntryId == entryId)).ShouldBeFalse();
+        (await readContext.ScriptExecutionScopes.AnyAsync(x => x.EntryId == entryId)).ShouldBeFalse();
         var persistedVault = await readContext.Vaults.SingleAsync(x => x.Id == vault.Id);
         persistedVault.MinRetainedMemberSequence.Value.ShouldBe(2UL);
         persistedVault.MinRetainedDiscoverySequence.Value.ShouldBe(2UL);

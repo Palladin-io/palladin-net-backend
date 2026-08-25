@@ -59,6 +59,11 @@ internal sealed class ScriptExecutionPackageContractValidator
             .Must(scopes => scopes.Select(scope => scope.EntryId).Distinct().Count() == scopes.Count)
             .WithMessage("Script execution scopes must contain unique Entry identifiers.");
         RuleFor(x => x.Scopes)
+            .Must(scopes => scopes.Select(scope => scope.EntryId).SequenceEqual(
+                scopes.Select(scope => scope.EntryId)
+                    .OrderBy(id => id.ToString("D"), StringComparer.Ordinal)))
+            .WithMessage("Script execution scopes must use canonical Entry identifier order.");
+        RuleFor(x => x.Scopes)
             .Must((contract, scopes) => scopes.Count(scope => scope.IsScript) == 1
                 && scopes.Single(scope => scope.IsScript).EntryId == contract.ScriptEntryId)
             .WithMessage("Script execution scopes must identify exactly one parent Script.");

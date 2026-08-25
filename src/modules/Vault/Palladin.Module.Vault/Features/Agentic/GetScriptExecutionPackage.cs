@@ -87,6 +87,7 @@ internal abstract record ScriptPackageDeliveryResult
 {
     internal sealed record Granted(
         string AuthorizationSource,
+        string AgentName,
         Guid GrantId,
         int QueryCount,
         int? QueryLimit,
@@ -125,6 +126,7 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                 && candidate.AccessEpoch == agentAccessEpoch)
             .Select(candidate => new
             {
+                candidate.Name,
                 candidate.RecipientKeyVersion,
                 candidate.PublicKey,
             })
@@ -248,7 +250,6 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                 .Where(scope => scope.OrganizationId == organizationId
                     && scope.VaultId == vaultId
                     && scope.GrantId == selected.Id)
-                .OrderBy(scope => scope.EntryId)
                 .ToListAsync(ct);
             if (package is null || vaultTrustAnchor is null || package.ScriptRevision != scriptRevision
                 || package.RecipientAgentKeyVersion != agent.RecipientKeyVersion
@@ -321,15 +322,39 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                 .OrderBy(entry => entry.Id)
                 .ToListAsync(ct);
             var entryIds = entries.Select(entry => entry.Id).ToArray();
-            var keys = await domainReadContext.EntryKeys
-                .Where(key => key.OrganizationId == organizationId
-                    && key.VaultId == vaultId
-                    && entryIds.Contains(key.EntryId))
+            var keys = await (
+                from key in domainReadContext.EntryKeys
+                join entry in domainReadContext.Entries
+                    on new { key.OrganizationId, key.VaultId, key.EntryId, key.KeyVersion }
+                    equals new
+                    {
+                        entry.OrganizationId,
+                        entry.VaultId,
+                        EntryId = entry.Id,
+                        KeyVersion = entry.CurrentKeyVersion,
+                    }
+                where entry.OrganizationId == organizationId
+                    && entry.VaultId == vaultId
+                    && entry.State == EntryState.Active
+                    && entryIds.Contains(entry.Id)
+                select key)
                 .ToListAsync(ct);
-            var versions = await domainReadContext.EntryVersions
-                .Where(version => version.OrganizationId == organizationId
-                    && version.VaultId == vaultId
-                    && entryIds.Contains(version.EntryId))
+            var versions = await (
+                from version in domainReadContext.EntryVersions
+                join entry in domainReadContext.Entries
+                    on new { version.OrganizationId, version.VaultId, version.EntryId, version.Revision }
+                    equals new
+                    {
+                        entry.OrganizationId,
+                        entry.VaultId,
+                        EntryId = entry.Id,
+                        Revision = entry.CurrentRevision,
+                    }
+                where entry.OrganizationId == organizationId
+                    && entry.VaultId == vaultId
+                    && entry.State == EntryState.Active
+                    && entryIds.Contains(entry.Id)
+                select version)
                 .ToListAsync(ct);
 
             var result = new List<ScriptExecutionVaultEntryContract>(entries.Count);
@@ -406,6 +431,7 @@ internal sealed class ScriptExecutionPackageDeliveryService(
 
         return new ScriptPackageDeliveryResult.Granted(
             authorizationSource,
+            agent.Name ?? CredentialAccessedEvent.UnknownAgent,
             selected.Id,
             newCount.Value,
             selected.QueryLimit,
@@ -492,6 +518,18 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                         AND entry."State" = {(int)EntryState.Active}
                        WHERE entry."Id" IS NULL
                           OR entry."CurrentRevision" <> snapshot."EntryRevision")
+                   AND (
+                       {authorizationSource} <> 'full'
+                       OR NOT EXISTS (
+                           SELECT 1
+                           FROM "VaultEntries" AS active_entry
+                           WHERE active_entry."OrganizationId" = {organizationId}
+                             AND active_entry."VaultId" = {vaultId}
+                             AND active_entry."State" = {(int)EntryState.Active}
+                             AND NOT EXISTS (
+                                 SELECT 1
+                                 FROM snapshot
+                                 WHERE snapshot."EntryId" = active_entry."Id")))
                    AND (
                        ({authorizationSource} = 'scriptExecution'
                         AND EXISTS (
@@ -640,7 +678,7 @@ internal sealed class GetScriptExecutionPackageEndpoint(
             agentId.Value,
             req.ScriptEntryId,
             granted.AuthorizationSource == "full" ? GrantType.Full : GrantType.ScriptExecution,
-            CredentialAccessedEvent.UnknownAgent,
+            granted.AgentName,
             string.Empty,
             string.Empty,
             granted.ExpiresAt,

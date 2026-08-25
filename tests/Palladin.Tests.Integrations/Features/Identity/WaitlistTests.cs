@@ -68,9 +68,10 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
         // Then — the waiter refreshes its stale aggregate and issues the same elevated session state.
         completedBeforeLockReleased.ShouldBeFalse();
         firstEndsAt.ShouldNotBeNull();
-        secondEndsAt.ShouldBe(firstEndsAt);
+        var storedEndsAt = TruncateToMicroseconds(firstEndsAt.Value);
+        secondEndsAt.ShouldBe(storedEndsAt);
         secondUser.WaitlistDeveloperBenefitStartedAt.ShouldNotBeNull();
-        secondUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(firstEndsAt);
+        secondUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(storedEndsAt);
     }
 
     [Fact]

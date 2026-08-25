@@ -307,7 +307,7 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_AgentDeactivated_Then_CascadeRevokesActiveGrants()
+    public async Task When_AgentDeactivated_Then_CascadeRevokesActiveGrantsAndDeletesAgentMaterial()
     {
         // Given
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -316,6 +316,9 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
 
         var activeGrant = await apiFactory.Services.SeedGranularGrantAsync(
             GrantFaker.CreateGranular(vaultId: vault.Id, organizationId: organization.Id, agentId: agent.Id,
+                createdBy: user.Id, status: GrantStatus.Active).Generate());
+        var activeFullGrant = await apiFactory.Services.SeedFullGrantAsync(
+            GrantFaker.CreateFull(vaultId: vault.Id, organizationId: organization.Id, agentId: agent.Id,
                 createdBy: user.Id, status: GrantStatus.Active).Generate());
         var alreadyRevoked = await apiFactory.Services.SeedGranularGrantAsync(
             GrantFaker.CreateGranular(vaultId: vault.Id, organizationId: organization.Id, agentId: agent.Id,
@@ -341,8 +344,17 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
         revoked.RevokedBySystem.ShouldBeTrue();
         revoked.RevokedBy.ShouldBeNull();
 
+        var revokedFull = await readContext.Grants.FirstAsync(g => g.Id == activeFullGrant.Id);
+        revokedFull.Status.ShouldBe(GrantStatus.Revoked);
+        (await readContext.AgentWrappedVaultKeys.CountAsync(x => x.GrantId == activeFullGrant.Id))
+            .ShouldBe(0);
+
         var untouched = await readContext.Grants.FirstAsync(g => g.Id == alreadyRevoked.Id);
         untouched.RevokedBySystem.ShouldBeFalse();
+
+        await apiFactory.Services.SeedFullGrantAsync(
+            GrantFaker.CreateFull(vaultId: vault.Id, organizationId: organization.Id, agentId: agent.Id,
+                createdBy: user.Id, status: GrantStatus.Active).Generate());
     }
 
     [Fact]

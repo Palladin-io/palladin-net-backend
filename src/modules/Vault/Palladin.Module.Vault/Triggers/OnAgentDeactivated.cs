@@ -57,6 +57,7 @@ internal sealed class OnAgentDeactivated(
         {
             var query = domainWriteContext.Grants
                 .Include(g => g.EncryptedReason)
+                .Include(g => g.AgentWrappedVaultKey)
                 .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
                 .Where(g => g.OrganizationId == msg.OrganizationId && g.AgentId == msg.AgentId)
                 .Where(g => g.AgentAccessEpoch <= msg.AccessEpoch)

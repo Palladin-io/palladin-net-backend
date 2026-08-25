@@ -181,6 +181,8 @@ internal sealed class OAuthAuthenticateEndpoint(
         domainWriteContext.Add(user);
 
         domainWriteContext.Add(OrganizationMember.CreateOwner(orgId, userId, adminRole, now));
+        domainWriteContext.Add(OrganizationMemberDirectoryEntry.Create(
+            orgId, userId, displayName, now));
 
         var connectionId = guidProvider.Generate();
         var oauthConnection = OAuthConnection.Create(connectionId, userId, authProvider, externalUser.SubjectId, externalUser.Email, now);

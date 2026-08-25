@@ -13,6 +13,7 @@ internal sealed class IdentityDomainWriteContext(
     public IQueryable<Organization> Organizations => Track<Organization>();
     public IQueryable<Role> Roles => Track<Role>();
     public IQueryable<OrganizationMember> OrganizationMembers => Track<OrganizationMember>();
+    public IQueryable<OrganizationMemberDirectoryEntry> OrganizationMemberDirectoryEntries => Track<OrganizationMemberDirectoryEntry>();
     public IQueryable<OrganizationMemberRole> OrganizationMemberRoles => Track<OrganizationMemberRole>();
     public IQueryable<OrganizationInvitation> OrganizationInvitations => Track<OrganizationInvitation>();
     public IQueryable<OAuthConnection> OAuthConnections => Track<OAuthConnection>();

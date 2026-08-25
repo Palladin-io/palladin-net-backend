@@ -151,6 +151,18 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             invitation.OrganizationId, user.Id, invitation.Role,
             user.DisplayName, user.Email, now, authorizationVersion);
         domainWriteContext.Add(member);
+        var directoryEntry = await domainWriteContext.OrganizationMemberDirectoryEntries
+            .SingleOrDefaultAsync(entry => entry.OrganizationId == invitation.OrganizationId
+                                           && entry.UserId == user.Id, ct);
+        if (directoryEntry is null)
+        {
+            domainWriteContext.Add(OrganizationMemberDirectoryEntry.Create(
+                invitation.OrganizationId, user.Id, user.DisplayName, now));
+        }
+        else
+        {
+            directoryEntry.Refresh(user.DisplayName, now);
+        }
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
             organization.Id,

@@ -250,6 +250,36 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task FullGrantSupersede_PagesLargeGranularHistoryAtomically()
+    {
+        var setup = await ArrangeAsync();
+        var granular = Enumerable.Range(0, 101)
+            .Select(_ => GrantFaker.CreateGranular(
+                vaultId: setup.VaultId,
+                organizationId: setup.OrganizationId,
+                agentId: setup.AgentId,
+                entryId: setup.EntryId).Generate())
+            .ToArray();
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = seedScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+            writeContext.AddRange(granular);
+            await writeContext.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        var request = FullRequest(setup);
+        var (response, _) = await setup.Client
+            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var assertionScope = apiFactory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.CountAsync(g => granular.Select(item => item.Id).Contains(g.Id)
+                                         && g.Status == GrantStatus.Revoked)).ShouldBe(101);
+        (await db.AgentWrappedVaultKeys.CountAsync(x => x.GrantId == request.GrantId)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task ProactiveFullGrant_WithMultipleCurrentEntries_CreatesSingleVaultKeyWrapper()
     {
         var setup = await ArrangeAsync();

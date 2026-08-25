@@ -114,10 +114,7 @@ public sealed class GetOrRequestCredentialTests(ApiFactory apiFactory) : TestBas
             agentId: setup.AgentId,
             status: GrantStatus.Consumed,
             createdAt: now).Generate();
-        var durableScope = GrantEnvelopeTestData.Scope(
-            setup.OrganizationId, setup.VaultId, consumed.Id, setup.EntryId, consumed.Methods);
-        durableScope.DeleteEnvelope();
-        consumed.GrantEntryScopes.Add(durableScope);
+        consumed.DeleteAgentEnvelopes();
         await apiFactory.Services.SeedFullGrantAsync(consumed);
 
         var (response, result) = await setup.Client

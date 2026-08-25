@@ -186,7 +186,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
                         && g.AgentId == agentId.Value
                         && g.AgentAccessEpoch == agent.AccessEpoch
                         && g.VaultId == req.VaultId
-                        && ((g is FullGrant && g.AgentWrappedVaultKey != null)
+                        && ((g is FullGrant)
                             || (g is GranularGrant && ((GranularGrant)g).EntryId == req.EntryId)))
             .Select(g => new
             {

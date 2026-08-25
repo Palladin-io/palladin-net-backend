@@ -238,6 +238,11 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.Property<int>("ProtocolVersion")
                         .HasColumnType("integer");
 
+                    b.Property<byte[]>("ProducerSignature")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("bytea");
+
                     b.Property<byte[]>("RecipientAgentKeyFingerprint")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -248,6 +253,15 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(10,0)");
 
                     b.Property<decimal>("VaultKeyVersion")
+                        .HasPrecision(10)
+                        .HasColumnType("numeric(10,0)");
+
+                    b.Property<byte[]>("VaultSigningKeyFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<decimal>("VaultSigningKeyVersion")
                         .HasPrecision(10)
                         .HasColumnType("numeric(10,0)");
 

@@ -123,8 +123,8 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
             candidate => candidate.Id == user.Id,
             TestContext.Current.CancellationToken);
         entry.DeveloperBenefitUserId.ShouldBe(user.Id);
-        entry.DeveloperBenefitEndsAt.ShouldBe(expectedEndsAt);
-        persistedUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(expectedEndsAt);
+        entry.DeveloperBenefitEndsAt.ShouldBe(TruncateToMicroseconds(expectedEndsAt));
+        persistedUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(TruncateToMicroseconds(expectedEndsAt));
     }
 
     [Fact]
@@ -179,5 +179,11 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
             .WaitlistEntries.Where(x => x.Email == email)
             .Select(x => x.TokenHash)
             .SingleAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static Instant TruncateToMicroseconds(Instant value)
+    {
+        var ticks = value.ToUnixTimeTicks();
+        return Instant.FromUnixTimeTicks(ticks - ticks % 10);
     }
 }

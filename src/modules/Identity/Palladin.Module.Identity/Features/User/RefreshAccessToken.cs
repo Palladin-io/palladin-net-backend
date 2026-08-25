@@ -4,6 +4,7 @@ using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Options;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Jwt;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using FastEndpoints;
 using FluentValidation;
@@ -45,6 +46,7 @@ internal sealed class RefreshAccessTokenEndpoint(
     ITokenService tokenService,
     IGuidProvider guidProvider,
     IClock clock,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IOptions<JwtOptions> jwtOptions) : Endpoint<RefreshAccessTokenRequest, RefreshAccessTokenResponse>
 {
     public override void Configure()
@@ -111,6 +113,9 @@ internal sealed class RefreshAccessTokenEndpoint(
             return;
         }
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
+
         var organizationPlan = await domainWriteContext.Organizations
             .Where(o => o.Id == existingToken.OrganizationId)
             .Select(o => o.PlanType)
@@ -145,9 +150,9 @@ internal sealed class RefreshAccessTokenEndpoint(
             domainWriteContext.Add(newRefreshToken);
 
             rawRefreshToken = newRawToken;
-
-            await domainWriteContext.CommitAsync(ct);
         }
+
+        await domainWriteContext.CommitAsync(transaction, ct);
 
         await Send.OkAsync(new RefreshAccessTokenResponse(
             accessToken,

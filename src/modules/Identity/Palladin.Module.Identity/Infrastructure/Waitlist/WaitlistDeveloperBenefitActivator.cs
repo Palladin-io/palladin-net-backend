@@ -8,23 +8,20 @@ namespace Palladin.Module.Identity.Infrastructure.Waitlist;
 internal sealed class WaitlistDeveloperBenefitActivator(
     IdentityDomainWriteContext domainWriteContext)
 {
+    // Every caller must hold an explicit transaction until its domain commit. Locking the shared
+    // waitlist row serializes account verification, waitlist verification, OAuth account creation,
+    // and history fallback so two independently committed opt-ins cannot both miss activation.
     internal async Task<Instant?> TryActivateAsync(
         User user,
         Instant now,
         CancellationToken cancellationToken)
     {
-        if (!user.EmailVerified)
-        {
-            return null;
-        }
-
         if (user.WaitlistDeveloperBenefitStartedAt is not null)
         {
             return user.ActiveWaitlistDeveloperBenefitEndsAt(now);
         }
 
-        var entry = await domainWriteContext.WaitlistEntries
-            .FirstOrDefaultAsync(candidate => candidate.Email == user.Email, cancellationToken);
+        var entry = await LockEntryAsync(user.Email, cancellationToken);
         return TryActivate(user, entry, now);
     }
 
@@ -33,9 +30,26 @@ internal sealed class WaitlistDeveloperBenefitActivator(
         Instant now,
         CancellationToken cancellationToken)
     {
+        var lockedEntry = await LockEntryAsync(entry.Email, cancellationToken);
         var user = await domainWriteContext.Users
             .FirstOrDefaultAsync(candidate => candidate.Email == entry.Email, cancellationToken);
-        return TryActivate(user, entry, now);
+        return TryActivate(user, lockedEntry, now);
+    }
+
+    private async Task<WaitlistEntry?> LockEntryAsync(
+        string normalizedEmail,
+        CancellationToken cancellationToken)
+    {
+        var entries = await domainWriteContext
+            .FromSqlInterpolated<WaitlistEntry>(
+                $"""
+                 SELECT *
+                 FROM "WaitlistEntries"
+                 WHERE "Email" = {normalizedEmail}
+                 FOR UPDATE
+                 """)
+            .ToListAsync(cancellationToken);
+        return entries.SingleOrDefault();
     }
 
     private static Instant? TryActivate(User? user, WaitlistEntry? entry, Instant now)

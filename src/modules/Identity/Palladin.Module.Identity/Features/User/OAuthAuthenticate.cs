@@ -108,6 +108,7 @@ internal sealed class OAuthAuthenticateEndpoint(
         var now = clock.GetCurrentInstant();
         var platform = transportContext.Platform ?? "unknown";
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         // A (provider, subject) connection match takes precedence over an email-only match.
         var user = await domainWriteContext.Users
             .Include(u => u.OrganizationMemberships)
@@ -175,7 +176,7 @@ internal sealed class OAuthAuthenticateEndpoint(
             authorizationVersion, refreshTokenExpiresAt, now);
         domainWriteContext.Add(refreshToken);
 
-        await domainWriteContext.CommitAsync(ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
 
         await Send.OkAsync(new OAuthAuthenticateResponse(
             accessToken,

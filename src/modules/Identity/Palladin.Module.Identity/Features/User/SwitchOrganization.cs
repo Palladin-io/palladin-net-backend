@@ -1,6 +1,7 @@
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
@@ -28,6 +29,7 @@ internal sealed class SwitchOrganizationValidator : Validator<SwitchOrganization
 internal sealed class SwitchOrganizationEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IAuthSessionIssuer sessionIssuer,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IClock clock) : Endpoint<SwitchOrganizationRequest, AuthSessionResponse>
 {
     public override void Configure()
@@ -67,6 +69,8 @@ internal sealed class SwitchOrganizationEndpoint(
 
         var permissions = member.EffectivePermissions();
         var now = clock.GetCurrentInstant();
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(member.User, now, ct);
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             member.User,
             member.OrganizationId,
@@ -74,7 +78,7 @@ internal sealed class SwitchOrganizationEndpoint(
             member.Organization.PlanType,
             member.AuthorizationVersion,
             now);
-        await domainWriteContext.CommitAsync(ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
 
         await Send.OkAsync(new AuthSessionResponse(
             accessToken,

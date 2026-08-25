@@ -2,6 +2,7 @@ using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
@@ -18,6 +19,76 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_BothOptInsVerifyConcurrently_Then_SharedFenceActivatesBenefitOnce()
+    {
+        // Given — account and waitlist start unverified, with the eligible entry created first.
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var email = $"waitlist-race-{Guid.NewGuid():N}@example.com";
+        var entryId = await SeedEntryAsync(
+            $"token-{Guid.NewGuid():N}",
+            now - Duration.FromHours(1),
+            email);
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            new byte[32],
+            email: email,
+            emailVerified: false);
+
+        await using var accountScope = apiFactory.Services.CreateAsyncScope();
+        var accountContext = accountScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var accountActivator = accountScope.ServiceProvider
+            .GetRequiredService<WaitlistDeveloperBenefitActivator>();
+        await using var accountTransaction = await accountContext.BeginTransactionAsync(cancellationToken);
+        var accountUser = await accountContext.Users.SingleAsync(
+            candidate => candidate.Id == user.Id,
+            cancellationToken);
+        accountUser.MarkEmailVerified(now);
+        (await accountActivator.TryActivateAsync(accountUser, now, cancellationToken)).ShouldBeNull();
+
+        var contenderStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waitlistVerification = Task.Run(async () =>
+        {
+            await using var waitlistScope = apiFactory.Services.CreateAsyncScope();
+            var waitlistContext = waitlistScope.ServiceProvider
+                .GetRequiredService<IdentityDomainWriteContext>();
+            var waitlistActivator = waitlistScope.ServiceProvider
+                .GetRequiredService<WaitlistDeveloperBenefitActivator>();
+            await using var waitlistTransaction = await waitlistContext.BeginTransactionAsync(cancellationToken);
+            var waitlistEntry = await waitlistContext.WaitlistEntries.SingleAsync(
+                candidate => candidate.Id == entryId,
+                cancellationToken);
+            waitlistEntry.Verify(now);
+            contenderStarted.SetResult();
+            await waitlistActivator.TryActivateAsync(waitlistEntry, now, cancellationToken);
+            await waitlistContext.CommitAsync(waitlistTransaction, cancellationToken);
+        }, cancellationToken);
+
+        await contenderStarted.Task.WaitAsync(cancellationToken);
+        var completedBeforeLockReleased = await Task.WhenAny(
+            waitlistVerification,
+            Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken)) == waitlistVerification;
+
+        await accountContext.CommitAsync(accountTransaction, cancellationToken);
+        await waitlistVerification;
+
+        // Then — the second verifier waited for the shared row, re-read the committed account state,
+        // and performed the only claim instead of leaving two verified records without a benefit.
+        completedBeforeLockReleased.ShouldBeFalse();
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = verificationScope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var persistedEntry = await readContext.WaitlistEntries.SingleAsync(
+            candidate => candidate.Id == entryId,
+            cancellationToken);
+        var persistedUser = await readContext.Users.SingleAsync(
+            candidate => candidate.Id == user.Id,
+            cancellationToken);
+        persistedEntry.VerifiedAt.ShouldNotBeNull();
+        persistedEntry.DeveloperBenefitUserId.ShouldBe(user.Id);
+        persistedUser.EmailVerified.ShouldBeTrue();
+        persistedUser.WaitlistDeveloperBenefitStartedAt.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task When_JoiningWaitlist_Then_PendingEntryCreated()
     {

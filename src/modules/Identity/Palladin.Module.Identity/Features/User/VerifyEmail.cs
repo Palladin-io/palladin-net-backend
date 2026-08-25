@@ -60,6 +60,7 @@ internal sealed class VerifyEmailEndpoint(
         var tokenHash = SecureToken.Hash(req.Token);
         var now = clock.GetCurrentInstant();
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         var token = await domainWriteContext.VerificationTokens
             .Include(t => t.User)
             .FirstOrDefaultAsync(
@@ -82,7 +83,7 @@ internal sealed class VerifyEmailEndpoint(
         token.Consume(now);
         token.User.MarkEmailVerified(now);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(token.User, now, ct);
-        await domainWriteContext.CommitAsync(ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
 
         await Send.OkAsync(new VerifyEmailResponse(
             "verified",

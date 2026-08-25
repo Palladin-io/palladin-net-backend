@@ -57,6 +57,7 @@ internal sealed class VerifyWaitlistEndpoint(
 
         var now = clock.GetCurrentInstant();
         var tokenHash = TokenService.HashToken(req.Token.Trim());
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         var entry = await domainWriteContext.WaitlistEntries.FirstOrDefaultAsync(x => x.TokenHash == tokenHash, ct);
 
         if (entry is null || !entry.CanVerify(now))
@@ -67,7 +68,7 @@ internal sealed class VerifyWaitlistEndpoint(
 
         entry.Verify(now);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(entry, now, ct);
-        await domainWriteContext.CommitAsync(ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
 
         await Send.RedirectAsync(opts.VerifiedRedirectUrl, allowRemoteRedirects: true);
     }

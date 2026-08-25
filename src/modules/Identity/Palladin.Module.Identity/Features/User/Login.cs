@@ -193,6 +193,7 @@ internal sealed class LoginEndpoint(
             return;
         }
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
@@ -204,7 +205,7 @@ internal sealed class LoginEndpoint(
             now);
         try
         {
-            await domainWriteContext.CommitAsync(ct);
+            await domainWriteContext.CommitAsync(transaction, ct);
         }
         catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception))
         {

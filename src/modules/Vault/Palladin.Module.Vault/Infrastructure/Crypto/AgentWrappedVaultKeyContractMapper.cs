@@ -17,7 +17,10 @@ internal static class AgentWrappedVaultKeyContractMapper
         uint agentAccessEpoch,
         uint vaultKeyVersion,
         uint recipientAgentKeyVersion,
-        byte[] recipientAgentKeyFingerprint)
+        byte[] recipientAgentKeyFingerprint,
+        uint expectedSigningKeyVersion,
+        byte[] expectedSigningKeyFingerprint,
+        byte[] expectedSigningPublicKey)
     {
         var descriptor = contract.WrappedVaultKey.Descriptor;
         if (descriptor.ProtocolVersion != VaultProtocol.CurrentVersion
@@ -44,6 +47,12 @@ internal static class AgentWrappedVaultKeyContractMapper
         {
             throw new DomainException("Agent Vault-key wrapper recipient is invalid or stale.");
         }
+
+        AgentWrappedVaultKeyCryptoValidator.ValidateProducer(
+            contract,
+            expectedSigningKeyVersion,
+            expectedSigningKeyFingerprint,
+            expectedSigningPublicKey);
 
         return AgentWrappedVaultKey.Create(
             organizationId,

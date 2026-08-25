@@ -155,9 +155,33 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                             || x.Kind == VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor))
             .ToListAsync(ct);
         var rotatesVaultKey = rotation.Scope.HasFlag(VaultKeyRotationScope.VaultKey);
+        var rotatesManifestSigning = rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning);
+        var rotatesFullGrantWrappers = rotatesVaultKey || rotatesManifestSigning;
         var rotatesAgentProjection = rotation.Scope.HasFlag(VaultKeyRotationScope.Vdk)
                                      || rotation.Scope.HasFlag(VaultKeyRotationScope.AgentMessage)
-                                     || rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning);
+                                     || rotatesManifestSigning;
+        var trustAnchors = globalItems
+            .Where(x => x.Kind == VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor)
+            .ToDictionary(x => (VaultPublicKeyKindContract)x.SubjectVersion,
+                x => VaultPreparedPayloadCodec.Decode<VaultPublicKeyContract>(x.Payload));
+        ValidatedVaultPublicKey? manifestSigningPublicKey = null;
+        if (rotatesManifestSigning
+            && trustAnchors.TryGetValue(
+                VaultPublicKeyKindContract.ManifestSigningEd25519,
+                out var manifestSigningContract))
+        {
+            manifestSigningPublicKey = VaultEnvelopeContractMapper.ToDomain(
+                manifestSigningContract,
+                VaultPublicKeyKindContract.ManifestSigningEd25519,
+                rotation.TargetKeyEpoch.ManifestSigningKeyVersion.Value);
+        }
+        var wrapperSigningAnchor = rotatesManifestSigning
+            ? manifestSigningPublicKey
+            : new ValidatedVaultPublicKey(
+                VaultPublicKeyKind.ManifestSigningEd25519,
+                vault.CurrentManifestSigningKeyVersion.Value,
+                vault.ManifestSigningPublicKey,
+                vault.ManifestSigningKeyFingerprint);
         var memberCoverage = rotatesVaultKey
             ? await InspectMemberCoverageAsync(
                 organizationId, req.VaultId, req.RotationId, rotation.ExcludedMemberId, ct)
@@ -166,10 +190,14 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             ? await InspectAgentCoverageAsync(
                 organizationId, req.VaultId, req.RotationId, rotation.ExcludedAgentId, ct)
             : AgentCoverage.Complete;
-        var fullGrantCoverage = rotatesVaultKey
+        var fullGrantCoverage = rotatesFullGrantWrappers && wrapperSigningAnchor is not null
             ? await InspectFullGrantCoverageAsync(
                 organizationId, req.VaultId, req.RotationId, rotation.ExcludedAgentId,
-                rotation.TargetKeyEpoch.VaultKeyVersion.Value, ct)
+                rotation.TargetKeyEpoch.VaultKeyVersion.Value,
+                wrapperSigningAnchor.Version,
+                wrapperSigningAnchor.Fingerprint,
+                wrapperSigningAnchor.PublicKey,
+                ct)
             : FullGrantCoverage.Complete;
         var entryCoverage = await InspectEntryCoverageAsync(
             organizationId, req.VaultId, req.RotationId, rotatesVaultKey,
@@ -198,21 +226,11 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             .Where(x => x.Kind == VaultKeyRotationPreparedItemKind.VaultKeyMaterial)
             .Select(DecodeKeyMaterial)
             .ToArray();
-        var trustAnchors = globalItems
-            .Where(x => x.Kind == VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor)
-            .ToDictionary(x => (VaultPublicKeyKindContract)x.SubjectVersion,
-                x => VaultPreparedPayloadCodec.Decode<VaultPublicKeyContract>(x.Payload));
         var agentMessagePublicKey = rotation.Scope.HasFlag(VaultKeyRotationScope.AgentMessage)
             ? VaultEnvelopeContractMapper.ToDomain(
                 trustAnchors[VaultPublicKeyKindContract.AgentMessageX25519],
                 VaultPublicKeyKindContract.AgentMessageX25519,
                 rotation.TargetKeyEpoch.AgentMessageKeyVersion.Value)
-            : null;
-        var manifestSigningPublicKey = rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning)
-            ? VaultEnvelopeContractMapper.ToDomain(
-                trustAnchors[VaultPublicKeyKindContract.ManifestSigningEd25519],
-                VaultPublicKeyKindContract.ManifestSigningEd25519,
-                rotation.TargetKeyEpoch.ManifestSigningKeyVersion.Value)
             : null;
         var targetMemberKeyGeneration = rotation.TargetMemberKeyGeneration;
         var targetKeyEpoch = rotation.TargetKeyEpoch;
@@ -224,9 +242,17 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             await ApplyMemberRotationPagesAsync(
                 organizationId, req.VaultId, req.RotationId,
                 targetMemberKeyGeneration, targetKeyEpoch.VaultKeyVersion, rotation.ExcludedMemberId, ct);
+        }
+        if (rotatesFullGrantWrappers)
+        {
             await ApplyFullGrantRotationPagesAsync(
                 organizationId, req.VaultId, req.RotationId,
-                targetKeyEpoch.VaultKeyVersion.Value, rotation.ExcludedAgentId, ct);
+                targetKeyEpoch.VaultKeyVersion.Value,
+                rotation.ExcludedAgentId,
+                wrapperSigningAnchor!.Version,
+                wrapperSigningAnchor.Fingerprint,
+                wrapperSigningAnchor.PublicKey,
+                ct);
         }
         var agentManifest = rotatesAgentProjection
             ? await ApplyAgentRotationPagesAsync(
@@ -613,6 +639,9 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         Guid rotationId,
         Guid? excludedAgentId,
         uint targetVaultKeyVersion,
+        uint expectedSigningKeyVersion,
+        byte[] expectedSigningKeyFingerprint,
+        byte[] expectedSigningPublicKey,
         CancellationToken cancellationToken)
     {
         var missing = new List<Guid>();
@@ -675,7 +704,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                     _ = AgentWrappedVaultKeyContractMapper.ToDomain(
                         VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
                         organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
-                        targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint);
+                        targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint,
+                        expectedSigningKeyVersion,
+                        expectedSigningKeyFingerprint,
+                        expectedSigningPublicKey);
                 }
                 catch (Exception ex) when (ex is DomainException or FormatException)
                 {
@@ -701,6 +733,9 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         Guid rotationId,
         uint targetVaultKeyVersion,
         Guid? excludedAgentId,
+        uint expectedSigningKeyVersion,
+        byte[] expectedSigningKeyFingerprint,
+        byte[] expectedSigningPublicKey,
         CancellationToken cancellationToken)
     {
         Guid? lastGrantId = null;
@@ -741,7 +776,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 var replacement = AgentWrappedVaultKeyContractMapper.ToDomain(
                     VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
                     organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
-                    targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint);
+                    targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint,
+                    expectedSigningKeyVersion,
+                    expectedSigningKeyFingerprint,
+                    expectedSigningPublicKey);
                 grant.AgentWrappedVaultKey!.ReplaceWith(replacement);
             }
 

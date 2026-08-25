@@ -133,8 +133,9 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
     {
         var organizationId = User.GetOrganizationId()!.Value;
         var userId = User.GetUserId()!.Value;
-        if (await domainWriteContext.Vaults.SingleOrDefaultAsync(
-                x => x.OrganizationId == organizationId && x.Id == req.VaultId, ct) is null)
+        var vault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId && x.Id == req.VaultId, ct);
+        if (vault is null)
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -159,13 +160,17 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
         rotation.AssertLease(userId, req.FencingToken, now);
         rotation.FencePreparation();
         var rotatesVaultKey = rotation.Scope.HasFlag(VaultKeyRotationScope.VaultKey);
+        var rotatesManifestSigning = rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning);
         var rotatesVdk = rotation.Scope.HasFlag(VaultKeyRotationScope.Vdk);
         var rotatesAgentProjection = rotatesVdk
                                      || rotation.Scope.HasFlag(VaultKeyRotationScope.AgentMessage)
                                      || rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning);
-        if ((!rotatesVaultKey
+        if ((!(rotatesVaultKey || rotatesManifestSigning)
              && (req.MemberVaultMetadata is not null || req.MemberVaultKeys.Count > 0
                  || req.EntryKeys.Count > 0 || req.AgentWrappedVaultKeys.Count > 0))
+            || (!rotatesVaultKey
+                && (req.MemberVaultMetadata is not null || req.MemberVaultKeys.Count > 0
+                    || req.EntryKeys.Count > 0))
             || (!rotatesVdk && req.EntryDiscoveries.Count > 0)
             || (!rotatesAgentProjection && req.AgentDiscoveries.Count > 0)
             || (req.DiscoveryKey is not null && !IsKeyMaterialInScope(VaultKeyMaterialKind.DiscoveryKey, rotation.Scope))
@@ -258,6 +263,44 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
 
         if (req.AgentWrappedVaultKeys.Count > 0)
         {
+            ValidatedVaultPublicKey signingAnchor;
+            if (rotatesManifestSigning)
+            {
+                var signingAnchorContract = req.VaultManifestSigningPublicKey;
+                if (signingAnchorContract is null)
+                {
+                    var payload = await domainWriteContext.VaultKeyRotationPreparedItems
+                        .AsNoTracking()
+                        .Where(x => x.OrganizationId == organizationId
+                            && x.VaultId == req.VaultId
+                            && x.RotationId == req.RotationId
+                            && x.Kind == VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor
+                            && x.SubjectVersion == (ulong)VaultPublicKeyKindContract.ManifestSigningEd25519)
+                        .Select(x => x.Payload)
+                        .SingleOrDefaultAsync(ct);
+                    if (payload is null)
+                    {
+                        throw new DomainException(
+                            "Prepare the target Manifest-signing trust anchor before Agent Vault-key wrappers.");
+                    }
+
+                    signingAnchorContract = VaultPreparedPayloadCodec.Decode<VaultPublicKeyContract>(payload);
+                }
+
+                signingAnchor = VaultEnvelopeContractMapper.ToDomain(
+                    signingAnchorContract,
+                    VaultPublicKeyKindContract.ManifestSigningEd25519,
+                    rotation.TargetKeyEpoch.ManifestSigningKeyVersion.Value);
+            }
+            else
+            {
+                signingAnchor = new ValidatedVaultPublicKey(
+                    VaultPublicKeyKind.ManifestSigningEd25519,
+                    vault.CurrentManifestSigningKeyVersion.Value,
+                    vault.ManifestSigningPublicKey,
+                    vault.ManifestSigningKeyFingerprint);
+            }
+
             var grantIds = req.AgentWrappedVaultKeys.Select(x => x.GrantId).Distinct().ToArray();
             var grants = await domainWriteContext.Grants
                 .OfType<FullGrant>()
@@ -286,7 +329,10 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                 _ = AgentWrappedVaultKeyContractMapper.ToDomain(
                     contract, organizationId, req.VaultId, grant.Id, grant.AgentId,
                     grant.AgentAccessEpoch, rotation.TargetKeyEpoch.VaultKeyVersion.Value,
-                    agent.RecipientKeyVersion, fingerprint);
+                    agent.RecipientKeyVersion, fingerprint,
+                    signingAnchor.Version,
+                    signingAnchor.Fingerprint,
+                    signingAnchor.PublicKey);
                 accepted += Prepare(rotation, VaultKeyRotationPreparedItemKind.AgentWrappedVaultKey,
                     grant.Id, 0, rotation.BaseKeyEpoch.VaultKeyVersion.Value, contract,
                     userId, req.FencingToken, now);

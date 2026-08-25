@@ -4,6 +4,7 @@ using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Shared;
+using Palladin.Tests.Integrations.Shared.Fakers;
 
 namespace Palladin.Tests.Integrations.Shared;
 
@@ -151,6 +152,44 @@ internal static class GrantEnvelopeTestData
             recipientAgentKeyVersion,
             fingerprint,
             [.. Enumerable.Range(0, 120).Select(i => (byte)i)]);
+    }
+
+    internal static AgentWrappedVaultKeyContract AgentVaultKeyContract(
+        Guid organizationId,
+        Guid vaultId,
+        Guid grantId,
+        Guid agentId,
+        uint agentAccessEpoch = 1,
+        uint vaultKeyVersion = 1,
+        uint recipientAgentKeyVersion = 1,
+        string? agentPublicKey = null,
+        uint vaultSigningKeyVersion = 1,
+        bool rotatedSigningKey = false)
+    {
+        var signingPublicKey = rotatedSigningKey
+            ? VaultTrustAnchorFaker.RotatedManifestSigningPublicKey
+            : VaultTrustAnchorFaker.ManifestSigningPublicKey;
+        var unsigned = AgentWrappedVaultKeyContractMapper.ToContract(AgentWrappedVaultKey.Create(
+            organizationId,
+            vaultId,
+            grantId,
+            agentId,
+            agentAccessEpoch,
+            VaultProtocol.CurrentVersion,
+            X25519SealedBoxContract.SuiteId,
+            vaultKeyVersion,
+            recipientAgentKeyVersion,
+            VaultKeyFingerprint.Compute(
+                Convert.FromBase64String(agentPublicKey ?? Convert.ToBase64String(new byte[32])),
+                VaultKeyKind.AgentX25519),
+            [.. Enumerable.Range(0, 120).Select(i => (byte)i)],
+            vaultSigningKeyVersion,
+            VaultKeyFingerprint.Compute(signingPublicKey, VaultKeyKind.VaultSigningEd25519),
+            new byte[64]));
+        var signature = VaultTrustAnchorFaker.SignWithManifestKey(
+            AgentWrappedVaultKeyCryptoValidator.BuildSignatureInput(unsigned),
+            rotatedSigningKey);
+        return unsigned with { ProducerSignature = WebEncoders.Base64UrlEncode(signature) };
     }
 
     private static string Base64Url(int length) =>

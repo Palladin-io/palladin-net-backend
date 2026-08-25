@@ -149,9 +149,20 @@ internal sealed class EntryLifecycleService(
                             || x.ScriptExecutionScopes.Any(scope => scope.EntryId == request.EntryId)
                             || (x is GranularGrant && ((GranularGrant)x).EntryId == request.EntryId)))
             .ToListAsync(cancellationToken);
+        var agentIds = grants.Select(x => x.AgentId).Distinct().ToArray();
+        var agentNames = await domainWriteContext.Agents
+            .Where(x => x.OrganizationId == organizationId && agentIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
         foreach (var grant in grants)
         {
-            grant.RemoveEntryAccess(request.EntryId, now);
+            grant.RemoveEntryAccess(
+                request.EntryId,
+                new GrantNames(
+                    agentNames.GetValueOrDefault(grant.AgentId) ?? GrantNames.UnknownAgent,
+                    GrantNames.UnknownEntry,
+                    string.Empty,
+                    GrantNames.SystemActor),
+                now);
         }
 
         var sequences = vault.AllocateSequences(entry.GetAgentDiscovery() is not null, userId, now);

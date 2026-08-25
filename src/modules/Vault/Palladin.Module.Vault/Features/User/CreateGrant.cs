@@ -342,7 +342,10 @@ internal sealed class CreateGrantEndpoint(
                 agentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToDomain(
                     req.AgentWrappedVaultKey!, organizationId, req.VaultId, req.GrantId, req.AgentId,
                     agent.AccessEpoch, lockedVault.CurrentVaultKeyVersion.Value,
-                    agent.RecipientKeyVersion, fingerprint);
+                    agent.RecipientKeyVersion, fingerprint,
+                    lockedVault.CurrentManifestSigningKeyVersion.Value,
+                    lockedVault.ManifestSigningKeyFingerprint,
+                    lockedVault.ManifestSigningPublicKey);
             }
 
             if (req.Type == GrantType.ScriptExecution)

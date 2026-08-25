@@ -26,6 +26,14 @@ internal static class VaultTrustAnchorFaker
         KeyBlobFormat.RawPrivateKey,
         new KeyCreationParameters { ExportPolicy = KeyExportPolicies.AllowPlaintextExport });
 
+    internal static byte[] SignWithManifestKey(byte[] input, bool rotated = false)
+    {
+        using var key = rotated
+            ? Key.Import(SignatureAlgorithm.Ed25519, RotatedSigningPrivateKey, KeyBlobFormat.RawPrivateKey)
+            : CreateManifestSigningKey();
+        return SignatureAlgorithm.Ed25519.Sign(key, input);
+    }
+
     internal static byte[] RotatedManifestSigningPublicKey
     {
         get

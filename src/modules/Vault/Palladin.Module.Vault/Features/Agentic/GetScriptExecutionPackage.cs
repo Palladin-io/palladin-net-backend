@@ -76,6 +76,7 @@ internal sealed class GetScriptExecutionPackageValidator
 internal static class ScriptPackageDenialReasons
 {
     internal const string NoActiveGrant = "not-granted";
+    internal const string MethodNotAllowed = "method-not-allowed";
     internal const string OverlappingGrants = "overlapping-grants";
     internal const string Expired = "expired";
     internal const string QueryLimit = "grant-exhausted";
@@ -150,24 +151,28 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                 grant.ExpiresAt,
                 grant.QueryLimit,
                 grant.QueryCount,
+                grant.Methods,
             })
             .ToListAsync(ct);
-        var fullGrants = await domainReadContext.Grants
+        var fullGrantCandidates = await domainReadContext.Grants
             .OfType<FullGrant>()
             .Where(grant => grant.OrganizationId == organizationId
                 && grant.AgentId == agentId
                 && grant.AgentAccessEpoch == agentAccessEpoch
                 && grant.VaultId == vaultId
-                && grant.Status == GrantStatus.Active
-                && (grant.Methods & GrantMethods.Exec) == GrantMethods.Exec)
+                && grant.Status == GrantStatus.Active)
             .Select(grant => new
             {
                 grant.Id,
                 grant.ExpiresAt,
                 grant.QueryLimit,
                 grant.QueryCount,
+                grant.Methods,
             })
             .ToListAsync(ct);
+        var fullGrants = fullGrantCandidates
+            .Where(grant => (grant.Methods & GrantMethods.Exec) == GrantMethods.Exec)
+            .ToList();
 
         if (directGrants.Count > 0 && fullGrants.Count > 0
             || directGrants.Count > 1 || fullGrants.Count > 1)
@@ -176,6 +181,12 @@ internal sealed class ScriptExecutionPackageDeliveryService(
         }
         if (directGrants.Count == 0 && fullGrants.Count == 0)
         {
+            if (fullGrantCandidates.Count > 0)
+            {
+                return new ScriptPackageDeliveryResult.Denied(
+                    ScriptPackageDenialReasons.MethodNotAllowed);
+            }
+
             var exhaustedGrantExists = await domainReadContext.Grants.AnyAsync(grant =>
                 grant.OrganizationId == organizationId
                 && grant.AgentId == agentId
@@ -646,6 +657,7 @@ internal sealed class GetScriptExecutionPackageEndpoint(
             await Send.ErrorsAsync(denied.Reason switch
             {
                 ScriptPackageDenialReasons.NoActiveGrant => 404,
+                ScriptPackageDenialReasons.MethodNotAllowed => 403,
                 ScriptPackageDenialReasons.QueryLimit => 429,
                 ScriptPackageDenialReasons.Expired => 403,
                 _ => 409,

@@ -372,6 +372,61 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
+    public async Task FullWithoutExec_ReturnsMethodNotAllowedWithoutConsumingOrCreatingDirectGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var grantId = Guid.NewGuid();
+        var full = FullGrant.CreateProactively(
+            grantId,
+            setup.VaultId,
+            setup.OrganizationId,
+            setup.AgentId,
+            setup.PublicKey,
+            GrantEnvelopeTestData.AgentVaultKey(
+                setup.OrganizationId, setup.VaultId, grantId, setup.AgentId,
+                agentPublicKey: setup.PublicKey),
+            null,
+            4,
+            "uses",
+            GrantMethods.Get,
+            Guid.NewGuid(),
+            new GrantNames("agent", null, "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(),
+            1);
+        await apiFactory.Services.SeedFullGrantAsync(full);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/execution-package",
+            new { setup.VaultId, setup.ScriptEntryId, ScriptRevision = "1" },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var generalErrors = body.RootElement.GetProperty("errors")
+            .GetProperty("generalErrors")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+        generalErrors.Length.ShouldBe(1);
+        generalErrors[0].ShouldBe("method-not-allowed");
+        body.RootElement.TryGetProperty("scriptPackage", out _).ShouldBeFalse();
+        body.RootElement.TryGetProperty("agentWrappedVaultKey", out _).ShouldBeFalse();
+        body.RootElement.TryGetProperty("vaultEntries", out _).ShouldBeFalse();
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        var persisted = await readContext.Grants.SingleAsync(value => value.Id == grantId);
+        persisted.QueryCount.ShouldBe(0);
+        persisted.Status.ShouldBe(GrantStatus.Active);
+        (await readContext.Grants.OfType<ScriptExecutionGrant>().AnyAsync(grant =>
+            grant.AgentId == setup.AgentId && grant.VaultId == setup.VaultId)).ShouldBeFalse();
+        (await readContext.ScriptExecutionPackages.AnyAsync(package =>
+            package.OrganizationId == setup.OrganizationId
+            && package.VaultId == setup.VaultId)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task CreatingFullExec_SupersedesDirectScriptGrantAndDeletesItsPackage()
     {
         var setup = await SetupScriptAsync();

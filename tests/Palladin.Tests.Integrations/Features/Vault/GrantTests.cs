@@ -320,6 +320,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeTrue();
+        json.RootElement.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
 
         var listResponse = await setup.Client.GetAsync($"api/vaults/{setup.VaultId}/grants");
         var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
@@ -328,6 +329,70 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
 
         listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         listedTerminal.GetProperty("canGrantAgain").GetBoolean().ShouldBeTrue();
+        listedTerminal.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TerminalGranularGrant_WithCurrentActiveCoverage_ReturnsCoveringGrantId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync();
+        var terminal = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId,
+            status: GrantStatus.Revoked).Generate();
+        await apiFactory.Services.SeedGranularGrantAsync(terminal);
+        var active = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId).Generate();
+        active.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
+            setup.OrganizationId, setup.VaultId, active.Id, setup.EntryId, active.Methods));
+        await apiFactory.Services.SeedGranularGrantAsync(active);
+
+        var response = await setup.Client.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{terminal.Id}", ct);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        json.RootElement.GetProperty("activeCoveringGrantIds").EnumerateArray()
+            .Single().GetGuid().ShouldBe(active.Id);
+
+        var listResponse = await setup.Client.GetAsync($"api/vaults/{setup.VaultId}/grants", ct);
+        var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync(ct));
+        var listedTerminal = listJson.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == terminal.Id);
+
+        listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        listedTerminal.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        listedTerminal.GetProperty("activeCoveringGrantIds").EnumerateArray()
+            .Single().GetGuid().ShouldBe(active.Id);
+    }
+
+    [Fact]
+    public async Task TerminalGrant_ForInactiveAgent_CannotBeGrantedAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync(AgentStatus.Deactivated);
+        var terminal = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId,
+            status: GrantStatus.Revoked).Generate();
+        await apiFactory.Services.SeedGranularGrantAsync(terminal);
+
+        var response = await setup.Client.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{terminal.Id}", ct);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        json.RootElement.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
     }
 
     [Fact]
@@ -350,12 +415,12 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
     }
 
-    private async Task<Setup> ArrangeAsync()
+    private async Task<Setup> ArrangeAsync(AgentStatus agentStatus = AgentStatus.Active)
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
         var entry = await apiFactory.Services.SeedEntryAsync(vault.Id, user.Id);
-        var agent = await apiFactory.Services.SeedVaultAgentAsync(organization.Id);
+        var agent = await apiFactory.Services.SeedVaultAgentAsync(organization.Id, agentStatus);
         return new Setup(
             apiFactory.CreateAuthenticatedClient(user), organization.Id, vault.Id, entry.Id,
             agent.Id, agent.PublicKey);

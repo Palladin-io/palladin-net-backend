@@ -14,6 +14,7 @@ internal static class VaultAgentFaker
         string? publicKey = null,
         string? signingPublicKey = null,
         uint recipientKeyVersion = 1,
+        uint? accessEpoch = null,
         string? iconKey = null,
         string? iconColor = null,
         Instant? updatedAt = null) =>
@@ -28,7 +29,8 @@ internal static class VaultAgentFaker
             .RuleFor(x => x.IconKey, iconKey)
             .RuleFor(x => x.IconColor, iconColor)
             .RuleFor(x => x.UpdatedAt, updatedAt ?? SystemClock.Instance.GetCurrentInstant())
-            .RuleFor(x => x.AccessEpoch, (_, agent) => agent.Status == AgentStatus.Pending ? 0u : 1u)
+            .RuleFor(x => x.AccessEpoch, (_, agent) =>
+                accessEpoch ?? (agent.Status == AgentStatus.Pending ? 0u : 1u))
             .RuleFor(x => x.AccessEpochStartedAt, (_, agent) =>
                 agent.Status == AgentStatus.Active ? agent.UpdatedAt : null);
 }

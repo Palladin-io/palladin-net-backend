@@ -27,6 +27,13 @@ internal sealed class AgentWrappedVaultKeyConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.EncodedSealedVaultKeyPackage)
             .HasMaxLength(X25519SealedBoxContract.EncodedPackageBytes)
             .IsRequired();
+        builder.Property(x => x.VaultSigningKeyVersion)
+            .HasConversion(x => (decimal)x.Value, x => new ManifestSigningKeyVersion((uint)x))
+            .HasPrecision(10, 0);
+        builder.Property(x => x.VaultSigningKeyFingerprint)
+            .HasMaxLength(VaultProtocol.FingerprintBytes)
+            .IsRequired();
+        builder.Property(x => x.ProducerSignature).HasMaxLength(64).IsRequired();
         builder.HasIndex(x => new { x.OrganizationId, x.VaultId, x.AgentId }).IsUnique();
         builder.ToTable("AgentWrappedVaultKeys");
     }

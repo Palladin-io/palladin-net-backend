@@ -87,7 +87,10 @@ public sealed record X25519WrappedKeyContract(
 
 [PublicAPI]
 public sealed record AgentWrappedVaultKeyContract(
-    X25519WrappedKeyContract WrappedVaultKey)
+    X25519WrappedKeyContract WrappedVaultKey,
+    uint VaultSigningKeyVersion,
+    string VaultSigningKeyFingerprint,
+    string ProducerSignature)
 {
     [JsonIgnore] public Guid OrganizationId => WrappedVaultKey.Descriptor.Scope.OrganizationId;
     [JsonIgnore] public Guid VaultId => WrappedVaultKey.Descriptor.Scope.VaultId;

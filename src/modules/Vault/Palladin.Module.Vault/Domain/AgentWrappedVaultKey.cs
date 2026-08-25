@@ -18,6 +18,9 @@ internal sealed class AgentWrappedVaultKey
     internal AgentRecipientKeyVersion RecipientAgentKeyVersion { get; private set; }
     internal byte[] RecipientAgentKeyFingerprint { get; private set; } = [];
     internal byte[] EncodedSealedVaultKeyPackage { get; private set; } = [];
+    internal ManifestSigningKeyVersion VaultSigningKeyVersion { get; private set; }
+    internal byte[] VaultSigningKeyFingerprint { get; private set; } = [];
+    internal byte[] ProducerSignature { get; private set; } = [];
 
     private AgentWrappedVaultKey() { }
 
@@ -32,7 +35,10 @@ internal sealed class AgentWrappedVaultKey
         uint vaultKeyVersion,
         uint recipientAgentKeyVersion,
         byte[] recipientAgentKeyFingerprint,
-        byte[] encodedSealedVaultKeyPackage)
+        byte[] encodedSealedVaultKeyPackage,
+        uint vaultSigningKeyVersion = 1,
+        byte[]? vaultSigningKeyFingerprint = null,
+        byte[]? producerSignature = null)
     {
         var context = new X25519WrapperContext(
             X25519WrapperPurpose.AgentVaultKey,
@@ -51,6 +57,14 @@ internal sealed class AgentWrappedVaultKey
         {
             throw new DomainException("Agent Vault-key wrapper suite is invalid.");
         }
+        vaultSigningKeyFingerprint ??= new byte[VaultProtocol.FingerprintBytes];
+        producerSignature ??= new byte[64];
+        if (vaultSigningKeyVersion == 0
+            || vaultSigningKeyFingerprint.Length != VaultProtocol.FingerprintBytes
+            || producerSignature.Length != 64)
+        {
+            throw new DomainException("Agent Vault-key wrapper producer binding is invalid.");
+        }
 
         return new AgentWrappedVaultKey
         {
@@ -65,6 +79,9 @@ internal sealed class AgentWrappedVaultKey
             RecipientAgentKeyVersion = new AgentRecipientKeyVersion(recipientAgentKeyVersion),
             RecipientAgentKeyFingerprint = recipientAgentKeyFingerprint.ToArray(),
             EncodedSealedVaultKeyPackage = encodedSealedVaultKeyPackage.ToArray(),
+            VaultSigningKeyVersion = new ManifestSigningKeyVersion(vaultSigningKeyVersion),
+            VaultSigningKeyFingerprint = vaultSigningKeyFingerprint.ToArray(),
+            ProducerSignature = producerSignature.ToArray(),
         };
     }
 
@@ -86,5 +103,8 @@ internal sealed class AgentWrappedVaultKey
         RecipientAgentKeyVersion = replacement.RecipientAgentKeyVersion;
         RecipientAgentKeyFingerprint = replacement.RecipientAgentKeyFingerprint.ToArray();
         EncodedSealedVaultKeyPackage = replacement.EncodedSealedVaultKeyPackage.ToArray();
+        VaultSigningKeyVersion = replacement.VaultSigningKeyVersion;
+        VaultSigningKeyFingerprint = replacement.VaultSigningKeyFingerprint.ToArray();
+        ProducerSignature = replacement.ProducerSignature.ToArray();
     }
 }

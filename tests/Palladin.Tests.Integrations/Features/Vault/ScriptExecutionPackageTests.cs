@@ -507,6 +507,8 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         body.RootElement.GetProperty("directAgentCount").GetInt32().ShouldBe(1);
         body.RootElement.GetProperty("fullAgentCount").GetInt32().ShouldBe(1);
         body.RootElement.GetProperty("hasOverlappingCoverage").GetBoolean().ShouldBeTrue();
+        body.RootElement.GetProperty("agentIds").EnumerateArray()
+            .Select(value => value.GetGuid()).ShouldBe([setup.AgentId]);
     }
 
     private static ScriptExecutionGrant DirectGrant(

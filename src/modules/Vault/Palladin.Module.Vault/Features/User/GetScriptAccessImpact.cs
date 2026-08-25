@@ -24,7 +24,8 @@ public sealed record GetScriptAccessImpactResponse(
     int EffectiveAgentCount,
     int DirectAgentCount,
     int FullAgentCount,
-    bool HasOverlappingCoverage);
+    bool HasOverlappingCoverage,
+    IReadOnlyList<Guid> AgentIds);
 
 [UsedImplicitly]
 internal sealed class GetScriptAccessImpactValidator : Validator<GetScriptAccessImpactRequest>
@@ -52,7 +53,7 @@ internal sealed class GetScriptAccessImpactEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Count Agents affected by a Script change";
-            summary.Description = "Returns value-free unique counts for direct ScriptExecution and covering FULL Exec access. It never returns Script metadata, references, parameter names, or values.";
+            summary.Description = "Returns value-free unique counts and Agent identities for direct ScriptExecution and covering FULL Exec access. It never returns Script metadata, references, parameter names, or values.";
         });
         Tags("Vault/Grants");
     }
@@ -106,11 +107,13 @@ internal sealed class GetScriptAccessImpactEndpoint(
             .Distinct()
             .ToListAsync(ct);
 
+        var affectedAgentIds = directAgentIds.Union(fullAgentIds).Order().ToArray();
         var overlap = directAgentIds.Intersect(fullAgentIds).Any();
         await Send.OkAsync(new GetScriptAccessImpactResponse(
-            directAgentIds.Union(fullAgentIds).Count(),
+            affectedAgentIds.Length,
             directAgentIds.Count,
             fullAgentIds.Count,
-            overlap), ct);
+            overlap,
+            affectedAgentIds), ct);
     }
 }

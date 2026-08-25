@@ -20,6 +20,60 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
+    public async Task When_TwoHistoricalSessionFallbacksRace_Then_BothSeeActivatedBenefit()
+    {
+        // Given — both requests load the same eligible historical user before either takes the claim lock.
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var email = $"waitlist-session-race-{Guid.NewGuid():N}@example.com";
+        await SeedEntryAsync(
+            $"token-{Guid.NewGuid():N}",
+            now - Duration.FromHours(1),
+            email,
+            now - Duration.FromMinutes(30));
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            new byte[32],
+            email: email,
+            emailVerified: true);
+
+        await using var firstScope = apiFactory.Services.CreateAsyncScope();
+        var firstContext = firstScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var firstActivator = firstScope.ServiceProvider.GetRequiredService<WaitlistDeveloperBenefitActivator>();
+        await using var firstTransaction = await firstContext.BeginTransactionAsync(cancellationToken);
+        var firstUser = await firstContext.Users.SingleAsync(
+            candidate => candidate.Id == user.Id,
+            cancellationToken);
+
+        await using var secondScope = apiFactory.Services.CreateAsyncScope();
+        var secondContext = secondScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var secondActivator = secondScope.ServiceProvider.GetRequiredService<WaitlistDeveloperBenefitActivator>();
+        await using var secondTransaction = await secondContext.BeginTransactionAsync(cancellationToken);
+        var secondUser = await secondContext.Users.SingleAsync(
+            candidate => candidate.Id == user.Id,
+            cancellationToken);
+
+        var firstEndsAt = await firstActivator.TryActivateAsync(firstUser, now, cancellationToken);
+        var secondActivation = Task.Run(
+            () => secondActivator.TryActivateAsync(secondUser, now, cancellationToken),
+            cancellationToken);
+
+        var completedBeforeLockReleased = await Task.WhenAny(
+            secondActivation,
+            Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken)) == secondActivation;
+
+        await firstContext.CommitAsync(firstTransaction, cancellationToken);
+        var secondEndsAt = await secondActivation;
+        await secondContext.CommitAsync(secondTransaction, cancellationToken);
+
+        // Then — the waiter refreshes its stale aggregate and issues the same elevated session state.
+        completedBeforeLockReleased.ShouldBeFalse();
+        firstEndsAt.ShouldNotBeNull();
+        secondEndsAt.ShouldBe(firstEndsAt);
+        secondUser.WaitlistDeveloperBenefitStartedAt.ShouldNotBeNull();
+        secondUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(firstEndsAt);
+    }
+
+    [Fact]
     public async Task When_BothOptInsVerifyConcurrently_Then_SharedFenceActivatesBenefitOnce()
     {
         // Given — account and waitlist start unverified, with the eligible entry created first.
@@ -230,11 +284,19 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
         response.Headers.Location!.ToString().ShouldBe("https://palladin.io/waitlist/invalid");
     }
 
-    private async Task<Guid> SeedEntryAsync(string token, Instant issuedAt, string? email = null)
+    private async Task<Guid> SeedEntryAsync(
+        string token,
+        Instant issuedAt,
+        string? email = null,
+        Instant? verifiedAt = null)
     {
         var entry = WaitlistEntry.Join(
             Guid.NewGuid(), email ?? $"seed-{Guid.NewGuid():N}@example.com", "en",
             token, TokenService.HashToken(token), Duration.FromHours(24), issuedAt);
+        if (verifiedAt is { } verificationTime)
+        {
+            entry.Verify(verificationTime);
+        }
 
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();

@@ -22,6 +22,16 @@ internal sealed class WaitlistDeveloperBenefitActivator(
         }
 
         var entry = await LockEntryAsync(user.Email, cancellationToken);
+
+        // Another session may have claimed the entry while this request waited for the row lock.
+        // Refresh the already-tracked aggregate before issuing a session so both contenders see
+        // the committed benefit without producing a second activation event.
+        if (entry?.DeveloperBenefitUserId == user.Id
+            && user.WaitlistDeveloperBenefitStartedAt is null)
+        {
+            await domainWriteContext.ReloadAsync(user, cancellationToken);
+        }
+
         return TryActivate(user, entry, now);
     }
 

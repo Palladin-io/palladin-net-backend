@@ -81,11 +81,13 @@ public sealed class VerifyEmailTests(ApiFactory apiFactory) : TestBase
             candidate => candidate.Email == email,
             TestContext.Current.CancellationToken);
         persistedUser.EmailVerified.ShouldBeTrue();
-        persistedUser.WaitlistDeveloperBenefitStartedAt.ShouldBe(apiFactory.FakeClock.GetCurrentInstant());
-        persistedUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(expectedEndsAt);
+        persistedUser.WaitlistDeveloperBenefitStartedAt.ShouldBe(
+            TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant()));
+        persistedUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(TruncateToMicroseconds(expectedEndsAt));
         persistedEntry.DeveloperBenefitUserId.ShouldBe(user.Id);
-        persistedEntry.DeveloperBenefitStartedAt.ShouldBe(apiFactory.FakeClock.GetCurrentInstant());
-        persistedEntry.DeveloperBenefitEndsAt.ShouldBe(expectedEndsAt);
+        persistedEntry.DeveloperBenefitStartedAt.ShouldBe(
+            TruncateToMicroseconds(apiFactory.FakeClock.GetCurrentInstant()));
+        persistedEntry.DeveloperBenefitEndsAt.ShouldBe(TruncateToMicroseconds(expectedEndsAt));
     }
 
     [Fact]
@@ -156,5 +158,11 @@ public sealed class VerifyEmailTests(ApiFactory apiFactory) : TestBase
         var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
         writeContext.WaitlistEntries.Add(entry);
         await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static Instant TruncateToMicroseconds(Instant value)
+    {
+        var ticks = value.ToUnixTimeTicks();
+        return Instant.FromUnixTimeTicks(ticks - ticks % 10);
     }
 }

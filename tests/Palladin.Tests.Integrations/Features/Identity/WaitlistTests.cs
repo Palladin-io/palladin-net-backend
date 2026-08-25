@@ -92,7 +92,7 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
         var email = $"waitlist-order-{Guid.NewGuid():N}@example.com";
         var entryId = await SeedEntryAsync(
             token,
-            apiFactory.FakeClock.GetCurrentInstant() - Duration.FromDays(1),
+            apiFactory.FakeClock.GetCurrentInstant() - Duration.FromHours(1),
             email);
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
             new byte[32],

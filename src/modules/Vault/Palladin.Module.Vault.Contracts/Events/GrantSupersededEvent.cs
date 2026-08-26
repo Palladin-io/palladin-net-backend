@@ -1,4 +1,5 @@
 using Palladin.Core.Events;
+using Palladin.Core.Types;
 using JetBrains.Annotations;
 using NodaTime;
 
@@ -12,6 +13,7 @@ public sealed record GrantSupersededEvent(
     Guid OrganizationId,
     Guid AgentId,
     Guid EntryId,
+    GrantType Type,
     string AgentName,
     string? EntryLabel,
     string VaultName,

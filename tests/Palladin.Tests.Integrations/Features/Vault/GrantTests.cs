@@ -221,6 +221,38 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task FullGrant_WithPreviouslyUsedPrimaryKey_ReturnsConflict()
+    {
+        var setup = await ArrangeAsync();
+        var request = FullRequest(setup);
+        var terminal = GrantFaker.CreateFull(
+            id: request.GrantId,
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            status: GrantStatus.Revoked).Generate();
+        await apiFactory.Services.SeedFullGrantAsync(terminal);
+        var granular = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId).Generate();
+        granular.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
+            setup.OrganizationId, setup.VaultId, granular.Id, setup.EntryId, granular.Methods));
+        await apiFactory.Services.SeedGranularGrantAsync(granular);
+
+        var (response, _) = await setup.Client
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.SingleAsync(grant => grant.Id == granular.Id)).Status.ShouldBe(GrantStatus.Active);
+        (await db.GrantEntryEnvelopes.AnyAsync(envelope => envelope.GrantId == granular.Id)).ShouldBeTrue();
+        (await db.AgentWrappedVaultKeys.AnyAsync(wrapper => wrapper.GrantId == request.GrantId)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task FullGrantSupersede_HardDeletesOldGranularEnvelope()
     {
         var setup = await ArrangeAsync();
@@ -513,6 +545,70 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         await transaction.RollbackAsync(TestContext.Current.CancellationToken);
         var (response, _) = await createTask;
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task CreateFullGrant_WithAgentKeyChangeBeforeLock_ReturnsConflict()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync();
+        var request = FullRequest(setup);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        await using var transaction = await writeContext.BeginTransactionAsync(ct);
+        var lockedAgent = await writeContext.LockAgent(setup.OrganizationId, setup.AgentId).SingleAsync(ct);
+
+        var createTask = setup.Client
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
+        await WaitForBlockedAgentLockAsync(ct);
+
+        lockedAgent.Apply(
+            lockedAgent.Status,
+            Convert.ToBase64String(Enumerable.Repeat((byte)0x42, 32).ToArray()),
+            checked(lockedAgent.RecipientKeyVersion + 1),
+            lockedAgent.SigningPublicKey,
+            lockedAgent.Name,
+            lockedAgent.IconKey,
+            lockedAgent.IconColor,
+            checked(lockedAgent.AccessEpoch + 1),
+            lockedAgent.UpdatedAt + Duration.FromSeconds(1),
+            lockedAgent.UpdatedAt + Duration.FromSeconds(1));
+        await writeContext.CommitAsync(transaction, ct);
+
+        var (response, _) = await createTask;
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var assertionScope = apiFactory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.AnyAsync(grant => grant.Id == request.GrantId, ct)).ShouldBeFalse();
+    }
+
+    private async Task WaitForBlockedAgentLockAsync(CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+            var isBlocked = await db.Database.SqlQueryRaw<bool>(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND wait_event_type = 'Lock'
+                      AND query LIKE '%FROM "Agents"%'
+                      AND query LIKE '%FOR UPDATE%'
+                ) AS "Value"
+                """).SingleAsync(ct);
+            if (isBlocked)
+            {
+                return;
+            }
+
+            await Task.Delay(25, ct);
+        }
+
+        throw new TimeoutException("FULL grant creation did not reach the blocked Agent row lock.");
     }
 
     private async Task<Setup> ArrangeAsync(

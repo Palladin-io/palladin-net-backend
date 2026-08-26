@@ -84,7 +84,7 @@ internal static class VaultEnvelopeContractMapper
             throw new DomainException("The Member Vault-key wrapper descriptor is invalid.");
         _ = X25519WrapperContextCodec.Encode(context);
         var package = DecodeCanonicalBase64Url(contract.WrappedVaultKey.EncodedSealedKeyPackage);
-        X25519SealedBoxContract.ValidatePackage(package);
+        WrappedKeyPackageContract.ValidatePackage(wrapper.WrapperSuiteId, package);
         return MemberWrappedVaultKey.Create(new VaultScope(contract.OrganizationId, contract.VaultId),
             contract.MemberId, wrapper.ProtocolVersion, wrapper.WrapperSuiteId, new VaultKeyVersion(contract.VkVersion),
             new MemberKeyGeneration(contract.MemberKeyGeneration),

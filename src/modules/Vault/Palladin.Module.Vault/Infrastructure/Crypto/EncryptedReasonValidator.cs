@@ -59,7 +59,7 @@ internal static class EncryptedReasonValidator
         _ = X25519WrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedReasonDek.EncodedSealedKeyPackage);
-        X25519SealedBoxContract.ValidatePackage(wrapper);
+        WrappedKeyPackageContract.ValidatePackage(binding.WrapperSuiteId, wrapper);
 
         var signature = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.AgentSignature);
         var signed = BuildSignatureTranscript(descriptorBytes,

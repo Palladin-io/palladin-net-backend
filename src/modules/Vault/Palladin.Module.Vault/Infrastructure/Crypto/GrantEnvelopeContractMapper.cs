@@ -76,7 +76,7 @@ internal static class GrantEnvelopeContractMapper
         _ = X25519WrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedGrantDek.EncodedSealedKeyPackage);
-        X25519SealedBoxContract.ValidatePackage(wrapper);
+        WrappedKeyPackageContract.ValidatePackage(binding.WrapperSuiteId, wrapper);
         var scope = new EntryScope(contract.OrganizationId, contract.VaultId, contract.EntryId);
         var envelope = GrantEntryEnvelope.Create(scope, contract.GrantId, descriptor.ResourceRevision,
             new EntryRevision(VaultEnvelopeContractMapper.ParseUInt64(binding.EntryRevision)),

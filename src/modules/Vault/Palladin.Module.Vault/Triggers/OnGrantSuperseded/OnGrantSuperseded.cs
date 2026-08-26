@@ -21,6 +21,7 @@ internal sealed class OnGrantSuperseded(IAnalyticsService analyticsService) : IC
         analyticsService.CaptureEvent("system", "vault", "grant-superseded", new Dictionary<string, object>
         {
             ["vault_id"] = msg.VaultId,
+            ["grant_type"] = msg.Type.ToString(),
             ["superseded_by_grant_id"] = msg.SupersededByGrantId,
             ["duration_active_seconds"] = msg.DurationActiveSeconds,
         });

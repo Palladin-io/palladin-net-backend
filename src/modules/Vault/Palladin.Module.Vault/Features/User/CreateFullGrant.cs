@@ -116,13 +116,6 @@ internal sealed class CreateFullGrantEndpoint(
             throw new AgentAlreadyHasActiveAccessException("vault");
         }
 
-        if (await domainReadContext.Grants.AnyAsync(grant => grant.Id == req.GrantId, ct))
-        {
-            AddError(r => r.GrantId, "Grant identifier has already been used.");
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
         var now = clock.GetCurrentInstant();
         var expirySource = ExpirySource.From(req.ExpiresAt, req.QueryLimit);
         var names = await domainReadContext.ResolveAsync(req.AgentId, null, req.VaultId, userId, ct);
@@ -159,6 +152,7 @@ internal sealed class CreateFullGrantEndpoint(
         var expectedVaultKeyVersion = vault.CurrentVaultKeyVersion;
         var expectedMemberKeyGeneration = vault.MemberKeyGeneration;
 
+        domainWriteContext.Clear();
         var stableAgent = await domainWriteContext.LockAgent(organizationId, req.AgentId).SingleAsync(ct);
         var stableVault = await domainWriteContext.LockVault(organizationId, req.VaultId).SingleAsync(ct);
         if (stableAgent.Status != AgentStatus.Active
@@ -174,6 +168,8 @@ internal sealed class CreateFullGrantEndpoint(
             return;
         }
 
+        var supersededNames = new GrantNames(
+            stableAgent.Name ?? GrantNames.UnknownAgent, null, string.Empty, GrantNames.SystemActor);
         domainWriteContext.Clear();
         Guid? afterGrantId = null;
         while (true)
@@ -186,12 +182,9 @@ internal sealed class CreateFullGrantEndpoint(
             }
 
             domainWriteContext.EnsureFullGrantCommitTrackingIsBounded(SupersedePageSize);
-            var entryIds = page.Select(granular => granular.EntryId).Distinct().ToArray();
-            var namesByEntry = await domainReadContext.ResolveForSupersedeAsync(
-                req.AgentId, req.VaultId, entryIds, ct);
             foreach (var granular in page)
             {
-                granular.SupersedeByFull(grant.Id, namesByEntry[granular.EntryId], now);
+                granular.SupersedeByFull(grant.Id, supersededNames, now);
             }
 
             afterGrantId = page[^1].Id;

@@ -36,7 +36,7 @@ internal sealed class OnGrantSupersededAudit(IPublishEndpoint publishEndpoint) :
             {
                 ["grantId"] = msg.GrantId.ToString(),
                 ["supersededByGrantId"] = msg.SupersededByGrantId.ToString(),
-                ["grantType"] = Palladin.Core.Types.GrantType.Granular.ToString(),
+                ["grantType"] = msg.Type.ToString(),
                 ["durationActiveSeconds"] = msg.DurationActiveSeconds.ToString(),
             }), context.CancellationToken);
     }

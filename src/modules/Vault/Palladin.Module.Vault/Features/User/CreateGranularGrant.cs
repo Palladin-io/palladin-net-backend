@@ -173,13 +173,6 @@ internal sealed class CreateGranularGrantEndpoint(
             return;
         }
 
-        if (await domainReadContext.Grants.AnyAsync(grant => grant.Id == req.GrantId, ct))
-        {
-            AddError(r => r.GrantId, "Grant identifier has already been used.");
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
         var grant = GranularGrant.CreateProactively(
             req.GrantId, req.VaultId, organizationId, req.AgentId, agent.PublicKey, req.EntryId,
             scope, req.ExpiresAt, req.QueryLimit, expirySource, req.Methods, userId, names, now,

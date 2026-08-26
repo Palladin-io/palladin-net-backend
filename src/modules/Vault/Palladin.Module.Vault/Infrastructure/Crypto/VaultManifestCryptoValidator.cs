@@ -45,7 +45,7 @@ internal static class VaultManifestCryptoValidator
             || wrapperContext.ParentDescriptorHash is not null)
             throw new DomainException("Agent Discovery wrapper descriptor is invalid.");
         _ = X25519WrapperContextCodec.Encode(wrapperContext);
-        X25519SealedBoxContract.ValidatePackage(wrappedVdk);
+        WrappedKeyPackageContract.ValidatePackage(envelope.WrappedVdk.Descriptor.WrapperSuiteId, wrappedVdk);
         var agentX25519Key = DecodeAgentPublicKey(agent.PublicKey, VaultKeyKind.AgentX25519);
         var agentEd25519Key = DecodeAgentPublicKey(agent.SigningPublicKey, VaultKeyKind.AgentEd25519);
         var vaultSigningKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultSigningPublicKey);

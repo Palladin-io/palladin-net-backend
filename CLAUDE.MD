@@ -24,11 +24,15 @@ Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/pa
 
 - Flag material accidental complexity: a new abstraction, configuration surface, subsystem or chain of indirection that has no current requirement or concrete second use and makes the change harder to reason about.
   Safe path: implement the simplest design that satisfies the current acceptance criteria while preserving the repository's required domain contexts, module boundaries, security controls and zero-knowledge invariants.
+- When variants materially differ in authorization, validation, cryptographic material, persistence lifecycle, or transaction semantics, model them as separate vertical slices and endpoints. Do not branch one generic endpoint by a type flag; compose genuinely shared mechanics through focused helpers.
+- When a domain concept has an authoritative discriminator such as `GrantType`, include it explicitly in integration events and public contracts and have consumers use that field. Never reconstruct it from nullable fields, subtype-specific payload shape, event names, or current persistence behavior.
 
 ### Database access and performance
 
 - Apply [docs/architecture/database-guidelines.md](docs/architecture/database-guidelines.md) to every changed database access path, regardless of whether it is reached from HTTP GET/POST, a consumer or a job. EF Core through the split domain contexts is the default; raw SQL, explicit transactions and locks are reviewed last-resort exceptions that require a concrete reason, bounded scope, parameterization and focused tests.
 - Flag a material read whose `WHERE`, `JOIN`, ordering or keyset pagination cannot use a suitable current index at the expected scale. Also flag a new index that duplicates or overlaps a PK, UNIQUE constraint or existing index without serving a distinct current access path. Compare leftmost prefixes, range and ordering columns, partial predicates, included columns and uniqueness; a different column order is neither automatically redundant nor automatically justified. Do not require an index for every query.
+- Do not add a preflight PK/UNIQUE existence query solely to predict a constraint violation. Let the constraint arbitrate and map the exact named violation. Keep a preflight only for distinct authorization or business semantics, or demonstrated expensive-work avoidance, and still handle the write race.
+- Do not query a read context again for authoritative values already freshly loaded or fenced in the current write context; reuse those values. This does not replace the split-context rule: unrelated no-tracking reads still use the module `DomainReadContext`.
 
 ## Runtime Secrets
 

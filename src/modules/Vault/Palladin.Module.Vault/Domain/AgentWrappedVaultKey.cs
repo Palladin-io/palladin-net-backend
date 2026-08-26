@@ -34,6 +34,12 @@ internal sealed class AgentWrappedVaultKey
         byte[] recipientAgentKeyFingerprint,
         byte[] encodedSealedVaultKeyPackage)
     {
+        if (protocolVersion != VaultProtocol.CurrentVersion)
+        {
+            throw new DomainException("Agent Vault-key wrapper protocol is invalid.");
+        }
+
+        WrappedKeyPackageContract.ValidatePackage(wrapperSuiteId, encodedSealedVaultKeyPackage);
         var context = new X25519WrapperContext(
             X25519WrapperPurpose.AgentVaultKey,
             new EnvelopeScope(organizationId, vaultId, GrantOrRequestId: grantId, AgentId: agentId),
@@ -45,12 +51,6 @@ internal sealed class AgentWrappedVaultKey
             recipientAgentKeyFingerprint,
             null);
         _ = X25519WrapperContextCodec.Encode(context);
-        X25519SealedBoxContract.ValidatePackage(encodedSealedVaultKeyPackage);
-        if (protocolVersion != VaultProtocol.CurrentVersion
-            || !string.Equals(wrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
-        {
-            throw new DomainException("Agent Vault-key wrapper suite is invalid.");
-        }
 
         return new AgentWrappedVaultKey
         {

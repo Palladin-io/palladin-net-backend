@@ -357,6 +357,7 @@ internal abstract class Grant : EventEntityBase
             OrganizationId,
             AgentId,
             ((GranularGrant)this).EntryId,
+            Type,
             names.AgentName,
             names.EntryLabel,
             names.VaultName,

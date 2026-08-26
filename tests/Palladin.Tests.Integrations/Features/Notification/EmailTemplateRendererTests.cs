@@ -81,6 +81,7 @@ public sealed class EmailTemplateRendererTests
         var renderer = new FluidEmailTemplateRenderer(
             Options.Create(new EmailBrandingOptions
             {
+                AppName = "Example Vault",
                 MobileAppUrl = "https://palladin.io/mobile",
                 BrowserExtensionUrl = "https://palladin.io/browser-extension",
             }),
@@ -97,11 +98,13 @@ public sealed class EmailTemplateRendererTests
         english.HtmlBody.ShouldContain(">browser extension</a>");
         english.TextBody.ShouldContain("Mobile app: https://palladin.io/mobile");
         english.TextBody.ShouldContain("Browser extension: https://palladin.io/browser-extension");
+        english.TextBody.ShouldContain("Explore Example Vault beyond the web app:");
 
         polish.HtmlBody.ShouldContain(">aplikację mobilną</a>");
         polish.HtmlBody.ShouldContain(">rozszerzenie przeglądarkowe</a>");
         polish.TextBody.ShouldContain("Aplikacja mobilna: https://palladin.io/mobile");
         polish.TextBody.ShouldContain("Rozszerzenie przeglądarkowe: https://palladin.io/browser-extension");
+        polish.TextBody.ShouldContain("Poznaj Example Vault poza panelem webowym:");
     }
 
     [Fact]

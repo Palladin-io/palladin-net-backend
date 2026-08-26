@@ -5,6 +5,7 @@ using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
@@ -32,6 +33,7 @@ internal sealed class AcceptOrganizationInvitationValidator : Validator<AcceptOr
 internal sealed class AcceptOrganizationInvitationEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IAuthSessionIssuer sessionIssuer,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IClock clock) : Endpoint<AcceptOrganizationInvitationRequest, AuthSessionResponse>
 {
     public override void Configure()
@@ -146,6 +148,8 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             .MaxAsync(token => (uint?)token.AuthorizationVersion, ct) ?? 0u;
         var authorizationVersion = checked(previousAuthorizationVersion + 1u);
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
         invitation.Accept(now);
         var member = OrganizationMember.Create(
             invitation.OrganizationId, user.Id, invitation.Role,
@@ -172,7 +176,7 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             now);
         try
         {
-            await domainWriteContext.CommitAsync(ct);
+            await domainWriteContext.CommitAsync(transaction, ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException
         { SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation })
@@ -196,6 +200,8 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
             refreshToken,
             user.Id,
             user.IsOnboarded,
-            user.EmailVerified), ct);
+            user.EmailVerified,
+            user.ActiveWaitlistDeveloperBenefitStartedAt(now),
+            user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 }

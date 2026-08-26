@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Palladin.Module.Identity.Infrastructure.Persistence;
 namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(IdentityDbWriteContext))]
-    partial class IdentityDbWriteContextModelSnapshot : ModelSnapshot
+    [Migration("20260825164044_AddWaitlistDeveloperBenefit")]
+    partial class AddWaitlistDeveloperBenefit
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -264,26 +267,6 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("OrganizationMembers");
-                });
-
-            modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberDirectoryEntry", b =>
-                {
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Instant>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("OrganizationId", "UserId");
-
-                    b.ToTable("OrganizationMemberDirectoryEntries");
                 });
 
             modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberRole", b =>
@@ -704,15 +687,6 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberDirectoryEntry", b =>
-                {
-                    b.HasOne("Palladin.Module.Identity.Domain.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberRole", b =>

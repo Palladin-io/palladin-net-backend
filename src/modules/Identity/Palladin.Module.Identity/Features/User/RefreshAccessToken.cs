@@ -4,6 +4,8 @@ using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Options;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Jwt;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -20,7 +22,14 @@ public sealed record RefreshAccessTokenRequest
 }
 
 [PublicAPI]
-public sealed record RefreshAccessTokenResponse(string AccessToken, string RefreshToken);
+public sealed record RefreshAccessTokenResponse(
+    string AccessToken,
+    string RefreshToken,
+    Guid UserId,
+    bool IsOnboarded,
+    bool EmailVerified,
+    Instant? WaitlistDeveloperBenefitStartedAt,
+    Instant? WaitlistDeveloperBenefitEndsAt);
 
 [UsedImplicitly]
 internal sealed class RefreshAccessTokenValidator : Validator<RefreshAccessTokenRequest>
@@ -37,6 +46,7 @@ internal sealed class RefreshAccessTokenEndpoint(
     ITokenService tokenService,
     IGuidProvider guidProvider,
     IClock clock,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IOptions<JwtOptions> jwtOptions) : Endpoint<RefreshAccessTokenRequest, RefreshAccessTokenResponse>
 {
     public override void Configure()
@@ -103,17 +113,25 @@ internal sealed class RefreshAccessTokenEndpoint(
             return;
         }
 
-        var plan = await domainWriteContext.Organizations
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
+
+        var organizationPlan = await domainWriteContext.Organizations
             .Where(o => o.Id == existingToken.OrganizationId)
             .Select(o => o.PlanType)
             .FirstAsync(ct);
+        var plan = user.EffectivePlan(organizationPlan, now);
+        var accessTokenExpiresAtCap = organizationPlan < PlanType.Pro
+            ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
+            : null;
         var permissions = membership.EffectivePermissions();
         var accessToken = tokenService.GenerateAccessToken(
             user,
             existingToken.OrganizationId,
             permissions,
             plan,
-            membership.AuthorizationVersion);
+            membership.AuthorizationVersion,
+            accessTokenExpiresAtCap);
 
         var rawRefreshToken = req.RefreshToken;
 
@@ -132,11 +150,18 @@ internal sealed class RefreshAccessTokenEndpoint(
             domainWriteContext.Add(newRefreshToken);
 
             rawRefreshToken = newRawToken;
-
-            await domainWriteContext.CommitAsync(ct);
         }
 
-        await Send.OkAsync(new RefreshAccessTokenResponse(accessToken, rawRefreshToken), ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
+
+        await Send.OkAsync(new RefreshAccessTokenResponse(
+            accessToken,
+            rawRefreshToken,
+            user.Id,
+            user.IsOnboarded,
+            user.EmailVerified,
+            user.ActiveWaitlistDeveloperBenefitStartedAt(now),
+            user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 
     // Walk the presented token's rotation lineage via the ReplacedByTokenId chain and revoke the still-active

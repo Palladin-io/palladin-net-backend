@@ -1,5 +1,4 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">We temporarily locked password and TOTP login to your account</h1>
+{% include '_header.html.liquid', emailTitle: "We temporarily locked password and TOTP login to your account" %}
 <p style="margin:0 0 16px">{{ appName }} detected {{ attemptCount }} failed attempts within a {{ windowMinutes }} min window and temporarily blocked further password and TOTP login attempts to your account.</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px;background:#fbeaea;border:1px solid #f3caca;border-radius:8px">
   <tr><td style="padding:16px;font-size:14px;color:#7a1f1f">
@@ -12,5 +11,5 @@
 </table>
 <p style="margin:0 0 16px">The restriction applies to password and TOTP login attempts for your account regardless of the source IP address.</p>
 <p style="margin:0 0 16px">If you recognize this activity, no action is needed. If you do not, open {{ appName }} directly and review the Audit Log. Also make sure your password is unique and TOTP is enabled.</p>
-<p style="margin:0">This alert does not contain an unlock link. The block expires automatically at the time shown above.</p>
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">This alert does not contain an unlock link. The block expires automatically at the time shown above.</p>
 {% include '_footer.en.html.liquid' %}

@@ -20,6 +20,12 @@ public abstract class DomainWriteContextBase(
 
     public void Update(object entity) => writeContext.Update(entity);
 
+    public Task ReloadAsync<TEntity>(
+        TEntity entity,
+        CancellationToken cancellationToken = default)
+        where TEntity : class =>
+        writeContext.Entry(entity).ReloadAsync(cancellationToken);
+
     public void MarkPropertyAsUpdated<TEntity>(TEntity entity, Expression<Func<TEntity, object>> selector)
         where TEntity : class
     {

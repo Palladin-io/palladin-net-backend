@@ -1,4 +1,5 @@
 using JetBrains.Annotations;
+using NodaTime;
 
 namespace Palladin.Module.Identity.Shared;
 
@@ -10,4 +11,6 @@ public sealed record AuthSessionResponse(
     string RefreshToken,
     Guid UserId,
     bool IsOnboarded,
-    bool EmailVerified);
+    bool EmailVerified,
+    Instant? WaitlistDeveloperBenefitStartedAt,
+    Instant? WaitlistDeveloperBenefitEndsAt);

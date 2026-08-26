@@ -3,6 +3,7 @@ using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain.Enums;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -18,7 +19,11 @@ public sealed record VerifyEmailRequest
 }
 
 [PublicAPI]
-public sealed record VerifyEmailResponse(string Status);
+public sealed record VerifyEmailResponse(
+    string Status,
+    Guid UserId,
+    Instant? WaitlistDeveloperBenefitStartedAt,
+    Instant? WaitlistDeveloperBenefitEndsAt);
 
 [UsedImplicitly]
 internal sealed class VerifyEmailValidator : Validator<VerifyEmailRequest>
@@ -32,6 +37,7 @@ internal sealed class VerifyEmailValidator : Validator<VerifyEmailRequest>
 [PublicAPI]
 internal sealed class VerifyEmailEndpoint(
     IdentityDomainWriteContext domainWriteContext,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IClock clock) : Endpoint<VerifyEmailRequest, VerifyEmailResponse>
 {
     public override void Configure()
@@ -54,6 +60,7 @@ internal sealed class VerifyEmailEndpoint(
         var tokenHash = SecureToken.Hash(req.Token);
         var now = clock.GetCurrentInstant();
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         var token = await domainWriteContext.VerificationTokens
             .Include(t => t.User)
             .FirstOrDefaultAsync(
@@ -75,8 +82,13 @@ internal sealed class VerifyEmailEndpoint(
 
         token.Consume(now);
         token.User.MarkEmailVerified(now);
-        await domainWriteContext.CommitAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(token.User, now, ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
 
-        await Send.OkAsync(new VerifyEmailResponse("verified"), ct);
+        await Send.OkAsync(new VerifyEmailResponse(
+            "verified",
+            token.User.Id,
+            token.User.ActiveWaitlistDeveloperBenefitStartedAt(now),
+            token.User.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 }

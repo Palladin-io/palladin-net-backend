@@ -29,6 +29,7 @@ internal sealed class VerifyWaitlistValidator : Validator<VerifyWaitlistRequest>
 internal sealed class VerifyWaitlistEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IOptions<WaitlistOptions> options,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IClock clock) : Endpoint<VerifyWaitlistRequest>
 {
     public override void Configure()
@@ -54,17 +55,20 @@ internal sealed class VerifyWaitlistEndpoint(
             return;
         }
 
+        var now = clock.GetCurrentInstant();
         var tokenHash = TokenService.HashToken(req.Token.Trim());
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         var entry = await domainWriteContext.WaitlistEntries.FirstOrDefaultAsync(x => x.TokenHash == tokenHash, ct);
 
-        if (entry is null || !entry.CanVerify(clock.GetCurrentInstant()))
+        if (entry is null || !entry.CanVerify(now))
         {
             await Send.RedirectAsync(opts.FailedRedirectUrl, allowRemoteRedirects: true);
             return;
         }
 
-        entry.Verify(clock.GetCurrentInstant());
-        await domainWriteContext.CommitAsync(ct);
+        entry.Verify(now);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(entry, now, ct);
+        await domainWriteContext.CommitAsync(transaction, ct);
 
         await Send.RedirectAsync(opts.VerifiedRedirectUrl, allowRemoteRedirects: true);
     }

@@ -25,8 +25,12 @@ internal sealed class AuthSessionIssuer(
         uint authorizationVersion,
         Instant now)
     {
+        var effectivePlan = user.EffectivePlan(plan, now);
+        var expiresAtCap = plan < PlanType.Pro
+            ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
+            : null;
         var accessToken = tokenService.GenerateAccessToken(
-            user, organizationId, permissions, plan, authorizationVersion);
+            user, organizationId, permissions, effectivePlan, authorizationVersion, expiresAtCap);
         var (rawRefreshToken, refreshTokenHash) = tokenService.GenerateRefreshToken();
 
         var expiresAt = now.Plus(Duration.FromDays(jwtOptions.Value.RefreshTokenExpiryDays));

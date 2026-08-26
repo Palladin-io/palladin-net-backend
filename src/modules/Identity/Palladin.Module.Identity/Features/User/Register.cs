@@ -149,6 +149,13 @@ internal sealed class RegisterEndpoint(
             return;
         }
 
-        await Send.OkAsync(new AuthSessionResponse(accessToken, refreshToken, userId, user.IsOnboarded, user.EmailVerified), ct);
+        await Send.OkAsync(new AuthSessionResponse(
+            accessToken,
+            refreshToken,
+            userId,
+            user.IsOnboarded,
+            user.EmailVerified,
+            null,
+            null), ct);
     }
 }

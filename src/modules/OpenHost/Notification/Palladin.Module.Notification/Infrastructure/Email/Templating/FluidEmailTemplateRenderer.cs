@@ -82,6 +82,8 @@ internal sealed class FluidEmailTemplateRenderer : IEmailTemplateRenderer
         context.SetValue("appName", _branding.AppName);
         context.SetValue("baseUrl", _branding.BaseUrl);
         context.SetValue("supportEmail", _branding.SupportEmail);
+        context.SetValue("mobileAppUrl", _branding.MobileAppUrl);
+        context.SetValue("browserExtensionUrl", _branding.BrowserExtensionUrl);
         context.SetValue("year", _clock.GetCurrentInstant().InUtc().Year);
         if (!string.IsNullOrEmpty(_branding.LogoUrl))
         {

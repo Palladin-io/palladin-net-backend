@@ -5,6 +5,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Totp;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Shared;
 using FastEndpoints;
 using FluentValidation;
@@ -42,6 +43,7 @@ internal sealed class LoginTotpEndpoint(
     IAuthSessionIssuer sessionIssuer,
     LoginRateLimiter loginRateLimiter,
     LoginThrottleService loginThrottle,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IClock clock) : Endpoint<LoginTotpRequest, AuthSessionResponse>
 {
     private const int ConcurrentAuthRetryAfterSeconds = 1;
@@ -173,6 +175,8 @@ internal sealed class LoginTotpEndpoint(
         }
 
         challenge.Consume(now);
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
@@ -183,7 +187,7 @@ internal sealed class LoginTotpEndpoint(
             now);
         try
         {
-            await domainWriteContext.CommitAsync(ct);
+            await domainWriteContext.CommitAsync(transaction, ct);
         }
         catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception))
         {
@@ -192,7 +196,14 @@ internal sealed class LoginTotpEndpoint(
         }
 
         await Send.OkAsync(
-            new AuthSessionResponse(accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified), ct);
+            new AuthSessionResponse(
+                accessToken,
+                refreshToken,
+                user.Id,
+                user.IsOnboarded,
+                user.EmailVerified,
+                user.ActiveWaitlistDeveloperBenefitStartedAt(now),
+                user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 
     private async Task SendRateLimitedAsync(int retryAfterSeconds, CancellationToken ct)

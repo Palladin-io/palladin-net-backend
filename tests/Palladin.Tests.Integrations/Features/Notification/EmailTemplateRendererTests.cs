@@ -99,12 +99,16 @@ public sealed class EmailTemplateRendererTests
         english.TextBody.ShouldContain("Mobile app: https://palladin.io/mobile");
         english.TextBody.ShouldContain("Browser extension: https://palladin.io/browser-extension");
         english.TextBody.ShouldContain("Explore Example Vault beyond the web app:");
+        english.TextBody.ShouldContain("activate your account by opening the link below:");
+        english.TextBody.ShouldContain("return to Example Vault to finish setting up");
 
         polish.HtmlBody.ShouldContain(">aplikację mobilną</a>");
         polish.HtmlBody.ShouldContain(">rozszerzenie przeglądarkowe</a>");
         polish.TextBody.ShouldContain("Aplikacja mobilna: https://palladin.io/mobile");
         polish.TextBody.ShouldContain("Rozszerzenie przeglądarkowe: https://palladin.io/browser-extension");
         polish.TextBody.ShouldContain("Poznaj Example Vault poza panelem webowym:");
+        polish.TextBody.ShouldContain("aktywować konto, otwierając poniższy link:");
+        polish.TextBody.ShouldContain("wróć do Example Vault, aby dokończyć konfigurację");
     }
 
     [Fact]

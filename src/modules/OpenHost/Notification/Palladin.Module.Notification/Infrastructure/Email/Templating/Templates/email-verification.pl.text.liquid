@@ -1,8 +1,12 @@
 Potwierdź swój e-mail
 
-Cześć{% if name %} {{ name }}{% endif %}, witamy w {{ appName }}. Potwierdź ten adres e-mail, aby aktywować konto, otwierając poniższy link:
+Cześć{% if name %} {{ name }}{% endif %}, witamy w {{ appName }}. Potwierdź ten adres e-mail, aby aktywować konto. Po weryfikacji dokończysz konfigurację zaszyfrowanego sejfu, otwierając poniższy link:
 
 {{ verificationUrl }}
+
+Poznaj Palladin poza panelem webowym:
+Aplikacja mobilna: {{ mobileAppUrl }}
+Rozszerzenie przeglądarkowe: {{ browserExtensionUrl }}
 
 Link wygasa po {{ expiryMinutes }} minutach. Jeśli przestanie działać, zaloguj się ponownie, aby otrzymać nowy.
 

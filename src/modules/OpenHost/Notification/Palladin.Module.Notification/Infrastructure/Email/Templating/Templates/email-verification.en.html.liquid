@@ -1,8 +1,6 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700;text-align:center">Confirm your email</h1>
-<p style="margin:0 0 28px;text-align:center">Hi{% if name %} {{ name }}{% endif %}, welcome to {{ appName }}. Please confirm this email address to activate your account.</p>
-<p style="margin:0 0 28px;text-align:center">
-  <a href="{{ verificationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:8px 20px;border-radius:8px;font-size:14px">Verify email</a>
-</p>
-<p style="margin:0;font-size:12px;color:#6a6a6a;text-align:center">This link expires in {{ expiryMinutes }} minutes. If it stops working, sign in again to request a new one. If you didn't create a {{ appName }} account, you can safely ignore this email.</p>
+{% include '_header.html.liquid', emailTitle: "Confirm your email" %}
+<p style="margin:0 0 40px">Hi{% if name %} {{ name }}{% endif %}, welcome to {{ appName }}. Please confirm this email address to activate your account. Once verified, you can finish setting up your encrypted vault.</p>
+{% include '_cta.html.liquid', emailCtaUrl: verificationUrl, emailCtaLabel: "Verify email" %}
+<p style="margin:0 0 24px;font-size:12px;line-height:1.55;color:#596273">Explore the <a href="{{ mobileAppUrl }}" style="color:#596273;text-decoration:underline">mobile app</a> and <a href="{{ browserExtensionUrl }}" style="color:#596273;text-decoration:underline">browser extension</a>.</p>
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">This link expires in {{ expiryMinutes }} minutes. If it stops working, sign in again to request a new one. If you didn't create a {{ appName }} account, you can safely ignore this email.</p>
 {% include '_footer.en.html.liquid' %}

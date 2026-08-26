@@ -1,8 +1,12 @@
 Confirm your email
 
-Hi{% if name %} {{ name }}{% endif %}, welcome to {{ appName }}. Please confirm this email address to activate your account by opening the link below:
+Hi{% if name %} {{ name }}{% endif %}, welcome to {{ appName }}. Please confirm this email address to activate your account. Once verified, you can finish setting up your encrypted vault by opening the link below:
 
 {{ verificationUrl }}
+
+Explore Palladin beyond the web app:
+Mobile app: {{ mobileAppUrl }}
+Browser extension: {{ browserExtensionUrl }}
 
 This link expires in {{ expiryMinutes }} minutes. If it stops working, sign in again to request a new one.
 

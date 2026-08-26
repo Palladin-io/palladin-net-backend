@@ -1,10 +1,5 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">Potwierdź miejsce na liście oczekujących</h1>
-<p style="margin:0 0 16px">Dziękujemy za zapis na listę oczekujących {{ appName }}. Potwierdź swój adres e-mail, aby zarezerwować miejsce i otrzymać <b>miesiąc planu Developer bez opłat</b> po utworzeniu konta.</p>
-<p style="margin:0 0 24px">
-  <a href="{{ verificationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Potwierdzam adres e-mail</a>
-</p>
-<p style="margin:0 0 16px;font-size:13px;color:#6a6a6a">Link wygasa po {{ expiryHours }} godzinach. Jeśli przestanie działać, po prostu zapisz się ponownie na {{ baseUrl }}.</p>
-<p style="margin:0 0 16px;font-size:13px;color:#6a6a6a">Benefit nie wymaga karty, nie odnawia się ani nie powoduje opłaty, a po zakończeniu nie zmienia planu dostępnego niezależnie od promocji.</p>
-<p style="margin:0;font-size:13px;color:#6a6a6a">Jeśli to nie Ty zapisywałeś się na listę {{ appName }}, zignoruj tę wiadomość — nie odezwiemy się ponownie.</p>
+{% include '_header.html.liquid', emailTitle: "Potwierdź miejsce na liście oczekujących" %}
+<p style="margin:0 0 40px">Dziękujemy za zapis na listę oczekujących {{ appName }}. Potwierdź swój adres e-mail, aby zarezerwować miejsce i otrzymać <b>miesiąc planu Developer bez opłat</b> po utworzeniu konta.</p>
+{% include '_cta.html.liquid', emailCtaUrl: verificationUrl, emailCtaLabel: "Potwierdzam adres e-mail" %}
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">Link wygasa po {{ expiryHours }} godzinach. Jeśli przestanie działać, po prostu zapisz się ponownie na <a href="{{ baseUrl }}" style="color:#8a8a8a;text-decoration:underline">{{ baseUrl }}</a>. Jeśli to nie Ty zapisywałeś się na listę {{ appName }}, zignoruj tę wiadomość — nie odezwiemy się ponownie.</p>
 {% include '_footer.pl.html.liquid' %}

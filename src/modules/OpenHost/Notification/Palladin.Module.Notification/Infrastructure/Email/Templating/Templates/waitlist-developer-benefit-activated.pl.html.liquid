@@ -1,5 +1,4 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">Twój miesiąc planu Developer jest aktywny</h1>
+{% include '_header.html.liquid', emailTitle: "Twój miesiąc planu Developer jest aktywny" %}
 <p style="margin:0 0 16px">Dziękujemy za zapis na listę oczekujących {{ appName }}. Twój osobisty dostęp do planu Developer rozpoczął się <b>{{ startsAtUtc }}</b> i pozostaje aktywny do <b>{{ endsAtUtc }}</b>.</p>
 <p style="margin:0 0 16px">Nie potrzebujesz karty. Ten benefit nie uruchamia płatnej subskrypcji, nie odnawia się automatycznie i nie powoduje naliczenia opłaty.</p>
 <p style="margin:0">Po zakończeniu benefitu konto automatycznie wróci do planu dostępnego niezależnie od tej promocji.</p>

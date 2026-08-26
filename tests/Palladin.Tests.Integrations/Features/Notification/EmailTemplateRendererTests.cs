@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Net;
 using Palladin.Module.Notification.Contracts.Commands;
 using Palladin.Module.Notification.Contracts.ValueObjects;
 using Palladin.Module.Notification.Infrastructure.Email.Templating;
@@ -38,15 +39,20 @@ public sealed class EmailTemplateRendererTests
         ["endsAtUtc"] = "2026-09-25T12:00:00Z",
     };
 
-    private static readonly string[] AllTemplates =
+    private static readonly string[] AllTemplates = typeof(EmailTemplates)
+        .GetFields(BindingFlags.Public | BindingFlags.Static)
+        .Where(field => field.IsLiteral && !field.IsInitOnly && field.FieldType == typeof(string))
+        .Select(field => (string)field.GetRawConstantValue()!)
+        .OrderBy(name => name, StringComparer.Ordinal)
+        .ToArray();
+
+    private static readonly HashSet<string> TemplatesWithCallToAction =
     [
         EmailTemplates.EmailVerification,
         EmailTemplates.BetaInvitation,
         EmailTemplates.OrganizationInvitation,
         EmailTemplates.SecurityAlert,
-        EmailTemplates.LoginLockoutAlert,
         EmailTemplates.WaitlistVerification,
-        EmailTemplates.WaitlistDeveloperBenefitActivated,
     ];
 
     [Fact]
@@ -63,13 +69,43 @@ public sealed class EmailTemplateRendererTests
         en.Subject.ShouldContain("Verify");
         pl.Subject.ShouldContain("Potwierdź");
         en.HtmlBody.ShouldContain("Confirm your email");
-        pl.HtmlBody.ShouldContain("Potwierdź swój e-mail");
+        WebUtility.HtmlDecode(pl.HtmlBody).ShouldContain("Potwierdź swój e-mail");
         en.HtmlBody.ShouldContain("https://palladin.io/verify?token=abc");
         en.TextBody.ShouldContain("https://palladin.io/verify?token=abc");
     }
 
     [Fact]
-    public void When_OrganizationInvitationRendered_Then_CenteredCallToActionPrecedesCompactNote()
+    public void When_EmailVerificationRendered_Then_ProductLinksAreIncludedInHtmlAndPlainText()
+    {
+        // Given
+        var renderer = new FluidEmailTemplateRenderer(
+            Options.Create(new EmailBrandingOptions
+            {
+                MobileAppUrl = "https://palladin.io/mobile",
+                BrowserExtensionUrl = "https://palladin.io/browser-extension",
+            }),
+            new FakeClock(Instant.FromUtc(2026, 7, 10, 12, 0)));
+
+        // When
+        var english = renderer.Render(EmailTemplates.EmailVerification, "en", Model);
+        var polish = renderer.Render(EmailTemplates.EmailVerification, "pl", Model);
+
+        // Then
+        english.HtmlBody.ShouldContain("href=\"https://palladin.io/mobile\"");
+        english.HtmlBody.ShouldContain(">mobile app</a>");
+        english.HtmlBody.ShouldContain("href=\"https://palladin.io/browser-extension\"");
+        english.HtmlBody.ShouldContain(">browser extension</a>");
+        english.TextBody.ShouldContain("Mobile app: https://palladin.io/mobile");
+        english.TextBody.ShouldContain("Browser extension: https://palladin.io/browser-extension");
+
+        polish.HtmlBody.ShouldContain(">aplikację mobilną</a>");
+        polish.HtmlBody.ShouldContain(">rozszerzenie przeglądarkowe</a>");
+        polish.TextBody.ShouldContain("Aplikacja mobilna: https://palladin.io/mobile");
+        polish.TextBody.ShouldContain("Rozszerzenie przeglądarkowe: https://palladin.io/browser-extension");
+    }
+
+    [Fact]
+    public void When_OrganizationInvitationRendered_Then_DefaultPalladinHierarchyIsUsed()
     {
         // Given
         var renderer = CreateRenderer();
@@ -81,13 +117,13 @@ public sealed class EmailTemplateRendererTests
         // Then
         foreach (var rendered in new[] { english, polish })
         {
-            rendered.HtmlBody.ShouldContain("font-size:11px;line-height:1.45");
-            rendered.HtmlBody.ShouldContain("margin:4px 0 20px;text-align:center");
+            rendered.HtmlBody.ShouldContain("margin:0 0 40px");
+            rendered.HtmlBody.ShouldContain("margin:0 0 56px;text-align:center");
             rendered.HtmlBody.ShouldContain("padding:10px 20px");
-            rendered.HtmlBody.ShouldContain("font-size:14px");
-            rendered.HtmlBody.ShouldNotContain("margin:0 0 16px;font-size:13px");
+            rendered.HtmlBody.ShouldContain("font-size:12px;line-height:1.55;color:#8a8a8a");
+            rendered.HtmlBody.ShouldNotContain("font-size:11px");
             rendered.HtmlBody.IndexOf("text-align:center", StringComparison.Ordinal)
-                .ShouldBeLessThan(rendered.HtmlBody.IndexOf("font-size:11px", StringComparison.Ordinal));
+                .ShouldBeLessThan(rendered.HtmlBody.IndexOf("font-size:12px", StringComparison.Ordinal));
         }
 
         english.TextBody.ShouldContain("before accepting. If you were not expecting");
@@ -208,6 +244,20 @@ public sealed class EmailTemplateRendererTests
             rendered.TextBody.ShouldContain("Developer");
         }
 
+        foreach (var verification in new[] { verificationEnglish, verificationPolish })
+        {
+            verification.HtmlBody.ShouldContain("margin:0 0 40px");
+            verification.HtmlBody.ShouldContain("margin:0 0 56px;text-align:center");
+            verification.HtmlBody.ShouldContain("font-size:12px;line-height:1.55;color:#8a8a8a");
+            verification.HtmlBody.ShouldContain("style=\"color:#8a8a8a;text-decoration:underline\"");
+            verification.HtmlBody.ShouldContain("margin:0 0 4px");
+        }
+
+        verificationEnglish.HtmlBody.ShouldNotContain("requires no card");
+        verificationEnglish.TextBody.ShouldNotContain("requires no card");
+        verificationPolish.HtmlBody.ShouldNotContain("Benefit nie wymaga karty");
+        verificationPolish.TextBody.ShouldNotContain("Benefit nie wymaga karty");
+
         activatedEnglish.TextBody.ShouldContain("2026-08-25T12:00:00Z");
         activatedEnglish.TextBody.ShouldContain("2026-09-25T12:00:00Z");
         activatedEnglish.TextBody.ShouldContain("No card");
@@ -219,7 +269,7 @@ public sealed class EmailTemplateRendererTests
     }
 
     [Fact]
-    public void When_EveryTemplateRenderedInBothLanguages_Then_AllPartsProduced()
+    public void When_EveryTemplateRenderedInBothLanguages_Then_DefaultPalladinLayoutAndAllPartsAreProduced()
     {
         // Given
         var renderer = CreateRenderer();
@@ -233,7 +283,17 @@ public sealed class EmailTemplateRendererTests
                 rendered.Subject.ShouldNotBeNullOrWhiteSpace();
                 rendered.HtmlBody.ShouldContain("<html>");
                 rendered.HtmlBody.ShouldContain("Palladin");
+                rendered.HtmlBody.ShouldContain("padding:32px;font-size:14px;line-height:1.6");
+                rendered.HtmlBody.ShouldContain("margin:0 0 16px;font-size:20px;line-height:1.3;font-weight:700");
+                rendered.HtmlBody.ShouldContain("margin:0 0 4px");
+                rendered.HtmlBody.ShouldNotContain("font-size:15px;line-height:1.6");
                 rendered.TextBody.ShouldNotBeNullOrWhiteSpace();
+
+                if (TemplatesWithCallToAction.Contains(template))
+                {
+                    rendered.HtmlBody.ShouldContain("margin:0 0 56px;text-align:center");
+                    rendered.HtmlBody.ShouldContain("padding:10px 20px;border-radius:8px;font-size:14px;line-height:1.4");
+                }
             }
         }
     }
@@ -248,6 +308,7 @@ public sealed class EmailTemplateRendererTests
 
         // When / Then
         provider.GetFileInfo("_header.html.liquid").Exists.ShouldBeTrue();
+        provider.GetFileInfo("_cta.html.liquid").Exists.ShouldBeTrue();
         provider.GetFileInfo("does-not-exist.liquid").Exists.ShouldBeFalse();
     }
 }

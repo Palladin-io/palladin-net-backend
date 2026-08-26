@@ -1,5 +1,4 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">Tymczasowo zablokowaliśmy logowanie hasłem i TOTP do Twojego konta</h1>
+{% include '_header.html.liquid', emailTitle: "Tymczasowo zablokowaliśmy logowanie hasłem i TOTP do Twojego konta" %}
 <p style="margin:0 0 16px">{{ appName }} wykrył {{ attemptCount }} nieudanych prób logowania w oknie {{ windowMinutes }} min i tymczasowo zablokował dalsze próby logowania hasłem oraz TOTP do Twojego konta.</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px;background:#fbeaea;border:1px solid #f3caca;border-radius:8px">
   <tr><td style="padding:16px;font-size:14px;color:#7a1f1f">
@@ -12,5 +11,5 @@
 </table>
 <p style="margin:0 0 16px">Ograniczenie dotyczy prób logowania hasłem oraz TOTP do Twojego konta niezależnie od źródłowego adresu IP.</p>
 <p style="margin:0 0 16px">Jeśli rozpoznajesz tę aktywność, nie musisz nic robić. Jeśli nie, otwórz {{ appName }} samodzielnie i sprawdź Audit Log. Upewnij się też, że używasz unikalnego hasła i masz włączone TOTP.</p>
-<p style="margin:0">Ten alert nie zawiera linku do odblokowania. Blokada wygaśnie automatycznie o podanym czasie.</p>
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">Ten alert nie zawiera linku do odblokowania. Blokada wygaśnie automatycznie o podanym czasie.</p>
 {% include '_footer.pl.html.liquid' %}

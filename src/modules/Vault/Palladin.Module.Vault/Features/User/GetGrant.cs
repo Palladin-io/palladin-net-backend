@@ -62,6 +62,8 @@ public sealed record GrantResponse(
     Instant? RevokedAt,
     Guid? RevokedBy,
     string? RevokedByName,
+    Instant? SupersededAt,
+    Guid? SupersededByGrantId,
     Instant? DeniedAt,
     Guid? DeniedBy,
     string? DeniedByName,
@@ -241,6 +243,8 @@ internal static class GrantProjection
                 : g.RevokedBy == null
                     ? null
                     : ctx.Users.Where(u => u.Id == g.RevokedBy).Select(u => u.DisplayName).FirstOrDefault(),
+            g.SupersededAt,
+            g.SupersededByGrantId,
             g.DeniedAt,
             g.DeniedBy,
             g.DeniedBy == null
@@ -251,7 +255,7 @@ internal static class GrantProjection
             g.LastAccessHostname,
             // CanRevoke: only an Active grant can be revoked.
             g.Status == GrantStatus.Active,
-            // CanGrantAgain: a terminal grant (Expired/Consumed/Denied/Revoked) that the agent can be
+            // CanGrantAgain: a terminal grant (Expired/Consumed/Denied/Revoked/Superseded) that the agent can be
             // re-granted because it currently has NO active coverage of this entry — no active GRANULAR
             // on the entry and no active FULL on the vault. Coverage is scoped to the same agent. For a
             // GRANULAR grant coverage is checked on its EntryId; for a FULL grant, on an active FULL grant
@@ -359,7 +363,8 @@ internal static class GrantProjection
         CancellationToken ct)
     {
         var terminalRows = rows.Where(row => row.Status is GrantStatus.Expired
-            or GrantStatus.Consumed or GrantStatus.Denied or GrantStatus.Revoked).ToArray();
+            or GrantStatus.Consumed or GrantStatus.Denied or GrantStatus.Revoked
+            or GrantStatus.Superseded).ToArray();
         if (terminalRows.Length == 0)
         {
             return;

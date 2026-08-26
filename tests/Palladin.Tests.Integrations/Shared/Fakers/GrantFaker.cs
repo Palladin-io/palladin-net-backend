@@ -53,7 +53,7 @@ internal static class GrantFaker
         var resolvedVaultId = vaultId ?? Guid.NewGuid();
         var resolvedOrganizationId = organizationId ?? Guid.NewGuid();
         var resolvedAgentId = agentId ?? Guid.NewGuid();
-        return (PrivateCtorFaker<FullGrant>)new PrivateCtorFaker<FullGrant>()
+        var faker = (PrivateCtorFaker<FullGrant>)new PrivateCtorFaker<FullGrant>()
             .RuleFor(x => x.Id, resolvedId)
             .RuleFor(x => x.VaultId, resolvedVaultId)
             .RuleFor(x => x.OrganizationId, resolvedOrganizationId)
@@ -67,12 +67,18 @@ internal static class GrantFaker
             .RuleFor(x => x.QueryCount, 0)
             .RuleFor(x => x.CreatedAt, now)
             .RuleFor(x => x.CreatedBy, createdBy ?? Guid.NewGuid())
-            .RuleFor(x => x.UpdatedAt, now)
-            .RuleFor(x => x.AgentWrappedVaultKey, GrantEnvelopeTestData.AgentVaultKey(
+            .RuleFor(x => x.UpdatedAt, now);
+
+        if (status == GrantStatus.Active)
+        {
+            faker.RuleFor(x => x.AgentWrappedVaultKey, GrantEnvelopeTestData.AgentVaultKey(
                 resolvedOrganizationId,
                 resolvedVaultId,
                 resolvedId,
                 resolvedAgentId,
                 agentAccessEpoch));
+        }
+
+        return faker;
     }
 }

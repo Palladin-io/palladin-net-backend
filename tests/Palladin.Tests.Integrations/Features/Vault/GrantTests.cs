@@ -447,6 +447,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
             organizationId: setup.OrganizationId,
             agentId: setup.AgentId,
             status: GrantStatus.Revoked).Generate();
+        terminal.AgentWrappedVaultKey.ShouldBeNull();
         await apiFactory.Services.SeedFullGrantAsync(terminal);
         var active = GrantFaker.CreateFull(
             vaultId: setup.VaultId,

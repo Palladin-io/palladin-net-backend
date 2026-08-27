@@ -12,6 +12,51 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<int>(
+                name: "DeliveryPolicy",
+                table: "VaultEntries",
+                type: "integer",
+                nullable: false,
+                defaultValue: 0);
+
+            // DeliveryPolicy used to live only on per-Entry grant scopes. Preserve the
+            // authoritative restriction before deleting legacy FULL grants and their
+            // cascading scopes. Conflicting historical policies cannot be widened safely,
+            // so the pre-production cutover fails closed instead of guessing.
+            migrationBuilder.Sql(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM "GrantEntryScopes"
+                        GROUP BY "OrganizationId", "VaultId", "EntryId"
+                        HAVING COUNT(DISTINCT "DeliveryPolicy") > 1
+                    ) THEN
+                        RAISE EXCEPTION 'Conflicting legacy Entry delivery policies require reconciliation before the FULL grant cutover.';
+                    END IF;
+                END
+                $$;
+                """);
+
+            migrationBuilder.Sql(
+                """
+                UPDATE "VaultEntries" AS entry
+                SET "DeliveryPolicy" = policy."DeliveryPolicy"
+                FROM (
+                    SELECT
+                        "OrganizationId",
+                        "VaultId",
+                        "EntryId",
+                        MIN("DeliveryPolicy") AS "DeliveryPolicy"
+                    FROM "GrantEntryScopes"
+                    GROUP BY "OrganizationId", "VaultId", "EntryId"
+                ) AS policy
+                WHERE entry."OrganizationId" = policy."OrganizationId"
+                  AND entry."VaultId" = policy."VaultId"
+                  AND entry."Id" = policy."EntryId";
+                """);
+
             // Pre-production protocol cutover: legacy FULL rows contain per-entry grant envelopes
             // and cannot be reinterpreted as a Vault-key membership wrapper. Remove them atomically;
             // owners must create fresh FULL grants with the canonical descriptor-bound VK wrapper.
@@ -22,13 +67,6 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "FullGrantPreparations");
-
-            migrationBuilder.AddColumn<int>(
-                name: "DeliveryPolicy",
-                table: "VaultEntries",
-                type: "integer",
-                nullable: false,
-                defaultValue: 0);
 
             migrationBuilder.CreateTable(
                 name: "AgentWrappedVaultKeys",

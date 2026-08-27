@@ -385,25 +385,21 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         var setup = await ArrangeAsync();
         var (_, pending) = await setup.AgentClient
             .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(Request(setup));
-        var create = new CreateGrantRequest
+        var create = new CreateGranularGrantRequest
         {
             GrantId = pending!.GrantId,
             VaultId = setup.VaultId,
             AgentId = setup.AgentId,
-            Type = GrantType.Granular,
             EntryId = setup.EntryId,
             Methods = GrantMethods.Get,
-            GrantEntries =
-            [
-                GrantEnvelopeTestData.Contract(
-                    setup.OrganizationId, setup.VaultId, pending.GrantId, setup.EntryId,
-                    setup.AgentPublicKey,
-                    agentId: setup.AgentId),
-            ],
+            GrantEntry = GrantEnvelopeTestData.Contract(
+                setup.OrganizationId, setup.VaultId, pending.GrantId, setup.EntryId,
+                setup.AgentPublicKey,
+                agentId: setup.AgentId),
         };
 
         var (response, _) = await setup.UserClient
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(create);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(create);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();

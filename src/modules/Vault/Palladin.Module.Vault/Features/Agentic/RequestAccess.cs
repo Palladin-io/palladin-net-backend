@@ -135,9 +135,10 @@ internal sealed class RequestAccessEndpoint(
                              && g is GranularGrant
                              && ((GranularGrant)g).EntryId == req.EntryId)
                             || (g.Status == GrantStatus.Active
-                                && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
-                                    && scope.Envelope != null
-                                    && scope.Envelope.EntryRevision == entry.CurrentRevision))))
+                                && ((g is FullGrant && g.AgentWrappedVaultKey != null)
+                                    || (g is GranularGrant && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
+                                        && scope.Envelope != null
+                                        && scope.Envelope.EntryRevision == entry.CurrentRevision))))))
             .Select(g => new { g.Id, g.Status })
             .FirstOrDefaultAsync(ct);
         if (existing is not null)

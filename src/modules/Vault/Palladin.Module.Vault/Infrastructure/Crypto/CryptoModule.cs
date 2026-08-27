@@ -11,11 +11,8 @@ internal static class CryptoModule
     {
         services.AddOptions<VaultCryptoOptions>()
             .Bind(configuration.GetSection(VaultCryptoOptions.Position))
-            .Validate(options => options.MaxFullGrantPreparationBatchEntries is > 0 and <= 100
-                                 && options.MaxFullGrantMaterialPageSize is > 0 and <= 100
-                                 && options.FullGrantPreparationTtlMinutes is > 0 and <= 60
-                                 && options.FullGrantPreparationCleanupBatchSize is > 0 and <= 1000,
-                "FULL grant preparation limits are outside the safe product bounds.")
+            .Validate(options => options.MaxGrantEntriesPerGrant is > 0 and <= 500,
+                "Grant crypto limits are outside the safe product bounds.")
             .ValidateOnStart();
 
         services.AddSingleton<IVaultEnvelopeSuite, XChaCha20Poly1305VaultEnvelopeSuite>();

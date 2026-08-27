@@ -1,6 +1,7 @@
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Tests.Integrations.Shared;
 using NodaTime;
 
 namespace Palladin.Tests.Integrations.Shared.Fakers;
@@ -48,11 +49,15 @@ internal static class GrantFaker
         Instant? createdAt = null)
     {
         var now = PostgreSqlInstant.Normalize(createdAt ?? SystemClock.Instance.GetCurrentInstant());
-        return (PrivateCtorFaker<FullGrant>)new PrivateCtorFaker<FullGrant>()
-            .RuleFor(x => x.Id, id ?? Guid.NewGuid())
-            .RuleFor(x => x.VaultId, vaultId ?? Guid.NewGuid())
-            .RuleFor(x => x.OrganizationId, organizationId ?? Guid.NewGuid())
-            .RuleFor(x => x.AgentId, agentId ?? Guid.NewGuid())
+        var resolvedId = id ?? Guid.NewGuid();
+        var resolvedVaultId = vaultId ?? Guid.NewGuid();
+        var resolvedOrganizationId = organizationId ?? Guid.NewGuid();
+        var resolvedAgentId = agentId ?? Guid.NewGuid();
+        var faker = (PrivateCtorFaker<FullGrant>)new PrivateCtorFaker<FullGrant>()
+            .RuleFor(x => x.Id, resolvedId)
+            .RuleFor(x => x.VaultId, resolvedVaultId)
+            .RuleFor(x => x.OrganizationId, resolvedOrganizationId)
+            .RuleFor(x => x.AgentId, resolvedAgentId)
             .RuleFor(x => x.AgentAccessEpoch, agentAccessEpoch)
             .RuleFor(x => x.AgentPublicKey, AgentFaker.GeneratePublicKey())
             .RuleFor(x => x.Status, status)
@@ -63,5 +68,17 @@ internal static class GrantFaker
             .RuleFor(x => x.CreatedAt, now)
             .RuleFor(x => x.CreatedBy, createdBy ?? Guid.NewGuid())
             .RuleFor(x => x.UpdatedAt, now);
+
+        if (status == GrantStatus.Active)
+        {
+            faker.RuleFor(x => x.AgentWrappedVaultKey, GrantEnvelopeTestData.AgentVaultKey(
+                resolvedOrganizationId,
+                resolvedVaultId,
+                resolvedId,
+                resolvedAgentId,
+                agentAccessEpoch));
+        }
+
+        return faker;
     }
 }

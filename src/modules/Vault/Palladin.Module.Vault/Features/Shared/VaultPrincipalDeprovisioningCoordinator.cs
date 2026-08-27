@@ -162,7 +162,8 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
                             grant.OrganizationId == operation.OrganizationId
                             && grant.VaultId == x.Id
                             && grant.AgentId == operation.PrincipalId
-                            && grant.GrantEntryScopes.Any(scope => scope.Envelope != null)))
+                            && (grant.AgentWrappedVaultKey != null
+                                || grant.GrantEntryScopes.Any(scope => scope.Envelope != null))))
             .OrderBy(x => x.Id)
             .Select(x => (Guid?)x.Id)
             .FirstOrDefaultAsync(cancellationToken);

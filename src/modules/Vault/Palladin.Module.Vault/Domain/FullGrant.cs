@@ -7,11 +7,9 @@ internal sealed class FullGrant : Grant
 {
     public override GrantType Type => GrantType.Full;
 
-    // FULL grants cover entries through durable per-entry scopes backed by revision-bound
-    // envelopes. Deleting an envelope removes active coverage without deleting the durable scope.
-    // New entries are attached by the owner's client during entry creation because the server never
-    // has the vault key required to construct the agent envelope.
-    public override bool Covers(Guid entryId) => GrantEntryScopes.Any(x => x.EntryId == entryId && x.Envelope != null);
+    // FULL is a temporary Vault crypto membership: one Agent-wrapped current VK covers every active
+    // Entry in the Vault. The backend never sees the unwrapped VK.
+    public override bool Covers(Guid entryId) => AgentWrappedVaultKey is not null;
 
     private FullGrant() { }
 
@@ -21,7 +19,7 @@ internal sealed class FullGrant : Grant
         Guid organizationId,
         Guid agentId,
         string agentPublicKey,
-        IReadOnlyCollection<GrantEntryScope> scopes,
+        AgentWrappedVaultKey agentWrappedVaultKey,
         Instant? expiresAt,
         int? queryLimit,
         string expirySource,
@@ -32,10 +30,11 @@ internal sealed class FullGrant : Grant
         uint agentAccessEpoch)
     {
         ArgumentOutOfRangeException.ThrowIfZero(agentAccessEpoch);
-        if (scopes.Any(scope => scope.OrganizationId != organizationId
-                                                    || scope.VaultId != vaultId
-                                                    || scope.GrantId != id
-                                                    || scope.Methods != methods))
+        if (agentWrappedVaultKey.OrganizationId != organizationId
+            || agentWrappedVaultKey.VaultId != vaultId
+            || agentWrappedVaultKey.GrantId != id
+            || agentWrappedVaultKey.AgentId != agentId
+            || agentWrappedVaultKey.AgentAccessEpoch != agentAccessEpoch)
         {
             throw new Palladin.Core.Types.Exceptions.DomainException("Grant scopes do not match the grant.");
         }
@@ -56,50 +55,11 @@ internal sealed class FullGrant : Grant
             CreatedAt = now,
             CreatedBy = createdBy,
             UpdatedAt = now,
-            GrantEntryScopes = [.. scopes],
+            AgentWrappedVaultKey = agentWrappedVaultKey,
         };
 
         grant.EmitCreated(names);
 
         return grant;
-    }
-
-    internal static FullGrant CreateForPreparation(
-        FullGrantPreparation preparation,
-        Guid createdBy,
-        Instant now)
-    {
-        var grant = new FullGrant
-        {
-            Id = preparation.Id,
-            VaultId = preparation.VaultId,
-            OrganizationId = preparation.OrganizationId,
-            AgentId = preparation.AgentId,
-            AgentAccessEpoch = preparation.AgentAccessEpoch,
-            AgentPublicKey = preparation.AgentPublicKey,
-            Status = GrantStatus.Pending,
-            ExpiresAt = preparation.GrantExpiresAt,
-            QueryLimit = preparation.QueryLimit,
-            QueryCount = 0,
-            ExpirySource = preparation.ExpirySource,
-            Methods = preparation.Methods,
-            CreatedAt = now,
-            CreatedBy = createdBy,
-            UpdatedAt = now,
-        };
-
-        return grant;
-    }
-
-    internal void CompletePreparation(GrantNames names, Instant now)
-    {
-        if (Status != GrantStatus.Pending || RequestType is not null)
-        {
-            throw new Palladin.Core.Types.Exceptions.DomainException("FULL grant preparation is not completable.");
-        }
-
-        Status = GrantStatus.Active;
-        UpdatedAt = now;
-        EmitCreated(names);
     }
 }

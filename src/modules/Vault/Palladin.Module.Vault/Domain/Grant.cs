@@ -7,8 +7,8 @@ namespace Palladin.Module.Vault.Domain;
 
 // TPH (Table-Per-Hierarchy) base for grants. The grant TYPE (FullGrant / GranularGrant) is an
 // authorization concern — FULL skips per-request approval and may cover any entry of the vault,
-// GRANULAR covers exactly one entry. It is NOT a crypto concern: both subtypes always use
-// per-entry grant envelopes and the server never wraps VK for an agent.
+// GRANULAR covers exactly one entry. Their crypto material intentionally differs: GRANULAR owns one
+// per-entry grant envelope, while FULL owns one Agent-wrapped Vault key.
 // Inheritance (not a GrantMode enum on a single class) is used here because the variance is
 // structural + behavioral (different FK, different Covers() semantics, different factories),
 // which is exactly the case EF Core TPH is for.
@@ -51,6 +51,8 @@ internal abstract class Grant : EventEntityBase
     public Instant? RevokedAt { get; protected set; }
     public Guid? RevokedBy { get; protected set; }
     public bool RevokedBySystem { get; protected set; }
+    public Instant? SupersededAt { get; protected set; }
+    public Guid? SupersededByGrantId { get; protected set; }
     public Instant? DeniedAt { get; protected set; }
     public Guid? DeniedBy { get; protected set; }
 
@@ -64,6 +66,7 @@ internal abstract class Grant : EventEntityBase
     public Instant UpdatedAt { get; protected set; }
 
     internal ICollection<GrantEntryScope> GrantEntryScopes { get; set; } = [];
+    internal AgentWrappedVaultKey? AgentWrappedVaultKey { get; set; }
 
     public abstract GrantType Type { get; }
 
@@ -123,6 +126,8 @@ internal abstract class Grant : EventEntityBase
         {
             scope.DeleteEnvelope();
         }
+
+        AgentWrappedVaultKey = null;
     }
 
     internal void RemoveEntryScope(Guid entryId, Instant now)
@@ -176,19 +181,6 @@ internal abstract class Grant : EventEntityBase
         EmitApproved(names);
     }
 
-    // When an entry is created in a vault this grant already covers through an active FULL grant,
-    // the owner's client wraps the new entry's DEK for the grant so it is immediately deliverable.
-    // The server stores ciphertext only — VK is never wrapped for an agent.
-    internal void WrapNewEntry(GrantEntryScope scope)
-    {
-        if (scope.GrantId != Id || scope.OrganizationId != OrganizationId || scope.VaultId != VaultId)
-        {
-            throw new Palladin.Core.Types.Exceptions.DomainException("Grant scope does not belong to this grant.");
-        }
-
-        GrantEntryScopes.Add(scope);
-    }
-
     internal void Deny(Guid deniedBy, GrantNames names, Instant now)
     {
         if (Status != GrantStatus.Pending)
@@ -206,7 +198,7 @@ internal abstract class Grant : EventEntityBase
     }
 
     // Time-based expiry is driven by the expiry cron. Only Active grants expire; Consumed,
-    // Revoked, Denied and Pending are untouched. Idempotent: a no-op if not Active.
+    // Revoked, Denied, Superseded and Pending are untouched. Idempotent: a no-op if not Active.
     // entryLabel is resolved upfront by the caller (FULL grants pass null); audit consumers render
     // "what expired" without a re-resolve hop.
     internal void Expire(Instant now, string? entryLabel)
@@ -223,12 +215,34 @@ internal abstract class Grant : EventEntityBase
         EmitExpired(entryLabel);
     }
 
+    // A FULL grant replaces active per-entry grants for the same Agent/Vault coverage. This is not
+    // expiry (the TTL did not elapse) and not a user/system revocation. Keep the relationship to the
+    // replacement as structured lifecycle data; EncryptedReason remains the Agent-signed request
+    // reason and must never be repurposed for server-generated status text.
+    internal void SupersedeByFull(Guid supersededByGrantId, GrantNames names, Instant now)
+    {
+        if (this is not GranularGrant || Status != GrantStatus.Active)
+        {
+            return;
+        }
+
+        Status = GrantStatus.Superseded;
+        SupersededAt = now;
+        SupersededByGrantId = supersededByGrantId;
+        UpdatedAt = now;
+        DeleteDeliveryEnvelopes();
+
+        EmitSuperseded(names);
+    }
+
     private void DeleteDeliveryEnvelopes()
     {
         foreach (var scope in GrantEntryScopes)
         {
             scope.DeleteEnvelope();
         }
+
+        AgentWrappedVaultKey = null;
     }
 
     protected void EmitCreated(GrantNames names) =>
@@ -330,6 +344,24 @@ internal abstract class Grant : EventEntityBase
             entryLabel,
             Type,
             ttlSeconds,
+            UpdatedAt));
+    }
+
+    private void EmitSuperseded(GrantNames names)
+    {
+        var durationActive = SupersededAt.HasValue ? SupersededAt.Value - CreatedAt : Duration.Zero;
+        AddEvent(new GrantSupersededEvent(
+            Id,
+            SupersededByGrantId!.Value,
+            VaultId,
+            OrganizationId,
+            AgentId,
+            ((GranularGrant)this).EntryId,
+            Type,
+            names.AgentName,
+            names.EntryLabel,
+            names.VaultName,
+            (long)durationActive.TotalSeconds,
             UpdatedAt));
     }
 }

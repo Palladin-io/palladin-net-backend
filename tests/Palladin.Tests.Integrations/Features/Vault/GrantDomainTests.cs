@@ -1,6 +1,7 @@
 using NodaTime;
 using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
+using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Shared;
@@ -338,20 +339,43 @@ public sealed class GrantDomainTests
     }
 
     [Fact]
-    public void FullGrant_CoversOnlyScopesWithLivePayload()
+    public void FullGrant_CoversEntriesOnlyWhileWrappedVaultKeyIsLive()
     {
         var organizationId = Guid.NewGuid();
         var vaultId = Guid.NewGuid();
         var grantId = Guid.NewGuid();
         var entryId = Guid.NewGuid();
-        var scope = GrantEnvelopeTestData.Scope(organizationId, vaultId, grantId, entryId);
+        var agentId = Guid.NewGuid();
         var grant = FullGrant.CreateProactively(
-            grantId, vaultId, organizationId, Guid.NewGuid(), "pk", [scope],
+            grantId, vaultId, organizationId, agentId, "pk",
+            GrantEnvelopeTestData.AgentVaultKey(organizationId, vaultId, grantId, agentId),
             null, null, "lifetime", GrantMethods.Get, Guid.NewGuid(),
             new GrantNames("agent", null, "vault", "actor"), Now, 1);
 
         grant.Covers(entryId).ShouldBeTrue();
         grant.Revoke(Guid.NewGuid(), new GrantNames("agent", null, "vault", "actor"), Now);
         grant.Covers(entryId).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SupersedeByFull_EmitsExplicitGrantType()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
+        var supersededByGrantId = Guid.NewGuid();
+        var names = new GrantNames("agent", "entry", "vault", "actor");
+        var grant = GranularGrant.CreateProactively(
+            grantId, vaultId, organizationId, Guid.NewGuid(), "pk", entryId,
+            GrantEnvelopeTestData.Scope(organizationId, vaultId, grantId, entryId),
+            null, null, "lifetime", GrantMethods.Get, Guid.NewGuid(), names, Now, 1);
+        grant.FetchEvents();
+
+        grant.SupersedeByFull(supersededByGrantId, names, Now + Duration.FromMinutes(1));
+
+        var @event = grant.FetchEvents().ShouldHaveSingleItem().ShouldBeOfType<GrantSupersededEvent>();
+        @event.Type.ShouldBe(GrantType.Granular);
+        @event.SupersededByGrantId.ShouldBe(supersededByGrantId);
     }
 }

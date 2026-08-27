@@ -47,6 +47,20 @@ internal sealed class XChaCha20Poly1305VaultEnvelopeSuite : IVaultEnvelopeSuite
     }
 }
 
+internal static class WrappedKeyPackageContract
+{
+    internal static void ValidatePackage(string wrapperSuiteId, ReadOnlySpan<byte> package)
+    {
+        if (string.Equals(wrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
+        {
+            X25519SealedBoxContract.ValidatePackage(package);
+            return;
+        }
+
+        throw new DomainException("The wrapped-key suite is not supported by Vault protocol 2.");
+    }
+}
+
 internal static class X25519SealedBoxContract
 {
     internal const string SuiteId = "palladin-x25519-sealed-box-v1";
@@ -67,6 +81,7 @@ internal enum X25519WrapperPurpose : ushort
     AgentDiscoveryVdk = 2,
     ReasonDek = 3,
     GrantDek = 4,
+    AgentVaultKey = 5,
 }
 
 internal sealed record X25519WrapperContext(

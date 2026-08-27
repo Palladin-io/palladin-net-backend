@@ -38,18 +38,26 @@ public sealed record GetOrRequestCredentialRequest
 }
 
 // Discriminated union over `access`. Only the "granted" variant carries ciphertext — and it is the
-// ONLY place in the API that does. All ciphertext fields are base64 the agent decrypts with its own
-// X25519 private key; the server never unwraps the DEK, never sees plaintext, never wraps VK for an
-// agent. Never log the granted payload. Optional fields are null for every other access state.
+// ONLY place in the API that does. GRANULAR carries an agent-sealed grant envelope. FULL carries a
+// client-created AgentWrappedVaultKey plus the current EntryKey and MemberSecret envelopes. The
+// server never unwraps any key or sees plaintext. Never log the granted payload. Optional fields
+// are null for every other access state.
 [PublicAPI]
 public sealed record GetOrRequestCredentialResponse(
     string Access,
     Guid? OrganizationId = null,
     Guid? VaultId = null,
     Guid? AgentId = null,
+    uint? AgentAccessEpoch = null,
     ushort? ApprovedMethods = null,
     Guid? EntryId = null,
+    GrantType? GrantType = null,
+    GrantDeliveryPolicy? DeliveryPolicy = null,
+    Instant? ExpiresAt = null,
     GrantEntryEnvelopeContract? GrantEnvelope = null,
+    AgentWrappedVaultKeyContract? AgentWrappedVaultKey = null,
+    VaultEntryKeyContract? EntryKey = null,
+    MemberSecretEnvelopeContract? MemberSecret = null,
     Guid? GrantId = null,
     bool? Created = null,
     int? PollIntervalMs = null,
@@ -110,7 +118,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Get a credential or request access in one call (unified agent flow)";
-            summary.Description = "Single entry point for request, polling, and delivery. The granted variant carries only the canonical authenticated grant envelope and agent-wrapped DEK; labels, URL domains, plaintext secrets, and client keys never reach the server. The agent decrypts locally.";
+            summary.Description = "Single entry point for request, polling, and delivery. The granted variant carries disjoint encrypted material: one canonical grant envelope for GRANULAR, or the Agent-wrapped Vault key plus current Entry key and MemberSecret for FULL. Labels, URL domains, plaintext secrets, and client keys never reach the server. The native Agent decrypts locally.";
         });
         Tags("Vault/Grants");
     }
@@ -178,7 +186,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
                         && g.AgentId == agentId.Value
                         && g.AgentAccessEpoch == agent.AccessEpoch
                         && g.VaultId == req.VaultId
-                        && ((g is FullGrant && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId))
+                        && ((g is FullGrant)
                             || (g is GranularGrant && ((GranularGrant)g).EntryId == req.EntryId)))
             .Select(g => new
             {
@@ -191,9 +199,10 @@ internal sealed class GetOrRequestCredentialEndpoint(
                 g.Methods,
                 g.AgentAccessEpoch,
                 Type = g is FullGrant ? GrantType.Full : GrantType.Granular,
-                HasCurrentMaterial = g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
-                    && scope.Envelope != null
-                    && scope.Envelope.EntryRevision == entry.CurrentRevision),
+                HasCurrentMaterial = (g is FullGrant && g.AgentWrappedVaultKey != null)
+                    || (g is GranularGrant && g.GrantEntryScopes.Any(scope => scope.EntryId == req.EntryId
+                        && scope.Envelope != null
+                        && scope.Envelope.EntryRevision == entry.CurrentRevision)),
             })
             .OrderByDescending(g => g.CreatedAt)
             .ThenByDescending(g => g.Id)
@@ -218,8 +227,9 @@ internal sealed class GetOrRequestCredentialEndpoint(
         // 3) Only an explicit Denial blocks a re-request, and only while it is the latest decision (a
         // newer re-creatable terminal supersedes an older Denied, so the agent is never permanently
         // stuck on a stale refusal). Every other terminal (Revoked by user OR system,
-        // Consumed, Expired) is re-requestable and falls through to step 4: a revoke ends the current
-        // access, it does not bar the agent from asking again with a fresh justification.
+        // Consumed, Expired, Superseded) is re-requestable and falls through to step 4: a revoke or
+        // replacement ends the current access, it does not bar the agent from asking again with a
+        // fresh justification.
         var latestTerminal = grants.FirstOrDefault();
         if (latestTerminal is { Status: GrantStatus.Denied })
         {
@@ -228,7 +238,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         }
 
         // 4) No live grant and not blocked by a latest Denied (no grant at all, or the newest terminal
-        // is Revoked / Consumed / Expired) — create a fresh Pending re-request. The old terminal row
+        // is Revoked / Consumed / Expired / Superseded) — create a fresh Pending re-request. The old terminal row
         // stays for history/audit.
         await RequestNewGrantAsync(req, agentId.Value, accessEpoch.Value, agent.OrganizationId,
             agent.PublicKey, agent.SigningPublicKey, vault.AgentMessageKeyVersion,
@@ -292,8 +302,8 @@ internal sealed class GetOrRequestCredentialEndpoint(
                 await SendAccessAsync(403, new GetOrRequestCredentialResponse(AccessExpired), ct);
                 return;
 
-            // FULL grant covering an entry added after approval: no wrapped DEK exists for this agent yet
-            // (the server cannot wrap one). 200 unavailable — the agent must request access for it.
+            // Ciphertext for the selected grant mode is missing or stale. Fail closed without
+            // attempting to substitute material from another grant.
             case CredentialDeliveryResult.Denied { Reason: CredentialDenialReasons.MaterialUnavailable }:
                 await DenyAsync(req, agentId, CredentialDenialReasons.MaterialUnavailable, now, ct);
                 await SendAccessAsync(200, new GetOrRequestCredentialResponse(AccessUnavailable), ct);
@@ -313,10 +323,19 @@ internal sealed class GetOrRequestCredentialEndpoint(
                     OrganizationId: organizationId,
                     VaultId: req.VaultId,
                     AgentId: agentId,
+                    AgentAccessEpoch: agentAccessEpoch,
                     ApprovedMethods: (ushort)allowedMethods,
                     EntryId: req.EntryId,
-                    GrantEnvelope: GrantDeliveryContractMapper.ToContract(granted, organizationId, req.VaultId,
-                        grantId, agentId, req.EntryId, allowedMethods),
+                    GrantType: type,
+                    DeliveryPolicy: granted.DeliveryPolicy,
+                    ExpiresAt: expiresAt,
+                    GrantEnvelope: type == GrantType.Granular
+                        ? GrantDeliveryContractMapper.ToContract(granted, organizationId, req.VaultId,
+                            grantId, agentId, req.EntryId, allowedMethods)
+                        : null,
+                    AgentWrappedVaultKey: granted.AgentWrappedVaultKey,
+                    EntryKey: granted.EntryKey,
+                    MemberSecret: granted.MemberSecret,
                     GrantId: grantId),
                     ct);
 

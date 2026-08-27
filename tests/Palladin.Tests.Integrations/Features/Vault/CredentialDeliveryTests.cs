@@ -440,7 +440,8 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         var (agentClient, agentId, vaultId, entryId, orgId, _) = await SetupAsync();
         var grantId = Guid.NewGuid();
         var full = FullGrant.CreateProactively(
-            grantId, vaultId, orgId, agentId, "pk", [Material(orgId, vaultId, grantId, entryId, 3)],
+            grantId, vaultId, orgId, agentId, "pk",
+            GrantEnvelopeTestData.AgentVaultKey(orgId, vaultId, grantId, agentId),
             null, 3, "uses", GrantMethods.Get, Guid.NewGuid(), TestNames, SystemClock.Instance.GetCurrentInstant(), agentAccessEpoch: 1);
         await apiFactory.Services.SeedFullGrantAsync(full);
 
@@ -506,7 +507,7 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         var grantId = Guid.NewGuid();
         var full = FullGrant.CreateProactively(
             grantId, vaultId, orgId, agentId, "pk",
-            [Material(orgId, vaultId, grantId, entryId, remainingUses: 1)],
+            GrantEnvelopeTestData.AgentVaultKey(orgId, vaultId, grantId, agentId),
             null, 1, "uses", GrantMethods.Get, Guid.NewGuid(), TestNames,
             SystemClock.Instance.GetCurrentInstant(), agentAccessEpoch: 1);
         await apiFactory.Services.SeedFullGrantAsync(full);
@@ -566,14 +567,15 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_FullGrantButEntryHasNoMaterial_Then_Returns404()
+    public async Task When_FullGrantPredatesEntry_Then_CurrentEntryMaterialIsDeliveredWithoutFanOut()
     {
         // Given
         var (agentClient, agentId, vaultId, _, orgId, user) = await SetupAsync();
-        var coveredEntry = await apiFactory.Services.SeedEntryAsync(vaultId, user.Id);
+        await apiFactory.Services.SeedEntryAsync(vaultId, user.Id);
         var grantId = Guid.NewGuid();
         var full = FullGrant.CreateProactively(
-            grantId, vaultId, orgId, agentId, "pk", [Material(orgId, vaultId, grantId, coveredEntry.Id, 3)],
+            grantId, vaultId, orgId, agentId, "pk",
+            GrantEnvelopeTestData.AgentVaultKey(orgId, vaultId, grantId, agentId),
             null, 3, "uses", GrantMethods.Get, Guid.NewGuid(), TestNames, SystemClock.Instance.GetCurrentInstant(), agentAccessEpoch: 1);
         await apiFactory.Services.SeedFullGrantAsync(full);
         var newEntry = await apiFactory.Services.SeedEntryAsync(vaultId, user.Id);
@@ -582,7 +584,13 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         var response = await agentClient.GetAsync($"api/agent/vaults/{vaultId}/credentials/{newEntry.Id}");
 
         // Then
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        result.RootElement.GetProperty("grantType").GetString().ShouldBe("full");
+        result.RootElement.GetProperty("agentWrappedVaultKey").ValueKind.ShouldBe(JsonValueKind.Object);
+        result.RootElement.GetProperty("entryKey").ValueKind.ShouldBe(JsonValueKind.Object);
+        result.RootElement.GetProperty("memberSecret").ValueKind.ShouldBe(JsonValueKind.Object);
+        result.RootElement.GetProperty("grantEnvelope").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 
     [Theory]

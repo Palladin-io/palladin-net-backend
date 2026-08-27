@@ -45,6 +45,7 @@ internal sealed class ExpireGrantsJob(
         while (true)
         {
             var dueGrants = await domainWriteContext.Grants
+                .Include(g => g.AgentWrappedVaultKey)
                 .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
                 .Where(g => g.Status == GrantStatus.Active
                             && g.ExpiresAt != null

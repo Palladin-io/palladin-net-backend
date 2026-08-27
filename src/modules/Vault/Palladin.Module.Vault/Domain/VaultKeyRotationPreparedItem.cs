@@ -13,6 +13,7 @@ internal enum VaultKeyRotationPreparedItemKind
     AgentDiscoveryEnvelope = 5,
     VaultKeyMaterial = 6,
     VaultPublicTrustAnchor = 7,
+    AgentWrappedVaultKey = 8,
 }
 
 internal sealed class VaultKeyRotationPreparedItem

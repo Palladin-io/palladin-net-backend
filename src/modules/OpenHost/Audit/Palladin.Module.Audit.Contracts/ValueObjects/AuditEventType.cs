@@ -16,6 +16,7 @@ public static class AuditEventType
     public const string GrantRevoked = "grant.revoked";
     public const string GrantConsumed = "grant.consumed";
     public const string GrantExpired = "grant.expired";
+    public const string GrantSuperseded = "grant.superseded";
     public const string CredentialAccessed = "credential.accessed";
     public const string CredentialAccessDenied = "credential.access-denied";
     public const string AgentEnrolled = "agent.enrolled";

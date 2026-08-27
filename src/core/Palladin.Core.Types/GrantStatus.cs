@@ -8,4 +8,5 @@ public enum GrantStatus
     Revoked = 4,
     Consumed = 5,
     Denied = 6,
+    Superseded = 7,
 }

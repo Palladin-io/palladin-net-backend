@@ -24,7 +24,7 @@ public sealed record ImportEntryItem
     public MemberIndexEnvelopeContract MemberIndex { get; init; } = null!;
     public MemberSecretEnvelopeContract MemberSecret { get; init; } = null!;
     public AgentDiscoveryEnvelopeContract? AgentDiscovery { get; init; }
-    public IReadOnlyList<GrantEntryEnvelopeContract> GrantEnvelopes { get; init; } = [];
+    public GrantDeliveryPolicy DeliveryPolicy { get; init; } = GrantDeliveryPolicy.Standard;
 }
 
 [PublicAPI]
@@ -57,8 +57,7 @@ internal sealed class ImportEntriesValidator : Validator<ImportEntriesRequest>
             item.RuleFor(x => x.EntryKey).NotNull();
             item.RuleFor(x => x.MemberIndex).NotNull();
             item.RuleFor(x => x.MemberSecret).NotNull();
-            item.RuleForEach(x => x.GrantEnvelopes)
-                .SetValidator(new GrantEntryEnvelopeContractValidator());
+            item.RuleFor(x => x.DeliveryPolicy).Must(x => x.IsValid());
         });
     }
 }
@@ -115,7 +114,8 @@ internal sealed class ImportEntriesEndpoint(
                     transition.EntryKey,
                     transition.MemberSecret,
                     transition.MemberIndex,
-                    transition.AgentDiscovery))
+                    transition.AgentDiscovery,
+                    transition.Item.DeliveryPolicy))
             {
                 ThrowError("An imported Entry identifier is already bound to a different canonical transition.");
             }
@@ -131,13 +131,6 @@ internal sealed class ImportEntriesEndpoint(
             await Send.NotFoundAsync(ct);
             return;
         }
-        var activeFullGrants = await domainWriteContext.Grants.OfType<FullGrant>()
-            .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
-            .Where(g => g.OrganizationId == organizationId
-                        && g.VaultId == req.VaultId
-                        && g.Status == GrantStatus.Active)
-            .ToListAsync(ct);
-
         var challenges = await domainWriteContext.EntryCreationChallenges
             .Where(x => x.OrganizationId == organizationId
                         && x.VaultId == req.VaultId
@@ -170,6 +163,7 @@ internal sealed class ImportEntriesEndpoint(
                 version,
                 transition.MemberIndex,
                 transition.AgentDiscovery,
+                transition.Item.DeliveryPolicy,
                 lockedVault.MemberKeyGeneration,
                 lockedVault.CurrentVaultKeyVersion,
                 lockedVault.CurrentVdkVersion,
@@ -177,32 +171,6 @@ internal sealed class ImportEntriesEndpoint(
                 userId,
                 true);
         }).ToList();
-
-        var agentIds = activeFullGrants.Select(g => g.AgentId).Distinct().ToArray();
-        var agentKeys = await domainWriteContext.Agents
-            .Where(a => a.OrganizationId == organizationId && agentIds.Contains(a.Id))
-            .Select(a => new { a.Id, a.PublicKey, a.RecipientKeyVersion })
-            .ToListAsync(ct);
-        var agentFingerprints = agentKeys.ToDictionary(
-            a => a.Id,
-            a => VaultKeyFingerprint.Compute(Convert.FromBase64String(a.PublicKey), VaultKeyKind.AgentX25519));
-        var envelopesByEntry = missing.ToDictionary(x => x.Item.EntryId, x => x.Item.GrantEnvelopes);
-        foreach (var entry in entries)
-        {
-            if (!FullGrantEntryWrapper.TryWrapNewEntry(
-                    activeFullGrants,
-                    new EntryScope(organizationId, req.VaultId, entry.Id),
-                    envelopesByEntry[entry.Id],
-                    agentFingerprints,
-                    agentKeys.ToDictionary(a => a.Id, a => a.RecipientKeyVersion),
-                    lockedVault.MemberKeyGeneration.Value,
-                    out var grantError))
-            {
-                AddError(r => r.Entries, grantError);
-                await Send.ErrorsAsync(409, ct);
-                return;
-            }
-        }
 
         if (entries.Count > 0)
         {

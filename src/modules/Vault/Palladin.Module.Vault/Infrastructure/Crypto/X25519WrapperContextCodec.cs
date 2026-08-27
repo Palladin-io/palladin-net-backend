@@ -69,6 +69,15 @@ internal static class X25519WrapperContextCodec
                     | EnvelopeScopeFields.GrantOrRequest | EnvelopeScopeFields.Agent,
                     VaultKeyKind.AgentX25519);
                 break;
+            case X25519WrapperPurpose.AgentVaultKey:
+                context.Scope.Validate(vault | EnvelopeScopeFields.GrantOrRequest | EnvelopeScopeFields.Agent);
+                if (context.RecipientKeyKind != VaultKeyKind.AgentX25519
+                    || context.MemberKeyGeneration is not null
+                    || context.ParentDescriptorHash is not null)
+                {
+                    throw new DomainException("Agent Vault-key wrapper context is invalid.");
+                }
+                break;
             default:
                 throw new DomainException("X25519 wrapper purpose is not registered.");
         }

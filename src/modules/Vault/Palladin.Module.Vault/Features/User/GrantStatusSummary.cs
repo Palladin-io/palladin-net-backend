@@ -15,7 +15,8 @@ public sealed record GrantStatusSummaryResponse(
     int Expired,
     int Revoked,
     int Consumed,
-    int Denied);
+    int Denied,
+    int Superseded);
 
 [PublicAPI]
 internal sealed class GrantStatusSummaryEndpoint(VaultDomainReadContext domainReadContext)
@@ -30,7 +31,7 @@ internal sealed class GrantStatusSummaryEndpoint(VaultDomainReadContext domainRe
         Summary(summary =>
         {
             summary.Summary = "Grant status summary (counts per status)";
-            summary.Description = "Returns the count of grants in each status for the caller's organization. All six keys are always present; statuses with no grants return 0. One GROUP BY query — no pagination. Same authorization as GET /api/grants.";
+            summary.Description = "Returns the count of grants in each status for the caller's organization. All seven keys are always present; statuses with no grants return 0. One GROUP BY query — no pagination. Same authorization as GET /api/grants.";
         });
         Tags("Vault/Grants");
     }
@@ -53,6 +54,7 @@ internal sealed class GrantStatusSummaryEndpoint(VaultDomainReadContext domainRe
             Expired: byStatus.GetValueOrDefault(GrantStatus.Expired),
             Revoked: byStatus.GetValueOrDefault(GrantStatus.Revoked),
             Consumed: byStatus.GetValueOrDefault(GrantStatus.Consumed),
-            Denied: byStatus.GetValueOrDefault(GrantStatus.Denied)), ct);
+            Denied: byStatus.GetValueOrDefault(GrantStatus.Denied),
+            Superseded: byStatus.GetValueOrDefault(GrantStatus.Superseded)), ct);
     }
 }

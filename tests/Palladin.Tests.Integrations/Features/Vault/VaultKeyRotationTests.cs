@@ -108,7 +108,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         // Then
         claimResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        claimed!.FencingToken.ShouldNotBe(Guid.Empty);
+        claimed!.OrganizationId.ShouldBe(organization.Id);
+        claimed.FencingToken.ShouldNotBe(Guid.Empty);
         claimed.Rotation.Status.ShouldBe(nameof(VaultKeyRotationStatus.Preparing));
         pending!.Items.Single().Id.ShouldBe(started.Id);
         pending.Items.Single().LeaseOwnerId.ShouldBe(user.Id);

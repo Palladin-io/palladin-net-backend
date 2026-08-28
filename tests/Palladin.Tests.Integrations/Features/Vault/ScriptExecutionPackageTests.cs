@@ -178,6 +178,58 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
+    public async Task SystemRevokedGrant_AfterOlderDenial_AllowsOneFreshPendingRequest()
+    {
+        var setup = await SetupScriptAsync();
+        var deniedReason = GrantEnvelopeTestData.EncryptedReason(
+            setup.OrganizationId,
+            setup.VaultId,
+            setup.ScriptEntryId,
+            setup.AgentId,
+            setup.Signing,
+            setup.AgentMessageKeyFingerprint,
+            GrantMethods.Exec);
+        var deniedRequest = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/request-access",
+            new { setup.VaultId, setup.ScriptEntryId, EncryptedReason = deniedReason },
+            TestContext.Current.CancellationToken);
+        deniedRequest.EnsureSuccessStatusCode();
+        using var deniedBody = JsonDocument.Parse(await deniedRequest.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        var deniedGrantId = deniedBody.RootElement.GetProperty("grantId").GetGuid();
+        var denial = await setup.UserClient.PutAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/grants/{deniedGrantId}/deny",
+            new { setup.VaultId, GrantId = deniedGrantId },
+            TestContext.Current.CancellationToken);
+        denial.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        var superseding = DirectGrant(setup, queryLimit: 5);
+        superseding.RevokeBySystem(
+            new GrantNames("agent", "script", "vault", GrantNames.SystemActor),
+            SystemClock.Instance.GetCurrentInstant().Plus(Duration.FromSeconds(1)));
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(superseding);
+        var freshReason = GrantEnvelopeTestData.EncryptedReason(
+            setup.OrganizationId,
+            setup.VaultId,
+            setup.ScriptEntryId,
+            setup.AgentId,
+            setup.Signing,
+            setup.AgentMessageKeyFingerprint,
+            GrantMethods.Exec);
+
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/request-access",
+            new { setup.VaultId, setup.ScriptEntryId, EncryptedReason = freshReason },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        body.RootElement.GetProperty("grantId").GetGuid().ShouldBe(freshReason.GrantRequestId);
+        body.RootElement.GetProperty("status").GetString().ShouldBe("pending");
+    }
+
+    [Fact]
     public async Task PendingScriptExecutionGrant_ApprovesOneCompletePackage()
     {
         var setup = await SetupScriptAsync();

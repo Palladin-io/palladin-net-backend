@@ -156,21 +156,23 @@ internal sealed class RequestScriptExecutionAccessEndpoint(
             return;
         }
 
-        var terminal = await domainReadContext.Grants
+        var latestDirect = await domainReadContext.Grants
             .OfType<ScriptExecutionGrant>()
             .Where(grant => grant.AgentId == agentId.Value
                             && grant.AgentAccessEpoch == agent.AccessEpoch
                             && grant.VaultId == req.VaultId
-                            && grant.ScriptEntryId == req.ScriptEntryId
-                            && (grant.Status == GrantStatus.Denied
-                                || (grant.Status == GrantStatus.Revoked
-                                    && !grant.RevokedBySystem)))
+                            && grant.ScriptEntryId == req.ScriptEntryId)
             .OrderByDescending(grant => grant.UpdatedAt)
-            .Select(grant => new { grant.Id, grant.Status })
+            .ThenByDescending(grant => grant.CreatedAt)
+            .ThenByDescending(grant => grant.Id)
+            .Select(grant => new { grant.Id, grant.Status, grant.RevokedBySystem })
             .FirstOrDefaultAsync(ct);
-        if (terminal is not null)
+        if (latestDirect is not null
+            && (latestDirect.Status == GrantStatus.Denied
+                || (latestDirect.Status == GrantStatus.Revoked
+                    && !latestDirect.RevokedBySystem)))
         {
-            await Send.OkAsync(new RequestAccessResponse(terminal.Id, terminal.Status), ct);
+            await Send.OkAsync(new RequestAccessResponse(latestDirect.Id, latestDirect.Status), ct);
             return;
         }
 

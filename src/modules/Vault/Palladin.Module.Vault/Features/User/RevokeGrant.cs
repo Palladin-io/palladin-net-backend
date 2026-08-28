@@ -56,6 +56,7 @@ internal sealed class RevokeGrantEndpoint(
         var grant = await domainWriteContext.Grants
             .Include(g => g.EncryptedReason)
             .Include(g => g.AgentWrappedVaultKey)
+            .Include(g => g.ScriptExecutionPackage)
             .Include(g => g.GrantEntryScopes).ThenInclude(scope => scope.Envelope)
             .FirstOrDefaultAsync(g => g.Id == req.GrantId && g.VaultId == req.VaultId, ct);
         if (grant is null)
@@ -65,7 +66,16 @@ internal sealed class RevokeGrantEndpoint(
         }
 
         var names = await domainReadContext.ResolveAsync(
-            grant.AgentId, (grant as GranularGrant)?.EntryId, grant.VaultId, userId, ct);
+            grant.AgentId,
+            grant switch
+            {
+                GranularGrant granular => granular.EntryId,
+                ScriptExecutionGrant scriptExecution => scriptExecution.ScriptEntryId,
+                _ => null,
+            },
+            grant.VaultId,
+            userId,
+            ct);
         grant.Revoke(userId, names, clock.GetCurrentInstant());
         await domainWriteContext.CommitAsync(ct);
 

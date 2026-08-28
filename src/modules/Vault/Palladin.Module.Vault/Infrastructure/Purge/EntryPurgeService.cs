@@ -81,14 +81,27 @@ internal sealed class EntryPurgeService(
             .Include(x => x.EncryptedReason)
             .Include(x => x.GrantEntryScopes)
             .ThenInclude(scope => scope.Envelope)
+            .Include(x => x.ScriptExecutionScopes)
             .Where(x => x.OrganizationId == scope.OrganizationId
                         && x.VaultId == scope.VaultId
                         && (x.GrantEntryScopes.Any(grantScope => grantScope.EntryId == scope.EntryId)
+                            || x.ScriptExecutionScopes.Any(scriptScope => scriptScope.EntryId == scope.EntryId)
                             || (x is GranularGrant && ((GranularGrant)x).EntryId == scope.EntryId)))
             .ToListAsync(cancellationToken);
+        var agentIds = grants.Select(x => x.AgentId).Distinct().ToArray();
+        var agentNames = await domainWriteContext.Agents
+            .Where(x => x.OrganizationId == scope.OrganizationId && agentIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
         foreach (var grant in grants)
         {
-            grant.RemoveEntryScope(scope.EntryId, now);
+            grant.RemoveEntryScope(
+                scope.EntryId,
+                new GrantNames(
+                    agentNames.GetValueOrDefault(grant.AgentId) ?? GrantNames.UnknownAgent,
+                    GrantNames.UnknownEntry,
+                    string.Empty,
+                    GrantNames.SystemActor),
+                now);
         }
 
         // Keep required child relationships unloaded while deleting the aggregate. The database

@@ -34,4 +34,18 @@ internal static class GrantSeeder
 
         return grant;
     }
+
+    public static async Task<ScriptExecutionGrant> SeedScriptExecutionGrantAsync(
+        this IServiceProvider serviceProvider,
+        ScriptExecutionGrant grant)
+    {
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+
+        await writeContext.Grants.Where(x => x.Id == grant.Id).ExecuteDeleteAsync();
+        writeContext.Grants.Add(grant);
+        await writeContext.SaveChangesAsync();
+
+        return grant;
+    }
 }

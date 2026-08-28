@@ -64,8 +64,14 @@ internal sealed class DenyGrantEndpoint(
             return;
         }
 
+        Guid? entryId = grant switch
+        {
+            GranularGrant granular => granular.EntryId,
+            ScriptExecutionGrant scriptExecution => scriptExecution.ScriptEntryId,
+            _ => null,
+        };
         var names = await domainReadContext.ResolveAsync(
-            grant.AgentId, (grant as GranularGrant)?.EntryId, grant.VaultId, userId, ct);
+            grant.AgentId, entryId, grant.VaultId, userId, ct);
         grant.Deny(userId, names, clock.GetCurrentInstant());
         await domainWriteContext.CommitAsync(ct);
 

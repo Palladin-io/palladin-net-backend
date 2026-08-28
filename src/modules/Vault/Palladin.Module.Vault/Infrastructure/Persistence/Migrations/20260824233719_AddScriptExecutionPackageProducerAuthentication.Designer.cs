@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Palladin.Module.Vault.Infrastructure.Persistence;
 namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(VaultDbWriteContext))]
-    partial class VaultDbWriteContextModelSnapshot : ModelSnapshot
+    [Migration("20260824233719_AddScriptExecutionPackageProducerAuthentication")]
+    partial class AddScriptExecutionPackageProducerAuthentication
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -235,11 +238,6 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("bytea");
 
-                    b.Property<byte[]>("ProducerSignature")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("bytea");
-
                     b.Property<int>("ProtocolVersion")
                         .HasColumnType("integer");
 
@@ -253,15 +251,6 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(10,0)");
 
                     b.Property<decimal>("VaultKeyVersion")
-                        .HasPrecision(10)
-                        .HasColumnType("numeric(10,0)");
-
-                    b.Property<byte[]>("VaultSigningKeyFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("bytea");
-
-                    b.Property<decimal>("VaultSigningKeyVersion")
                         .HasPrecision(10)
                         .HasColumnType("numeric(10,0)");
 
@@ -554,12 +543,6 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
-
-                    b.Property<Instant?>("SupersededAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("SupersededByGrantId")
-                        .HasColumnType("uuid");
 
                     b.Property<Instant>("UpdatedAt")
                         .IsConcurrencyToken()
@@ -1580,10 +1563,6 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId", "VaultId", "ScriptEntryId", "AgentId", "AgentAccessEpoch", "Status")
                         .IsUnique()
                         .HasFilter("\"GrantType\" = 'ScriptExecution' AND \"Status\" = 2");
-
-                    b.HasIndex(new[] { "OrganizationId", "VaultId", "ScriptEntryId", "AgentId", "AgentAccessEpoch", "Status" }, "IX_Grants_ScriptExecution_Pending")
-                        .IsUnique()
-                        .HasFilter("\"GrantType\" = 'ScriptExecution' AND \"Status\" = 1");
 
                     b.HasDiscriminator().HasValue("ScriptExecution");
                 });

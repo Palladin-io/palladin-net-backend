@@ -18,6 +18,9 @@ internal sealed class AgentWrappedVaultKey
     internal AgentRecipientKeyVersion RecipientAgentKeyVersion { get; private set; }
     internal byte[] RecipientAgentKeyFingerprint { get; private set; } = [];
     internal byte[] EncodedSealedVaultKeyPackage { get; private set; } = [];
+    internal ManifestSigningKeyVersion VaultSigningKeyVersion { get; private set; }
+    internal byte[] VaultSigningKeyFingerprint { get; private set; } = [];
+    internal byte[] ProducerSignature { get; private set; } = [];
 
     private AgentWrappedVaultKey() { }
 
@@ -32,7 +35,10 @@ internal sealed class AgentWrappedVaultKey
         uint vaultKeyVersion,
         uint recipientAgentKeyVersion,
         byte[] recipientAgentKeyFingerprint,
-        byte[] encodedSealedVaultKeyPackage)
+        byte[] encodedSealedVaultKeyPackage,
+        uint vaultSigningKeyVersion = 1,
+        byte[]? vaultSigningKeyFingerprint = null,
+        byte[]? producerSignature = null)
     {
         if (protocolVersion != VaultProtocol.CurrentVersion)
         {
@@ -51,6 +57,20 @@ internal sealed class AgentWrappedVaultKey
             recipientAgentKeyFingerprint,
             null);
         _ = X25519WrapperContextCodec.Encode(context);
+        X25519SealedBoxContract.ValidatePackage(encodedSealedVaultKeyPackage);
+        if (protocolVersion != VaultProtocol.CurrentVersion
+            || !string.Equals(wrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
+        {
+            throw new DomainException("Agent Vault-key wrapper suite is invalid.");
+        }
+        vaultSigningKeyFingerprint ??= new byte[VaultProtocol.FingerprintBytes];
+        producerSignature ??= new byte[64];
+        if (vaultSigningKeyVersion == 0
+            || vaultSigningKeyFingerprint.Length != VaultProtocol.FingerprintBytes
+            || producerSignature.Length != 64)
+        {
+            throw new DomainException("Agent Vault-key wrapper producer binding is invalid.");
+        }
 
         return new AgentWrappedVaultKey
         {
@@ -65,17 +85,25 @@ internal sealed class AgentWrappedVaultKey
             RecipientAgentKeyVersion = new AgentRecipientKeyVersion(recipientAgentKeyVersion),
             RecipientAgentKeyFingerprint = recipientAgentKeyFingerprint.ToArray(),
             EncodedSealedVaultKeyPackage = encodedSealedVaultKeyPackage.ToArray(),
+            VaultSigningKeyVersion = new ManifestSigningKeyVersion(vaultSigningKeyVersion),
+            VaultSigningKeyFingerprint = vaultSigningKeyFingerprint.ToArray(),
+            ProducerSignature = producerSignature.ToArray(),
         };
     }
 
     internal void ReplaceWith(AgentWrappedVaultKey replacement)
     {
+        var rotatesVaultKey = replacement.VaultKeyVersion.Value == checked(VaultKeyVersion.Value + 1)
+                              && replacement.VaultSigningKeyVersion.Value >= VaultSigningKeyVersion.Value;
+        var rotatesSigningKey = replacement.VaultKeyVersion == VaultKeyVersion
+                                && replacement.VaultSigningKeyVersion.Value
+                                == checked(VaultSigningKeyVersion.Value + 1);
         if (OrganizationId != replacement.OrganizationId
             || VaultId != replacement.VaultId
             || GrantId != replacement.GrantId
             || AgentId != replacement.AgentId
             || AgentAccessEpoch != replacement.AgentAccessEpoch
-            || replacement.VaultKeyVersion.Value != checked(VaultKeyVersion.Value + 1))
+            || !(rotatesVaultKey || rotatesSigningKey))
         {
             throw new DomainException("Rotated Agent Vault-key wrapper does not preserve its recipient identity.");
         }
@@ -86,5 +114,8 @@ internal sealed class AgentWrappedVaultKey
         RecipientAgentKeyVersion = replacement.RecipientAgentKeyVersion;
         RecipientAgentKeyFingerprint = replacement.RecipientAgentKeyFingerprint.ToArray();
         EncodedSealedVaultKeyPackage = replacement.EncodedSealedVaultKeyPackage.ToArray();
+        VaultSigningKeyVersion = replacement.VaultSigningKeyVersion;
+        VaultSigningKeyFingerprint = replacement.VaultSigningKeyFingerprint.ToArray();
+        ProducerSignature = replacement.ProducerSignature.ToArray();
     }
 }

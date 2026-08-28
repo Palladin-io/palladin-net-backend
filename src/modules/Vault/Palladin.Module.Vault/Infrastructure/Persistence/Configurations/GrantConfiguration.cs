@@ -16,7 +16,8 @@ internal sealed class GrantConfiguration : IEntityTypeConfiguration<Grant>
         // cannot back the discriminator. EF manages a dedicated string discriminator column instead.
         builder.HasDiscriminator<string>("GrantType")
             .HasValue<GranularGrant>(Core.Types.GrantType.Granular.ToString())
-            .HasValue<FullGrant>(Core.Types.GrantType.Full.ToString());
+            .HasValue<FullGrant>(Core.Types.GrantType.Full.ToString())
+            .HasValue<ScriptExecutionGrant>(Core.Types.GrantType.ScriptExecution.ToString());
 
         builder.Ignore(x => x.Type);
 
@@ -52,6 +53,18 @@ internal sealed class GrantConfiguration : IEntityTypeConfiguration<Grant>
         builder.HasOne(x => x.AgentWrappedVaultKey)
             .WithOne()
             .HasForeignKey<AgentWrappedVaultKey>(x => new { x.OrganizationId, x.VaultId, x.GrantId })
+            .HasPrincipalKey<Grant>(x => new { x.OrganizationId, x.VaultId, x.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(x => x.ScriptExecutionScopes)
+            .WithOne()
+            .HasForeignKey(x => new { x.OrganizationId, x.VaultId, x.GrantId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.VaultId, x.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(x => x.ScriptExecutionPackage)
+            .WithOne()
+            .HasForeignKey<ScriptExecutionPackage>(x => new { x.OrganizationId, x.VaultId, x.GrantId })
             .HasPrincipalKey<Grant>(x => new { x.OrganizationId, x.VaultId, x.Id })
             .OnDelete(DeleteBehavior.Cascade);
 

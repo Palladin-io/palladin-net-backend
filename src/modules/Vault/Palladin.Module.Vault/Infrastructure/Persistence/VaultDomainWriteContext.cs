@@ -26,6 +26,8 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<VaultEntryVersion> EntryVersions => Track<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Track<AgentVaultDiscoveryEnvelope>();
     public IQueryable<AgentWrappedVaultKey> AgentWrappedVaultKeys => Track<AgentWrappedVaultKey>();
+    public IQueryable<ScriptExecutionScope> ScriptExecutionScopes => Track<ScriptExecutionScope>();
+    public IQueryable<ScriptExecutionPackage> ScriptExecutionPackages => Track<ScriptExecutionPackage>();
     public IQueryable<Grant> Grants => Track<Grant>();
     public IQueryable<GrantEntryScope> GrantEntryScopes => Track<GrantEntryScope>();
     public IQueryable<GrantEntryEnvelope> GrantEntryEnvelopes => Track<GrantEntryEnvelope>();
@@ -96,9 +98,11 @@ internal sealed class VaultDomainWriteContext(
     {
         if (writeContext.ChangeTracker.Entries<GranularGrant>().Count() > maximumGrants
             || writeContext.ChangeTracker.Entries<GrantEntryScope>().Count() > maximumGrants
-            || writeContext.ChangeTracker.Entries<GrantEntryEnvelope>().Count() > maximumGrants)
+            || writeContext.ChangeTracker.Entries<GrantEntryEnvelope>().Count() > maximumGrants
+            || writeContext.ChangeTracker.Entries<ScriptExecutionGrant>().Count() > maximumGrants
+            || writeContext.ChangeTracker.Entries<ScriptExecutionPackage>().Count() > maximumGrants)
         {
-            throw new InvalidOperationException("Full grant commit exceeded its bounded granular grant page.");
+            throw new InvalidOperationException("Full grant commit exceeded its bounded superseded grant page.");
         }
     }
 

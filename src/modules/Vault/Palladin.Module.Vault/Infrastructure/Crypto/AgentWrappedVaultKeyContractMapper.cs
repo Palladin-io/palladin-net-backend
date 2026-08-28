@@ -17,7 +17,10 @@ internal static class AgentWrappedVaultKeyContractMapper
         uint agentAccessEpoch,
         uint vaultKeyVersion,
         uint recipientAgentKeyVersion,
-        byte[] recipientAgentKeyFingerprint)
+        byte[] recipientAgentKeyFingerprint,
+        uint expectedSigningKeyVersion,
+        byte[] expectedSigningKeyFingerprint,
+        byte[] expectedSigningPublicKey)
     {
         var descriptor = contract.WrappedVaultKey.Descriptor;
         if (descriptor.ProtocolVersion != VaultProtocol.CurrentVersion
@@ -45,6 +48,12 @@ internal static class AgentWrappedVaultKeyContractMapper
             throw new DomainException("Agent Vault-key wrapper recipient is invalid or stale.");
         }
 
+        AgentWrappedVaultKeyCryptoValidator.ValidateProducer(
+            contract,
+            expectedSigningKeyVersion,
+            expectedSigningKeyFingerprint,
+            expectedSigningPublicKey);
+
         return AgentWrappedVaultKey.Create(
             organizationId,
             vaultId,
@@ -56,7 +65,10 @@ internal static class AgentWrappedVaultKeyContractMapper
             descriptor.WrappedKeyVersion,
             descriptor.RecipientKeyVersion,
             fingerprint,
-            WebEncoders.Base64UrlDecode(contract.EncodedSealedVaultKeyPackage));
+            WebEncoders.Base64UrlDecode(contract.EncodedSealedVaultKeyPackage),
+            contract.VaultSigningKeyVersion,
+            VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.VaultSigningKeyFingerprint),
+            VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.ProducerSignature));
     }
 
     internal static AgentWrappedVaultKeyContract ToContract(AgentWrappedVaultKey value) => new(
@@ -77,5 +89,8 @@ internal static class AgentWrappedVaultKeyContractMapper
                 value.RecipientAgentKeyVersion.Value,
                 WebEncoders.Base64UrlEncode(value.RecipientAgentKeyFingerprint),
                 null),
-            WebEncoders.Base64UrlEncode(value.EncodedSealedVaultKeyPackage)));
+            WebEncoders.Base64UrlEncode(value.EncodedSealedVaultKeyPackage)),
+        value.VaultSigningKeyVersion.Value,
+        WebEncoders.Base64UrlEncode(value.VaultSigningKeyFingerprint),
+        WebEncoders.Base64UrlEncode(value.ProducerSignature));
 }

@@ -184,6 +184,9 @@ internal sealed class AgentWrappedVaultKeyContractValidator : AbstractValidator<
         RuleFor(x => x.WrappedVaultKey.Descriptor.Scope.AgentId)
             .NotEmpty()
             .When(x => x.WrappedVaultKey?.Descriptor?.Scope is not null);
+        RuleFor(x => x.VaultSigningKeyVersion).GreaterThan(0u);
+        RuleFor(x => x.VaultSigningKeyFingerprint).NotEmpty().Length(43);
+        RuleFor(x => x.ProducerSignature).NotEmpty().Length(86);
     }
 }
 

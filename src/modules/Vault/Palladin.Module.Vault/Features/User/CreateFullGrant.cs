@@ -127,7 +127,10 @@ internal sealed class CreateFullGrantEndpoint(
             wrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToDomain(
                 req.AgentWrappedVaultKey, organizationId, req.VaultId, req.GrantId, req.AgentId,
                 agent.AccessEpoch, vault.CurrentVaultKeyVersion.Value, agent.RecipientKeyVersion,
-                fingerprint);
+                fingerprint,
+                vault.CurrentManifestSigningKeyVersion.Value,
+                vault.ManifestSigningKeyFingerprint,
+                vault.ManifestSigningPublicKey);
         }
         catch (Exception ex) when (ex is FormatException
             or Palladin.Core.Types.Exceptions.DomainException)
@@ -190,6 +193,35 @@ internal sealed class CreateFullGrantEndpoint(
             afterGrantId = page[^1].Id;
             await domainWriteContext.FlushAsync(ct);
             domainWriteContext.Clear();
+        }
+
+        if (req.Methods.HasFlag(GrantMethods.Exec))
+        {
+            Guid? afterScriptGrantId = null;
+            while (true)
+            {
+                var page = await domainWriteContext.LoadActiveScriptExecutionsInVaultPageAsync(
+                    req.AgentId,
+                    expectedAccessEpoch,
+                    req.VaultId,
+                    afterScriptGrantId,
+                    SupersedePageSize,
+                    ct);
+                if (page.Count == 0)
+                {
+                    break;
+                }
+
+                domainWriteContext.EnsureFullGrantCommitTrackingIsBounded(SupersedePageSize);
+                foreach (var scriptGrant in page)
+                {
+                    scriptGrant.SupersedeByFull(grant.Id, supersededNames, now);
+                }
+
+                afterScriptGrantId = page[^1].Id;
+                await domainWriteContext.FlushAsync(ct);
+                domainWriteContext.Clear();
+            }
         }
 
         agent = await domainWriteContext.Agents.SingleAsync(

@@ -358,6 +358,130 @@ public sealed class GrantDomainTests
     }
 
     [Fact]
+    public void ScriptExecutionGrant_CoversOnlyParentAndKeepsReferencesInsideOneGrant()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var scriptEntryId = Guid.NewGuid();
+        var referenceEntryId = Guid.NewGuid();
+        var package = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            3, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+        var scopes = new[]
+        {
+            ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 3, true),
+            ScriptExecutionScope.Create(organizationId, vaultId, grantId, referenceEntryId, 7, false),
+        };
+
+        var grant = ScriptExecutionGrant.CreateProactively(
+            grantId, vaultId, organizationId, agentId, "pk", scriptEntryId, scopes, package,
+            null, 5, "uses", Guid.NewGuid(),
+            new GrantNames("agent", "script", "vault", "actor"), Now, 1);
+
+        grant.Type.ShouldBe(GrantType.ScriptExecution);
+        grant.Methods.ShouldBe(GrantMethods.Exec);
+        grant.ScriptExecutionScopes.Count.ShouldBe(2);
+        grant.Covers(scriptEntryId).ShouldBeTrue();
+        grant.Covers(referenceEntryId).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RemovingScriptEntryAccess_PreservesResolvedAgentNameInSystemRevocation()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var scriptEntryId = Guid.NewGuid();
+        var package = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+        var grant = ScriptExecutionGrant.CreateProactively(
+            grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
+            [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)],
+            package, null, null, "lifetime", Guid.NewGuid(),
+            new GrantNames("initial", "script", string.Empty, "actor"), Now, 1);
+        grant.FetchEvents();
+
+        grant.RemoveEntryAccess(
+            scriptEntryId,
+            new GrantNames("Deploy Agent", GrantNames.UnknownEntry, string.Empty, GrantNames.SystemActor),
+            Now + Duration.FromMinutes(1));
+
+        var revoked = grant.FetchEvents().OfType<GrantRevokedEvent>().ShouldHaveSingleItem();
+        revoked.AgentName.ShouldBe("Deploy Agent");
+        revoked.RevokedBySystem.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ScriptExecutionGrant_RefreshesPackageInPlaceAndPreservesLifecycle()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var scriptEntryId = Guid.NewGuid();
+        var firstReferenceId = Guid.NewGuid();
+        var secondReferenceId = Guid.NewGuid();
+        var package = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+        var grant = ScriptExecutionGrant.CreateProactively(
+            grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
+            [
+                ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true),
+                ScriptExecutionScope.Create(organizationId, vaultId, grantId, firstReferenceId, 1, false),
+            ],
+            package, null, 9, "uses", Guid.NewGuid(),
+            new GrantNames("agent", "script", "vault", "actor"), Now, 1);
+        var replacement = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            2, 2, 1, 1, new byte[32], 1, new byte[32],
+            Enumerable.Repeat((byte)1, 32).ToArray(), new byte[48], new byte[64]);
+
+        grant.RefreshPackage(replacement,
+        [
+            ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 2, true),
+            ScriptExecutionScope.Create(organizationId, vaultId, grantId, secondReferenceId, 4, false),
+        ]);
+
+        grant.Id.ShouldBe(grantId);
+        grant.QueryCount.ShouldBe(0);
+        grant.QueryLimit.ShouldBe(9);
+        grant.Status.ShouldBe(GrantStatus.Active);
+        grant.ScriptExecutionPackage.ShouldBeSameAs(package);
+        grant.ScriptExecutionPackage!.PackageRevision.ShouldBe(2UL);
+        grant.ScriptExecutionScopes.Select(scope => scope.EntryId).Order()
+            .ShouldBe(new[] { scriptEntryId, secondReferenceId }.Order());
+    }
+
+    [Fact]
+    public void ScriptExecutionGrant_RejectsReplayPackageRevision()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var scriptEntryId = Guid.NewGuid();
+        var package = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+        var grant = ScriptExecutionGrant.CreateProactively(
+            grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
+            [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)],
+            package, null, null, "lifetime", Guid.NewGuid(),
+            new GrantNames("agent", "script", "vault", "actor"), Now, 1);
+        var replay = ScriptExecutionPackage.Create(
+            organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+
+        Should.Throw<DomainException>(() => grant.RefreshPackage(replay,
+            [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)]));
+    }
+
+    [Fact]
     public void SupersedeByFull_EmitsExplicitGrantType()
     {
         var organizationId = Guid.NewGuid();

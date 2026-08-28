@@ -8,7 +8,8 @@ namespace Palladin.Module.Vault.Domain;
 // TPH (Table-Per-Hierarchy) base for grants. The grant TYPE (FullGrant / GranularGrant) is an
 // authorization concern — FULL skips per-request approval and may cover any entry of the vault,
 // GRANULAR covers exactly one entry. Their crypto material intentionally differs: GRANULAR owns one
-// per-entry grant envelope, while FULL owns one Agent-wrapped Vault key.
+// per-entry grant envelope, FULL owns one Agent-wrapped Vault key, and SCRIPT_EXECUTION owns one
+// opaque package plus structural revision scopes for its Script and referenced Entries.
 // Inheritance (not a GrantMode enum on a single class) is used here because the variance is
 // structural + behavioral (different FK, different Covers() semantics, different factories),
 // which is exactly the case EF Core TPH is for.
@@ -67,6 +68,8 @@ internal abstract class Grant : EventEntityBase
 
     internal ICollection<GrantEntryScope> GrantEntryScopes { get; set; } = [];
     internal AgentWrappedVaultKey? AgentWrappedVaultKey { get; set; }
+    internal ICollection<ScriptExecutionScope> ScriptExecutionScopes { get; set; } = [];
+    internal ScriptExecutionPackage? ScriptExecutionPackage { get; set; }
 
     public abstract GrantType Type { get; }
 
@@ -98,8 +101,17 @@ internal abstract class Grant : EventEntityBase
         RevokeCore(revokedBy: null, isSystem: true, names, now);
     }
 
-    internal void RemoveEntryAccess(Guid entryId, Instant now)
+    internal void RemoveEntryAccess(Guid entryId, GrantNames names, Instant now)
     {
+        if (this is ScriptExecutionGrant scriptExecution
+            && scriptExecution.ScriptExecutionScopes.Any(x => x.EntryId == entryId)
+            && Status is GrantStatus.Active or GrantStatus.Pending)
+        {
+            RevokeBySystem(names, now);
+            EncryptedReason = null;
+            return;
+        }
+
         foreach (var scope in GrantEntryScopes.Where(x => x.EntryId == entryId).ToList())
         {
             scope.DeleteEnvelope();
@@ -109,13 +121,7 @@ internal abstract class Grant : EventEntityBase
             && granular.EntryId == entryId
             && Status is GrantStatus.Active or GrantStatus.Pending)
         {
-            RevokeBySystem(
-                new GrantNames(
-                    GrantNames.UnknownAgent,
-                    GrantNames.UnknownEntry,
-                    string.Empty,
-                    GrantNames.SystemActor),
-                now);
+            RevokeBySystem(names, now);
             EncryptedReason = null;
         }
     }
@@ -128,14 +134,19 @@ internal abstract class Grant : EventEntityBase
         }
 
         AgentWrappedVaultKey = null;
+        ScriptExecutionPackage = null;
     }
 
-    internal void RemoveEntryScope(Guid entryId, Instant now)
+    internal void RemoveEntryScope(Guid entryId, GrantNames names, Instant now)
     {
-        RemoveEntryAccess(entryId, now);
+        RemoveEntryAccess(entryId, names, now);
         foreach (var scope in GrantEntryScopes.Where(x => x.EntryId == entryId).ToList())
         {
             GrantEntryScopes.Remove(scope);
+        }
+        foreach (var scope in ScriptExecutionScopes.Where(x => x.EntryId == entryId).ToList())
+        {
+            ScriptExecutionScopes.Remove(scope);
         }
     }
 
@@ -164,19 +175,41 @@ internal abstract class Grant : EventEntityBase
         GrantMethods? methods,
         Instant now)
     {
+        EnsurePendingApproval();
+        GrantEntryScopes.Add(scope);
+        CompleteApproval(
+            approvedBy,
+            names,
+            expiresAt,
+            queryLimit,
+            expirySource,
+            methods ?? Methods,
+            now);
+    }
+
+    protected void EnsurePendingApproval()
+    {
         if (Status != GrantStatus.Pending)
         {
             throw new InvalidGrantStateTransitionException(GrantStatusTransition.Approve, Status);
         }
+    }
 
-        GrantEntryScopes.Add(scope);
-
+    protected void CompleteApproval(
+        Guid approvedBy,
+        GrantNames names,
+        Instant? expiresAt,
+        int? queryLimit,
+        string expirySource,
+        GrantMethods methods,
+        Instant now)
+    {
         Status = GrantStatus.Active;
         CreatedBy = approvedBy;
         ExpiresAt = expiresAt;
         QueryLimit = queryLimit;
         ExpirySource = expirySource;
-        Methods = methods ?? Methods;
+        Methods = methods;
         UpdatedAt = now;
         EmitApproved(names);
     }
@@ -221,7 +254,7 @@ internal abstract class Grant : EventEntityBase
     // reason and must never be repurposed for server-generated status text.
     internal void SupersedeByFull(Guid supersededByGrantId, GrantNames names, Instant now)
     {
-        if (this is not GranularGrant || Status != GrantStatus.Active)
+        if (this is not (GranularGrant or ScriptExecutionGrant) || Status != GrantStatus.Active)
         {
             return;
         }
@@ -243,6 +276,7 @@ internal abstract class Grant : EventEntityBase
         }
 
         AgentWrappedVaultKey = null;
+        ScriptExecutionPackage = null;
     }
 
     protected void EmitCreated(GrantNames names) =>
@@ -251,7 +285,7 @@ internal abstract class Grant : EventEntityBase
             VaultId,
             OrganizationId,
             AgentId,
-            (this as GranularGrant)?.EntryId,
+            EventEntryId,
             Type,
             Status,
             ExpirySource,
@@ -273,7 +307,7 @@ internal abstract class Grant : EventEntityBase
             VaultId,
             OrganizationId,
             AgentId,
-            (this as GranularGrant)?.EntryId,
+            EventEntryId,
             Type,
             RevokedBy,
             RevokedBySystem,
@@ -304,7 +338,7 @@ internal abstract class Grant : EventEntityBase
             VaultId,
             OrganizationId,
             AgentId,
-            (this as GranularGrant)?.EntryId,
+            EventEntryId,
             CreatedBy!.Value,
             Type,
             names.AgentName,
@@ -324,7 +358,7 @@ internal abstract class Grant : EventEntityBase
             OrganizationId,
             AgentId,
             DeniedBy!.Value,
-            (this as GranularGrant)?.EntryId ?? Guid.Empty,
+            EventEntryId ?? Guid.Empty,
             names.AgentName,
             names.EntryLabel ?? GrantNames.UnknownEntry,
             names.VaultName,
@@ -340,12 +374,19 @@ internal abstract class Grant : EventEntityBase
             VaultId,
             OrganizationId,
             AgentId,
-            (this as GranularGrant)?.EntryId,
+            EventEntryId,
             entryLabel,
             Type,
             ttlSeconds,
             UpdatedAt));
     }
+
+    private Guid? EventEntryId => this switch
+    {
+        GranularGrant granular => granular.EntryId,
+        ScriptExecutionGrant scriptExecution => scriptExecution.ScriptEntryId,
+        _ => null,
+    };
 
     private void EmitSuperseded(GrantNames names)
     {
@@ -356,7 +397,7 @@ internal abstract class Grant : EventEntityBase
             VaultId,
             OrganizationId,
             AgentId,
-            ((GranularGrant)this).EntryId,
+            EventEntryId!.Value,
             Type,
             names.AgentName,
             names.EntryLabel,

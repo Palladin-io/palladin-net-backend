@@ -191,7 +191,6 @@ internal static class GrantEnvelopeTestData
             rotatedSigningKey);
         return unsigned with { ProducerSignature = WebEncoders.Base64UrlEncode(signature) };
     }
-
     private static string Base64Url(int length) =>
         WebEncoders.Base64UrlEncode([.. Enumerable.Range(0, length).Select(i => (byte)i)]);
 }

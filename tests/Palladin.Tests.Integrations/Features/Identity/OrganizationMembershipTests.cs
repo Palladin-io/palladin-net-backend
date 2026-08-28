@@ -49,6 +49,37 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
+    public async Task When_MemberWasRemoved_Then_MemberDirectoryRetainsMinimalIdentity()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        var (otherOwner, _, _) = await apiFactory.Services.SeedUserAsync();
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            var membership = await writeContext.OrganizationMembers.SingleAsync(candidate =>
+                candidate.OrganizationId == organization.Id && candidate.UserId == member.Id);
+            writeContext.OrganizationMembers.Remove(membership);
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var client = apiFactory.CreateAuthenticatedClient(owner);
+
+        // When
+        var (response, result) = await client.GETAsync<
+            ListOrganizationMemberDirectoryEndpoint,
+            ListOrganizationMemberDirectoryResponse>();
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        result.Items.ShouldContain(item =>
+            item.UserId == owner.Id && item.DisplayName == owner.DisplayName);
+        result.Items.ShouldContain(item =>
+            item.UserId == member.Id && item.DisplayName == member.DisplayName);
+        result.Items.Select(item => item.UserId).ShouldNotContain(otherOwner.Id);
+    }
+
+    [Fact]
     public async Task When_ListingOrganizations_Then_ReturnsHomeOrganizationAsOwnerAndActive()
     {
         // Given

@@ -24,6 +24,7 @@ public sealed record ClaimVaultKeyRotationRequest : IRequiresVaultMembership
 
 [PublicAPI]
 public sealed record ClaimVaultKeyRotationResponse(
+    Guid OrganizationId,
     VaultKeyRotationResponse Rotation,
     Guid FencingToken,
     MemberVaultKeyEnvelopeContract CurrentMemberVaultKey,
@@ -160,6 +161,7 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
             }
         }
         await Send.OkAsync(new ClaimVaultKeyRotationResponse(
+            organizationId,
             VaultKeyRotationResponses.Map(rotation),
             fencingToken,
             VaultEnvelopeContractMapper.ToContract(currentMemberKey.GetWrappedVaultKey()),

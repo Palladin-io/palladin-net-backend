@@ -13,5 +13,7 @@ internal sealed class EmailBrandingOptions
     public string AppName { get; init; } = "Palladin";
     public string BaseUrl { get; init; } = "https://palladin.io";
     public string SupportEmail { get; init; } = "support@palladin.io";
+    public string MobileAppUrl { get; init; } = "https://palladin.io/#features";
+    public string BrowserExtensionUrl { get; init; } = "https://palladin.io/#features";
     public string? LogoUrl { get; init; }
 }

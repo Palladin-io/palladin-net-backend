@@ -1,6 +1,7 @@
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Contracts.ValueObjects;
+using NodaTime;
 
 namespace Palladin.Module.Identity.Infrastructure.Jwt;
 
@@ -11,6 +12,7 @@ internal interface ITokenService
         Guid organizationId,
         Permission permissions,
         PlanType plan,
-        uint authorizationVersion);
+        uint authorizationVersion,
+        Instant? expiresAtCap = null);
     (string rawToken, string tokenHash) GenerateRefreshToken();
 }

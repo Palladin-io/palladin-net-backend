@@ -18,6 +18,7 @@ internal static class VaultAgentSeeder
         string? publicKey = null,
         string? signingPublicKey = null,
         uint recipientKeyVersion = 1,
+        uint? accessEpoch = null,
         string? iconKey = null,
         string? iconColor = null,
         Instant? updatedAt = null)
@@ -32,6 +33,7 @@ internal static class VaultAgentSeeder
             publicKey: publicKey,
             signingPublicKey: signingPublicKey,
             recipientKeyVersion: recipientKeyVersion,
+            accessEpoch: accessEpoch,
             iconKey: iconKey,
             iconColor: iconColor,
             updatedAt: updatedAt).Generate();

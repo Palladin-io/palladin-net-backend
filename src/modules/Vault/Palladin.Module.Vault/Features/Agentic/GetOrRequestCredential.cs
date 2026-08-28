@@ -227,8 +227,9 @@ internal sealed class GetOrRequestCredentialEndpoint(
         // 3) Only an explicit Denial blocks a re-request, and only while it is the latest decision (a
         // newer re-creatable terminal supersedes an older Denied, so the agent is never permanently
         // stuck on a stale refusal). Every other terminal (Revoked by user OR system,
-        // Consumed, Expired) is re-requestable and falls through to step 4: a revoke ends the current
-        // access, it does not bar the agent from asking again with a fresh justification.
+        // Consumed, Expired, Superseded) is re-requestable and falls through to step 4: a revoke or
+        // replacement ends the current access, it does not bar the agent from asking again with a
+        // fresh justification.
         var latestTerminal = grants.FirstOrDefault();
         if (latestTerminal is { Status: GrantStatus.Denied })
         {
@@ -237,7 +238,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         }
 
         // 4) No live grant and not blocked by a latest Denied (no grant at all, or the newest terminal
-        // is Revoked / Consumed / Expired) — create a fresh Pending re-request. The old terminal row
+        // is Revoked / Consumed / Expired / Superseded) — create a fresh Pending re-request. The old terminal row
         // stays for history/audit.
         await RequestNewGrantAsync(req, agentId.Value, accessEpoch.Value, agent.OrganizationId,
             agent.PublicKey, agent.SigningPublicKey, vault.AgentMessageKeyVersion,

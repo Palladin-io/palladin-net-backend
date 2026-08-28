@@ -113,6 +113,29 @@ public sealed class MigrationHistoryArchitectureTests
                 "form-map submit and lookup use the sequence, unique constraint, and ordinary reads instead of explicit transactions or locks");
     }
 
+    [Fact]
+    public void FullGrantCutover_ShouldPreserveLegacyEntryDeliveryPoliciesBeforeDeletingFullGrants()
+    {
+        var root = FindRepositoryRoot();
+        var migrationPath = Directory.EnumerateFiles(
+                GetMigrationsDirectory(root, "Vault"),
+                "*_AddAgentWrappedVaultKeys.cs")
+            .Single();
+        var source = File.ReadAllText(migrationPath);
+
+        var addPolicyIndex = source.IndexOf("name: \"DeliveryPolicy\"", StringComparison.Ordinal);
+        var backfillIndex = source.IndexOf("UPDATE \"VaultEntries\" AS entry", StringComparison.Ordinal);
+        var deleteFullIndex = source.IndexOf(
+            "DELETE FROM \\\"Grants\\\" WHERE \\\"GrantType\\\" = 'Full'",
+            StringComparison.Ordinal);
+
+        addPolicyIndex.ShouldBeGreaterThanOrEqualTo(0);
+        backfillIndex.ShouldBeGreaterThan(addPolicyIndex);
+        deleteFullIndex.ShouldBeGreaterThan(backfillIndex);
+        source.ShouldContain("HAVING COUNT(DISTINCT \"DeliveryPolicy\") > 1");
+        source.ShouldContain("RAISE EXCEPTION 'Conflicting legacy Entry delivery policies");
+    }
+
     private static string GetMigrationsDirectory(string root, string moduleName) =>
         Path.Combine(GetPersistenceDirectory(root, moduleName), "Migrations");
 

@@ -9,6 +9,7 @@ internal sealed class IdentityDomainReadContext(IdentityDbReadContext readContex
     public IQueryable<Organization> Organizations => Query<Organization>();
     public IQueryable<Role> Roles => Query<Role>();
     public IQueryable<OrganizationMember> OrganizationMembers => Query<OrganizationMember>();
+    public IQueryable<OrganizationMemberDirectoryEntry> OrganizationMemberDirectoryEntries => Query<OrganizationMemberDirectoryEntry>();
     public IQueryable<OrganizationMemberRole> OrganizationMemberRoles => Query<OrganizationMemberRole>();
     public IQueryable<OrganizationInvitation> OrganizationInvitations => Query<OrganizationInvitation>();
     public IQueryable<OAuthConnection> OAuthConnections => Query<OAuthConnection>();

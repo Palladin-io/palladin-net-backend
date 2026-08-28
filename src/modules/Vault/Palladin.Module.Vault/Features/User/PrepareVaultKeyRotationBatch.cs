@@ -300,7 +300,6 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                     vault.ManifestSigningPublicKey,
                     vault.ManifestSigningKeyFingerprint);
             }
-
             var grantIds = req.AgentWrappedVaultKeys.Select(x => x.GrantId).Distinct().ToArray();
             var grants = await domainWriteContext.Grants
                 .OfType<FullGrant>()

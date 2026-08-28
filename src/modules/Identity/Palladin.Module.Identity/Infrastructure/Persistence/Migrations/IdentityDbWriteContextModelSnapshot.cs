@@ -266,6 +266,26 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("OrganizationMembers");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberDirectoryEntry", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OrganizationId", "UserId");
+
+                    b.ToTable("OrganizationMemberDirectoryEntries");
+                });
+
             modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberRole", b =>
                 {
                     b.Property<Guid>("OrganizationId")
@@ -531,6 +551,12 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Instant?>("WaitlistDeveloperBenefitEndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("WaitlistDeveloperBenefitStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
@@ -585,6 +611,15 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Instant?>("DeveloperBenefitEndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("DeveloperBenefitStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeveloperBenefitUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(320)
@@ -610,6 +645,9 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DeveloperBenefitUserId")
+                        .IsUnique();
 
                     b.HasIndex("Email")
                         .IsUnique();
@@ -666,6 +704,15 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Navigation("Organization");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberDirectoryEntry", b =>
+                {
+                    b.HasOne("Palladin.Module.Identity.Domain.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Palladin.Module.Identity.Domain.OrganizationMemberRole", b =>

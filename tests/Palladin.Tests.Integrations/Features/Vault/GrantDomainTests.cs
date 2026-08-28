@@ -480,4 +480,26 @@ public sealed class GrantDomainTests
         Should.Throw<DomainException>(() => grant.RefreshPackage(replay,
             [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)]));
     }
+
+    [Fact]
+    public void SupersedeByFull_EmitsExplicitGrantType()
+    {
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
+        var supersededByGrantId = Guid.NewGuid();
+        var names = new GrantNames("agent", "entry", "vault", "actor");
+        var grant = GranularGrant.CreateProactively(
+            grantId, vaultId, organizationId, Guid.NewGuid(), "pk", entryId,
+            GrantEnvelopeTestData.Scope(organizationId, vaultId, grantId, entryId),
+            null, null, "lifetime", GrantMethods.Get, Guid.NewGuid(), names, Now, 1);
+        grant.FetchEvents();
+
+        grant.SupersedeByFull(supersededByGrantId, names, Now + Duration.FromMinutes(1));
+
+        var @event = grant.FetchEvents().ShouldHaveSingleItem().ShouldBeOfType<GrantSupersededEvent>();
+        @event.Type.ShouldBe(GrantType.Granular);
+        @event.SupersededByGrantId.ShouldBe(supersededByGrantId);
+    }
 }

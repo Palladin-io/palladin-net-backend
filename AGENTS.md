@@ -13,6 +13,27 @@ GitHub Actions workflow at `.github/workflows/test.yml` runs on PRs to `main`:
 
 Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/palladin-net-backend)
 
+## Code Review Rules
+
+### Business requirements
+
+- Compare the implementation and tests with every requirement stated in the PR and the applicable module README. Flag missing behavior, an unhandled business branch or a test suite that cannot prove an acceptance criterion. Do not invent requirements that are absent from the available context.
+  Safe path: keep the PR description self-contained, map each acceptance criterion to code and focused tests, and call out unavailable product context instead of assuming it.
+
+### Simplicity
+
+- Flag material accidental complexity: a new abstraction, configuration surface, subsystem or chain of indirection that has no current requirement or concrete second use and makes the change harder to reason about.
+  Safe path: implement the simplest design that satisfies the current acceptance criteria while preserving the repository's required domain contexts, module boundaries, security controls and zero-knowledge invariants.
+- When variants materially differ in authorization, validation, cryptographic material, persistence lifecycle, or transaction semantics, model them as separate vertical slices and endpoints. Do not branch one generic endpoint by a type flag; compose genuinely shared mechanics through focused helpers.
+- When a domain concept has an authoritative discriminator such as `GrantType`, include it explicitly in integration events and public contracts and have consumers use that field. Never reconstruct it from nullable fields, subtype-specific payload shape, event names, or current persistence behavior.
+
+### Database access and performance
+
+- Apply [docs/architecture/database-guidelines.md](docs/architecture/database-guidelines.md) to every changed database access path, regardless of whether it is reached from HTTP GET/POST, a consumer or a job. EF Core through the split domain contexts is the default; raw SQL, explicit transactions and locks are reviewed last-resort exceptions that require a concrete reason, bounded scope, parameterization and focused tests.
+- Flag a material read whose `WHERE`, `JOIN`, ordering or keyset pagination cannot use a suitable current index at the expected scale. Also flag a new index that duplicates or overlaps a PK, UNIQUE constraint or existing index without serving a distinct current access path. Compare leftmost prefixes, range and ordering columns, partial predicates, included columns and uniqueness; a different column order is neither automatically redundant nor automatically justified. Do not require an index for every query.
+- Do not add a preflight PK/UNIQUE existence query solely to predict a constraint violation. Let the constraint arbitrate and map the exact named violation. Keep a preflight only for distinct authorization or business semantics, or demonstrated expensive-work avoidance, and still handle the write race.
+- Do not query a read context again for authoritative values already freshly loaded or fenced in the current write context; reuse those values. This does not replace the split-context rule: unrelated no-tracking reads still use the module `DomainReadContext`.
+
 ## Runtime Secrets
 
 - Never commit or log secret values. Keep production secrets in a dedicated secret manager and inject them into ASP.NET configuration at runtime.
@@ -25,11 +46,10 @@ Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/pa
 
 Assume this repository and its complete Git history will be public.
 
-- Public client identifiers such as OAuth client IDs, Firebase app/API IDs, and analytics project keys are not secrets, but Palladin-owned environment values must not be committed to generic runnable defaults or examples unless the platform requires checked-in public client configuration and a security review documents why.
-- Tracked configuration must use empty values or unmistakable placeholders. Put real local developer values in the ignored `appsettings.Local.json`, user-secrets, or environment variables. Inject staging and production values through the approved deployment configuration or secret store.
-- A fresh clone or fork must never silently use Palladin's cloud project, OAuth consent screen, quota, telemetry destination, or callback configuration.
-- Before approving any tracked cloud identifier, verify environment separation and provider-side restrictions such as authorized origins, redirect URIs, application identifiers, referrer restrictions, and API allowlists.
-- Client secrets, private keys, service-account files, access tokens, signing material, and credentials are secrets regardless of surrounding configuration and must never be tracked.
+- Public client IDs are not secrets, but generic runnable configuration never contains Palladin-owned environment values unless the platform requires it and a security review records why.
+- Tracked generic configuration uses empty values or obvious placeholders. Real local values stay in ignored local config, user-secrets or environment variables; staging and production use approved deployment configuration or secret storage.
+- A clone or fork must not silently use Palladin cloud projects, quota, telemetry or callbacks. Before tracking a public identifier, verify environment separation and provider-side origin, redirect, app-ID, referrer and API restrictions.
+- Client secrets, private keys, service accounts, tokens, signing material and credentials are always secret and never tracked.
 
 ## Build, Test, and Run Commands
 
@@ -42,7 +62,7 @@ dotnet run --project src/Palladin.Api/Palladin.Api.csproj  # Run API locally
 
 ### Running a single test
 ```bash
-dotnet test tests/Palladin.Api.Tests --filter "FullyQualifiedName~ClassName.MethodName"
+dotnet test tests/Palladin.Tests.Integrations --filter "FullyQualifiedName~ClassName.MethodName"
 ```
 
 ### Database migrations
@@ -67,49 +87,38 @@ Palladin has not entered production and has no Vault data that requires compatib
 
 ### Pre-production migration history
 
-Checked-in migration history is append-only by default. Never delete, rename, reorder, edit, regenerate, consolidate or squash any pre-existing migration unless the product owner explicitly requests that exact migration-history rewrite in the current task.
+Checked-in migration history is append-only. Never delete, edit, regenerate, reorder, consolidate or squash an existing migration without an explicit owner request for that exact rewrite.
 
-- A feature, refactor, bug fix, model change, migration generation, database reset or request to clean/recreate a local, test or staging database is **not** permission to rewrite migration history.
-- A non-production or disposable environment is **not** permission to rewrite migration history.
-- Historical approval for an earlier squash is exhausted once that squash is complete; it is never standing approval for another one.
-- The default response to a schema change is a new incremental migration. If rewriting history appears necessary, stop and ask first, naming the affected module contexts and environments and explaining how databases that applied the old history must be reset or reconciled.
-- Never apply rewritten migration history to an existing database until the owner has also explicitly approved the reset or reconciliation scope for that database.
-
-The previously approved pre-production database reset used one `Initial` EF Core migration per active module context. After a newly and explicitly approved squash, replace the complete migration history and model snapshot together, then recreate only the local and staging databases included in that approval.
-
-- Do not preserve historical cutover migrations or compatibility SQL after an approved squash.
-- After the squash, evolve schemas with normal incremental migrations. Do not squash again unless the owner explicitly requests another destructive pre-production reset.
-- Initial and incremental migrations retain structural integrity only through primary keys, foreign keys, unique constraints and required columns. They never contain business-value CHECK constraints, triggers, stored functions or stored procedures.
+- Features, fixes, model changes, migration generation, database resets, disposable environments and earlier approvals never imply rewrite permission. Add an incremental migration by default.
+- If a rewrite appears necessary, stop and name the affected contexts and environments plus the required reset or reconciliation. Never apply rewritten history to an existing database outside that explicit approval.
+- The earlier pre-production reset produced one `Initial` migration per active context. A newly approved squash replaces history and snapshot together and recreates only approved databases; it keeps no compatibility SQL. All later changes are incremental.
+- Migrations contain structural PK, FK, UNIQUE, NOT NULL and index changes, never business CHECK constraints, triggers, stored functions or procedures.
 
 ### Project layout
 - `src/Palladin.Api/` — Entry point (`Program.cs`), health checks, middleware, shared bootstrap
 - `src/core/` — Cross-cutting utilities (Analytics, Ai, MassTransit, Hangfire, Persistence, NodaTime, Security, Events, Cdn, etc.)
 - `src/modules/{ModuleName}/` — Domain module group containing the implementation project, contracts project and module README. Active domain groups: Identity, Vault and Agents.
 - `src/modules/OpenHost/{ModuleName}/` — Shared Open Host Service group with the same internal layout. Active OpenHost groups: Audit, Notification, Search and PublicAssetCatalog. Billing is planned, not yet present in `src/modules/`.
-- `tests/Palladin.Api.Tests/` — Main integration test suite
-- `tests/Palladin.Tests.Unit/Architecture/` and `tests/Palladin.Tests.Integrations/Architecture/` — module boundary and endpoint security compliance tests
+- `tests/Palladin.Tests.Integrations/` — Integration suite, including endpoint security compliance tests under `Architecture/`
+- `tests/Palladin.Tests.Unit/` — Unit suite, including module boundary compliance tests under `Architecture/`
 
 ### Module group structure
 ```
 {ModuleRoot}/
-├── README.md                                      # Module architecture and ownership map
-├── Palladin.Module.{ModuleName}/                  # Implementation assembly
-│   ├── Domain/                                    # Models, value objects, events, exceptions
-│   ├── Features/                                  # Vertical slices grouped by actor (`User`, `Agentic`, `System`)
-│   ├── Infrastructure/                            # Persistence, messaging, external services and options
-│   ├── Shared/                                    # Cross-feature DTOs and value objects
-│   ├── Triggers/                                  # Integration event consumers
-│   └── {ModuleName}Module.cs                      # Module registration
-└── Palladin.Module.{ModuleName}.Contracts/        # Commands, Events and stable shared ValueObjects
+├── README.md
+├── Palladin.Module.{ModuleName}/
+│   ├── Domain/ · Features/ · Infrastructure/ · Shared/ · Triggers/
+│   └── {ModuleName}Module.cs
+└── Palladin.Module.{ModuleName}.Contracts/
 ```
 
-The implementation and contracts projects are sibling directories inside their owning module group. `{ModuleRoot}` is `src/modules/{ModuleName}` for a domain module or `src/modules/OpenHost/{ModuleName}` for an OpenHost module. A contracts project lives at `{ModuleRoot}/Palladin.Module.{ModuleName}.Contracts/Palladin.Module.{ModuleName}.Contracts.csproj`; it must never be nested inside the implementation project's content root or placed as an unowned top-level pseudo-module. This keeps IDE project trees unambiguous while preserving an acyclic dependency graph and explicit bounded-context ownership. Each contract assembly has the following semantic namespaces:
+Implementation and contracts are siblings under `src/modules/{ModuleName}` or `src/modules/OpenHost/{ModuleName}`. The contracts project lives at `{ModuleRoot}/Palladin.Module.{ModuleName}.Contracts/Palladin.Module.{ModuleName}.Contracts.csproj`, never inside the implementation or as an unowned top-level module.
 
-- `Contracts.Commands` — integration commands handled by the owning module; another module may request the owner to perform the operation. Every such command implements `IIntegrationCommand`, never `IIntegrationEvent`.
-- `Contracts.Events` — integration events published by the owning module; every type implementing `IIntegrationEvent` belongs here, even when its first consumer is inside the same module. `Domain/Events` is reserved for truly internal domain events that are not integration contracts.
-- `Contracts.ValueObjects` — small immutable domain values intentionally shared through commands, events or public module APIs. They must be stable, serialization-safe and free of entities, persistence models, services and infrastructure dependencies.
+- `Contracts.Commands` owns commands handled by the module; they implement `IIntegrationCommand`.
+- `Contracts.Events` owns every published `IIntegrationEvent`, including self-consumed events; `Domain/Events` is internal only.
+- `Contracts.ValueObjects` contains stable immutable serialization-safe values, never entities, persistence models, services or infrastructure.
 
-Use one `Contracts` assembly per module, not separate command/event packages. Direction is always defined relative to the owning module, so do not use ambiguous `Upstream` or `Downstream` folders. Other modules reference the owner's `Contracts` assembly for messages and shared value objects; they must not reference the main module merely to obtain those types. A namespace or shape change in `Contracts` changes the MassTransit message identity/schema and requires explicit versioning or a deliberate pre-production cutover.
+Use one `Contracts` assembly per module and no `Upstream`/`Downstream` folders. Consumers reference the owner's contracts, not its implementation. Changing a contract namespace or shape changes MassTransit identity/schema and requires versioning or a deliberate pre-production cutover.
 
 **`*Options` placement — co-locate with the concern, never a fixed `Options/` folder.** An `IOptions<T>` config class lives next to whatever it configures. In a module that is usually a subfolder of `Infrastructure/` named after the concern: `Persistence/*PersistenceOptions`, `Crypto/VaultCryptoOptions`, `AgentAuth/AgentAuthenticationOptions`, `Push/FirebaseOptions` (Identity additionally groups a few in `Infrastructure/Options/`). Cross-cutting options are **not in any module at all** — they live in their own `src/core` project beside the service they configure (`PostHogOptions` in `Core.Analytics`, `S3BucketOptions` in `Core.Cdn`, `HangfireOptions` in `Core.Hangfire`, `MassTransitOptions` in `Core.MassTransit`). Bind every one via its `Options.Position` prefix (see Module registration).
 
@@ -123,49 +132,32 @@ Classify every MassTransit consumer by the message it handles — never create a
 
 When an event has more than one consumer (e.g. notification + analytics), keep the consumers in a per-event folder `Triggers/{EventName}/`; shared trigger helpers go in `Triggers/Shared/`.
 
-**Why & how:** a trigger is just a MassTransit consumer of an integration event. It may subscribe to an event from **its own module** — e.g. `OnVaultCreated` consumes Vault's own `VaultCreatedEvent`, and `OnGrantRequestedBroadcast` consumes Vault's own `GrantRequestedEvent`. A common trigger pattern is to **convert an Event into a Command** to avoid circular module dependencies: instead of Vault calling Notification, `OnGrantRequestedBroadcast` publishes a `BroadcastNotificationCommand` (from `Palladin.Module.Notification.Contracts.Commands`). The publishing module depends on the consumer's `Contracts` assembly — never the reverse.
+A trigger may consume its own module's event and translate it into another module's command to avoid circular dependencies. The publisher depends only on the destination `Contracts` assembly.
 
 ### Module registration
 Each module exposes `AddXxxModule(IServiceCollection, IConfiguration)` returning `IServiceCollection` for chaining. Modules are registered in `Program.cs` with configuration sections from `appsettings.*.json` under `Modules:ModuleName`. Do not re-register framework services — they are already wired in `Program.cs`.
 
 #### Options binding — bind the section PREFIX, not full field paths
 
-Follow the repository-local convention below whenever changing `IOptions<T>`, `*Options`, or persistence configuration.
-
-Every `*Options` class carries a `public const string Position` that is the **section prefix only**; the option's property names resolve the rest of the path. Registration binds the section to the Position and lets `IOptions<T>` map each field — you never reference `Modules:Identity:Jwt:Secret` anywhere in code.
-
-```csharp
-// Options class — Position is the prefix; property names complete the path
-internal sealed class JwtOptions
-{
-    public const string Position = "Modules:Identity:Jwt"; // → binds Modules:Identity:Jwt:*
-    public string Secret { get; init; } = string.Empty;    // resolves Modules:Identity:Jwt:Secret
-    public int RefreshTokenExpiryDays { get; init; } = 365;
-}
-
-// Registration (in the module's InfrastructureModule) — bind the prefix, nothing more
-services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.Position));
-```
-
-Convention: `Position = "Modules:{Module}:{Section}"` (e.g. `Modules:Vault:Persistence`, `Modules:Agents:Signature`, `Modules:Notification:Firebase`). Consume via injected `IOptions<JwtOptions>` — never read `IConfiguration` by string path in a feature.
+Every `*Options` class declares `Position = "Modules:{Module}:{Section}"` as the section prefix only. Property names complete the configuration path. Bind that prefix with `configuration.GetSection(Options.Position)`, consume it through `IOptions<T>` and never read a full field path or inject `IConfiguration` into a feature.
 
 ### Cross-module communication
-Modules communicate exclusively through **MassTransit integration events** (RabbitMQ). Domain events stay within module boundaries. Each module's published/consumed event catalog lives in its `{ModuleRoot}/README.md`.
+Modules communicate through MassTransit integration events and commands; domain events stay within their module. Each message catalog lives in the owning `{ModuleRoot}/README.md`.
 
 #### Receive endpoint queue naming
 
-Every consumer has an explicit `ConsumerDefinition<T>` whose endpoint name is stored in its module's `Infrastructure/MassTransit/*Endpoints.cs` constants. Queue names always follow `{module}.{type}.{destination}`:
+Every consumer has an explicit `ConsumerDefinition<T>` and an endpoint constant in `Infrastructure/MassTransit/*Endpoints.cs`. Names follow `{module}.{type}.{destination}`:
 
-- event consumers use `{receiving-module}.events.{source-module}`; use `self` when the receiving module owns the event. All event consumers in one module for the same source module share that endpoint, regardless of whether they produce analytics, audit, search, notification or onboarding side effects. A MassTransit `Fault<TCommand>` handled by the command-owning module uses its `events.self` endpoint;
-- command consumers use `{receiving-module}.commands.{subcontext}`. Prefer `general` when the module needs only one general command lane; otherwise use a stable noun naming a meaningful module subcontext such as `inbox`, `realtime`, `scope`, `items` or `member-key-directory`. Never name a command queue after the sender module or a single command verb.
+- Events use `{receiver}.events.{source}`; use `self` for owned events and command faults. Consumers in one module for the same source share the endpoint, regardless of side effect. Never introduce another type segment such as `faults`.
+- Commands use `{receiver}.commands.{subcontext}`. Prefer `general` or a stable noun such as `inbox`, `realtime`, `scope`, `items` or `member-key-directory`, never the sender or one command verb.
 
-Examples: `vault.events.self`, `vault.events.identity`, `notification.commands.inbox`, `audit.commands.general`. Do not introduce other type segments such as `faults`, and never hardcode an endpoint name in a consumer definition.
+Examples: `vault.events.identity`, `notification.commands.inbox` and `audit.commands.general`. Never hardcode an endpoint name in a definition.
 
 Use one unified `Upserted` event carrying an `EntityChange { Created, Updated }` classifier instead of separate `Created` and `Updated` events. Subscribers branch on the classifier and use `UpdatedAt` for idempotency.
 
-**Strong isolation — no cross-module read query interfaces.** A module must never expose (or consume) a live read-query interface into another module's data. A read concern that spans modules gets **its own module** built as an **OpenHost** (Open Host Service): a denormalized read-model with its own access scoping.
+**No cross-module read query interfaces.** A read concern spanning modules becomes a scoped denormalized OpenHost read model.
 
-**OpenHost feeding is command-driven, NOT event-subscription.** The host module consumes **only its own integration commands** (`IndexXCommand` / `RemoveXCommand` / `UpdateUserScope`, defined in its `Contracts` assembly). It **never** subscribes to other modules' events. Each **owning module**, in its **own** `On{Event}` trigger, translates its domain event into the host's command and publishes it (dependency direction: owner → `Host.Contracts`; host → nothing). Reference implementation: the **Notification** module (`BroadcastNotificationCommand`, `NotificationScope`, `UpdateUserScope`; Vault/Agents `On{X}Broadcast` triggers publish it) — mirror it. Access via **scopes** (`{Type, ItemId}` + optional `RequiredPermission`), not per-relation tables / ifology. Prefer one **polymorphic item** (Type + Metadata jsonb) over per-type entities (Open-Closed). Store cross-module state (e.g. `is_onboarded`, onboarding steps) as materialized state fed by commands — never compute it cross-module.
+**OpenHost feeding is command-driven, not event-subscription.** An owner translates its event in `On{Event}` into a command defined by `Host.Contracts`; the host consumes only its own commands and never subscribes to another module's events. Model access with scopes, prefer polymorphic items over per-type tables, and materialize cross-module state instead of querying it live.
 
 See `src/modules/OpenHost/Search/README.md` and `src/modules/OpenHost/Notification/README.md` for complete repository-local examples.
 
@@ -175,12 +167,11 @@ See `src/modules/OpenHost/Search/README.md` and `src/modules/OpenHost/Notificati
 - Never import `internal` types from another module — every cross-module API must be `public`
 
 ### Database strategy
-- **PostgreSQL**; the `pg_trgm` extension is enabled (trigram fuzzy search, used by Vault). No other extensions are currently enabled
-- **No validation or executable behavior in PostgreSQL.** Business rules and integrity behavior belong in domain methods and application services. Migrations must not add business `CHECK` constraints, triggers, stored functions or stored procedures. The database retains only PK, FK, UNIQUE and NOT NULL structural constraints plus built-in transaction/concurrency mechanisms.
-- **Read/Write split DbContexts** per module, named `{Module}DbReadContext` / `{Module}DbWriteContext` (e.g., `VaultDbReadContext` / `VaultDbWriteContext`)
-- **DbContexts are Infrastructure-only.** `Features/` never injects, accepts, or accesses either DbContext. Each module exposes two domain persistence gateways: `{Module}DomainReadContext` wraps only `{Module}DbReadContext` and exposes no-tracking queries; `{Module}DomainWriteContext` wraps only `{Module}DbWriteContext` and exposes tracked aggregate queries plus `Add`/`Remove`/`CommitAsync` with domain-event dispatch. Never create a combined `{Module}DomainContext`.
-- Separate databases per module in test isolation
-- Entity configurations in `Infrastructure/Persistence/Configurations/`
+
+- PostgreSQL is the database; `pg_trgm` is the only enabled extension.
+- Features use split `{Module}DomainReadContext` and `{Module}DomainWriteContext`; DbContexts remain Infrastructure-only and test databases remain isolated per module.
+- PostgreSQL owns structural PK, FK, UNIQUE and NOT NULL integrity, not business validation or executable behavior.
+- Read [docs/architecture/database-guidelines.md](docs/architecture/database-guidelines.md) before changing a query, index, persistence path, transaction, lock, raw SQL, EF configuration or migration.
 
 ### Key technology choices
 - **FastEndpoints** for HTTP REST (not MVC controllers)
@@ -259,8 +250,10 @@ public override void Configure()
 - Use records for request and response
 - Do not create separate DTOs for value objects — use them directly in request/response
 
-### UI responses resolve names server-side
-API responses meant for the UI must return human-readable names next to IDs (`agentName`, `entryLabel`, actor/user name…), resolved **server-side** via a join/projection (correlated subquery / `LEFT JOIN`) in the query — never make the client do `id→name` lookups, and never return a bare ID the user cannot read. Resolve from the module's own replicas/tables (e.g. Vault has the `Agent` replica with `Name` and `Entry` with `Label`); when the referenced entity no longer exists, return `null`/`""` (do not throw). These are metadata names, never crypto/secrets. For **audit**, denormalize names **at write time** (the Audit module has no replica of every module, e.g. Identity users), not at read time.
+### Human-readable identity in UI responses
+By default, UI-facing resource responses return human-readable names beside IDs, resolved server-side from the owning module's table or replica. Do not create per-row client lookups or return a bare identifier as the only user-facing label.
+
+Historical member attribution is the exception: Vault/Audit keep opaque actor IDs, while Identity exposes the durable `GET api/organization/member-directory` (`userId` plus last known `displayName`, including former members) for one organization-scoped in-memory web cache. Do not copy names or plaintext Entry metadata into history or use the role/e-mail-heavy Team endpoint as the resolver. See `src/modules/Identity/README.md` and `brain/Technical/Organization Member Directory.md`.
 
 ## Asynchronous (MassTransit)
 
@@ -323,32 +316,13 @@ Cross-cutting pieces already exist in `src/core/`. Use them — re-implementing 
 - Exception types live in `Palladin.Core.Types.Exceptions` (e.g. `DomainException`, `EntityNotFoundException`)
 
 ## Entity Framework Core
-- Minimal configuration — rely on conventions
-- Configure only relationships and non-standard mappings in `Infrastructure/Persistence/Configurations/`
-- Expression-bodied DbSet properties: `public DbSet<Entity> Entities => Set<Entity>();`
-- Check existence before expensive operations, early returns, projection with `Select` when possible
-- For polymorphic entities use EF Core TPH (Table-Per-Hierarchy): abstract base class, concrete subclasses, `HasDiscriminator(e => e.Type)` in configuration
 
-### Transaction boundaries — explicit transactions are the last resort
-
-`DomainWriteContext.CommitAsync(...)` is the normal write boundary. EF Core already wraps one `SaveChangesAsync` call in a database transaction, so a feature must not call `BeginTransactionAsync` merely because it performs several tracked changes, writes multiple tables, or wants an operation to be "atomic". Prefer domain invariants, PK/FK/UNIQUE constraints and optimistic concurrency tokens; prepare the complete tracked graph and commit it once through `DomainWriteContext`.
-
-An explicit transaction is allowed only when a reviewed invariant cannot be preserved by one domain commit, normally because a bounded operation must flush and clear multiple write-side pages while retaining all-or-nothing rollback. Every surviving explicit transaction must:
-
-- document the concrete invariant that would be violated by separate commits;
-- use a deterministic lock/write order and a bounded data set;
-- remain database-only and short — never call HTTP, S3, a message broker, an e-mail/push provider, or write an HTTP response while it is open;
-- persist and commit through `DomainWriteContext.CommitAsync(transaction, ...)`, so domain events are published only after the database commit;
-- have concurrency tests covering the conflicting operations and a later-page rollback test when it spans pages.
-
-Use optimistic concurrency for read-check-write races. A concurrency token must fence the complete invariant, including related-set/phantom changes: every command capable of changing that invariant updates the same aggregate stamp. Handle a stale stamp as a retryable conflict or a structural `409`; do not replace it with a wider `FOR UPDATE`/advisory lock. External side effects use an outbox or a durable state machine with separate short claim/finalize commits. Adding a new explicit transaction, row lock or transaction-scoped advisory lock is an architecture decision requiring explicit review, not a local implementation shortcut.
-
-## Mutating entities — ALWAYS load-edit-commit through the domain
-To change an existing entity, **fetch it through a `{Module}DomainWriteContext` query property, mutate it through a domain method, and persist via `DomainWriteContext.CommitAsync`**. Features never receive a DbContext. Use `{Module}DomainReadContext` only for no-tracking reads; never load an entity through it and then mutate that detached entity. NEVER mutate with `ExecuteUpdateAsync`/`ExecuteDeleteAsync` or a raw DbContext set-based write: that bypasses domain invariants and domain-event dispatch. The state setter lives on the entity (e.g. `agent.UpdateOnConnect(...)`), not in the caller.
-
-Large write-side collections must use deterministic keyset pagination with a bounded page size. When the operation is atomic across pages, keep one database transaction and its locks/fence for the whole operation, flush each page through `DomainWriteContext`, clear the EF `ChangeTracker` after every flush, and commit the transaction only after every page and final invariant check succeed. `Take()` alone is not memory-bounded when the scoped context keeps tracking prior pages; offset pagination is not allowed for mutable write sets. Add tests covering more than one page and rollback after a failure on a later page.
-
-`ExecuteDeleteAsync`/`ExecuteUpdateAsync` are permitted **only** when the entity has no lifecycle domain events, and that must be explicit (a value object with no `EventEntityBase`, e.g. `PushToken`) — otherwise load-edit-commit through `DomainWriteContext` as above. A set-based write on an event-bearing aggregate silently drops its domain events.
+- EF Core LINQ through the split domain contexts is the default. Reads use no-tracking database-side projections; writes load tracked aggregates, call domain methods and finish through `DomainWriteContext.CommitAsync(...)`.
+- Keep configuration minimal and in `Infrastructure/Persistence/Configurations/`; rely on conventions except for relationships, indexes and non-standard mappings. Use TPH for polymorphic entities.
+- Raw SQL is parameterized and exceptional. It stays behind a domain context and requires a concrete EF limitation or verified material plan/concurrency reason.
+- Explicit transactions, row locks and transaction-scoped advisory locks are reviewed architecture exceptions. Prefer one domain commit and optimistic concurrency.
+- Large mutable writes use bounded deterministic keyset pages. Set-based updates or deletes are allowed only for entities with no lifecycle domain events.
+- The complete query, indexing, raw SQL, transaction, concurrency and migration rules are in [docs/architecture/database-guidelines.md](docs/architecture/database-guidelines.md).
 
 ## Module Organization
 - `public` for module entry points and integration contracts
@@ -368,32 +342,11 @@ Large write-side collections must use deterministic keyset pagination with a bou
 
 ### Consumer registration — .NET 10 compatibility (critical)
 
-`AddConsumers(Assembly[])` uses `AssemblyTypeCache.FindTypes()` internally — async, cached, and **silently returns empty on .NET 10** with no error or exception. Result: zero queues created, consumers never receive events. **Never use the assembly-based overload.** Always scan types explicitly:
-
-```csharp
-using MassTransit.Metadata;
-
-var types = assemblies
-    .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-    .Where(RegistrationMetadata.IsConsumerOrDefinition)
-    .ToArray();
-configurator.AddConsumers(types);
-```
+Never call `AddConsumers(Assembly[])`. Its internal type cache can silently return no consumers on .NET 10, leaving zero queues. Resolve assembly types explicitly, filter them with `MassTransit.Metadata.RegistrationMetadata.IsConsumerOrDefinition` and pass the resulting type array to `AddConsumers(types)`.
 
 ### Module ordering in Program.cs
 
-`AddMassTransitModule` **must be called after all module registrations**. Each `AddXxxModule` populates a static `_assemblies` list via `AddMassTransitAssembly()`. If `AddMassTransitModule` runs first, the list is empty and no consumers or queues are created.
-
-```csharp
-// ✅ Correct — modules first, MassTransit last
-builder.Services
-    .AddIdentityModule(configuration)
-    .AddVaultModule(configuration)
-    .AddAgentsModule(configuration);
-
-builder.Services
-    .AddMassTransitModule(configuration);
-```
+Call `AddMassTransitModule` after every `AddXxxModule` registration. Modules populate the assembly list consumed by MassTransit; registering it first produces no consumers or queues.
 
 ### cfg.Host() position
 
@@ -401,35 +354,10 @@ builder.Services
 
 ## Analytics (PostHog)
 
-Backend events are the **source of truth** for business actions (create, revoke, reveal, sign-up…). They are more reliable than frontend events (no ad blockers, no race conditions); frontend/mobile track UI-only interactions. Do not double-track an action on both sides.
-
-**Event name format:** `be:{module}:{event}` — colon-separated, `event` uses hyphens for multi-word (e.g. `be:vault:vault-created`). The `be:` prefix and the `{module}:` segment are assembled **internally** by `PostHogAnalyticsService` (`postHogClient.Capture(distinctId, $"be:{module}:{eventName}", …)`). You pass only `module` + `event` — never write the `be:` prefix yourself.
-
-**How events are emitted:** a domain method emits a domain event → a MassTransit **trigger** consumes it → the trigger calls `IAnalyticsService.CaptureEvent`. **Never call `IAnalyticsService` inline in an endpoint** (see `feedback_analytics_via_domain_events`). This keeps endpoints thin and makes analytics a side-effect of the business event, not the request.
-
-```csharp
-// In a Trigger (MassTransit consumer of the domain event), not in the endpoint:
-internal sealed class OnVaultCreated(IAnalyticsService analyticsService)
-    : IConsumer<VaultCreatedEvent>
-{
-    public Task Consume(ConsumeContext<VaultCreatedEvent> context)
-    {
-        var msg = context.Message;
-        // distinctId = user id; module + event only — be: is added internally
-        analyticsService.CaptureEvent(msg.UserId.ToString(), "vault", "vault-created");
-        return Task.CompletedTask;
-    }
-}
-```
-
-| Rule | Detail |
-|------|--------|
-| Signature | `CaptureEvent(string distinctId, string module, string eventName, Dictionary<string, object>? properties = null)` |
-| `distinctId` | the acting user's id as string (`msg.UserId.ToString()`) |
-| `module` | `identity` / `vault` / `agents` / `audit` / `notification` — no `be:` prefix |
-| `eventName` | hyphenated action, e.g. `vault-created`, `log-queried`, `export-requested` |
-| Where it lives | a `Triggers/On{Event}` consumer, never an endpoint |
-| Secrets | never put passwords, keys, tokens, or plaintext credentials in `properties` |
+- Backend events are the source of truth for completed business actions; clients track UI-only interactions and never duplicate the outcome.
+- A domain method emits the event and a `Triggers/On{Event}` MassTransit consumer calls `IAnalyticsService.CaptureEvent`. Endpoints and application services never emit analytics inline.
+- Pass the acting user ID, lowercase owning module and a hyphenated event name. `PostHogAnalyticsService` adds `be:` internally.
+- Analytics properties never contain passwords, keys, tokens, plaintext credentials or other sensitive vault data.
 
 ---
 
@@ -444,7 +372,7 @@ internal sealed class OnVaultCreated(IAnalyticsService analyticsService)
 - **WireMock** — external API mocking
 
 ## Structure
-- Integration tests in `tests/Palladin.Api.Tests/Tests/` mirroring module structure
+- Integration tests in `tests/Palladin.Tests.Integrations/Features/` mirroring module structure
 - Test names: `When_Condition_Then_Expectation`
 - Strict `// Given` / `// When` / `// Then` comments only
 - Use `[Collection<ApiFactoryCollection>]` to share the `ApiFactory` fixture
@@ -493,20 +421,15 @@ var (response, result) = await client.GETAsync<EndpointType, RequestType, Respon
 
 Official Codex review is a bounded release gate, not an iterative design loop.
 
-- Request the first official review only after the scoped implementation is complete, local validation passes, and CI is green.
-- Batch all accepted findings into one remediation pass; do not run a separate review after each comment or commit.
-- Run at most two standard official review rounds. A third round is allowed only to verify a concrete P0/P1 fix involving security, authorization, data integrity, atomicity, or material performance. Any further round requires explicit product-owner approval.
-- Treat review comments critically. Before changing code, identify the reproducible production scenario, verify that the current code permits it, and confirm that the fix belongs to the issue's acceptance criteria.
-- P0/P1 findings in scope are blocking. Fix a P2 only when it is real, in scope, and small; otherwise document it or create a follow-up. Do not expand the PR for P3/style feedback, speculative edge cases, or unrelated architecture work.
-- A review comment does not expand the tracked issue scope by itself. If remediation would introduce a subsystem, broad abstraction, or substantial diff growth, stop and move it to a follow-up unless it closes a confirmed P0/P1.
-- Inspect CI status first. Fetch logs only for failed checks, and then only the failing step and necessary surrounding context.
-- Stop the review loop when CI is green, no unresolved in-scope P0/P1 remains, and lower-severity findings are either addressed or explicitly dispositioned.
+- Start only after implementation, local validation and CI are complete. Batch accepted fixes into one pass and run at most two standard rounds; a third may verify one concrete P0/P1 security, authorization, integrity, atomicity or material-performance fix.
+- Verify every finding against a reproducible path, current code, acceptance criteria and repository rules. P0/P1 issues in scope block; small real P2 issues may be fixed, while speculative, P3, unrelated or scope-expanding work is rejected, documented or deferred.
+- Inspect only failed CI logs. Stop when CI is green, no in-scope P0/P1 remains and every lower-severity finding has an explicit disposition.
 
 # Maintaining this file
 
-Repository-local review skills live under `.agents/`. Public CI must not depend on maintainer subscription credentials or execute untrusted pull-request code with elevated permissions.
+Repository-local review skills live under `.agents/`; public CI never relies on maintainer credentials or runs untrusted PR code with elevated permissions.
 
-`AGENTS.md` is always loaded into context, so keep it **lean**. Only guidance you need on *every* iteration belongs here (conventions, the shared-building-block reuse rule, the load-edit-commit rule, the analytics-via-triggers rule). Deep, reference-level detail lives in `docs/architecture/` for cross-cutting concerns and in each module group's `README.md` for aggregates, events and invariants; it is **pointed to** from here, not duplicated.
+Keep always-loaded `AGENTS.md` lean. Put cross-cutting detail in `docs/architecture/` and module detail in the owning `README.md`, then link it from here instead of duplicating it.
 
 - Extend this file, module READMEs and `docs/architecture/` docs **autonomously** as you discover stable conventions — do not wait to be asked.
 - New module-specific detail → add it to that module group's `README.md`; new cross-cutting detail → add it to `docs/architecture/`. Link it instead of inflating `AGENTS.md`.

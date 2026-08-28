@@ -13,5 +13,6 @@ public static class EmailTemplates
     public const string SecurityAlert = "security-alert";
     public const string LoginLockoutAlert = "login-lockout-alert";
     public const string WaitlistVerification = "waitlist-verification";
+    public const string WaitlistDeveloperBenefitActivated = "waitlist-developer-benefit-activated";
     public const string OrganizationInvitation = "organization-invitation";
 }

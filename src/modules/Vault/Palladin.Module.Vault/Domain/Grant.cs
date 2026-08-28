@@ -52,6 +52,8 @@ internal abstract class Grant : EventEntityBase
     public Instant? RevokedAt { get; protected set; }
     public Guid? RevokedBy { get; protected set; }
     public bool RevokedBySystem { get; protected set; }
+    public Instant? SupersededAt { get; protected set; }
+    public Guid? SupersededByGrantId { get; protected set; }
     public Instant? DeniedAt { get; protected set; }
     public Guid? DeniedBy { get; protected set; }
 
@@ -229,7 +231,7 @@ internal abstract class Grant : EventEntityBase
     }
 
     // Time-based expiry is driven by the expiry cron. Only Active grants expire; Consumed,
-    // Revoked, Denied and Pending are untouched. Idempotent: a no-op if not Active.
+    // Revoked, Denied, Superseded and Pending are untouched. Idempotent: a no-op if not Active.
     // entryLabel is resolved upfront by the caller (FULL grants pass null); audit consumers render
     // "what expired" without a re-resolve hop.
     internal void Expire(Instant now, string? entryLabel)
@@ -244,6 +246,26 @@ internal abstract class Grant : EventEntityBase
         DeleteDeliveryEnvelopes();
 
         EmitExpired(entryLabel);
+    }
+
+    // A FULL grant replaces active per-entry grants for the same Agent/Vault coverage. This is not
+    // expiry (the TTL did not elapse) and not a user/system revocation. Keep the relationship to the
+    // replacement as structured lifecycle data; EncryptedReason remains the Agent-signed request
+    // reason and must never be repurposed for server-generated status text.
+    internal void SupersedeByFull(Guid supersededByGrantId, GrantNames names, Instant now)
+    {
+        if (this is not (GranularGrant or ScriptExecutionGrant) || Status != GrantStatus.Active)
+        {
+            return;
+        }
+
+        Status = GrantStatus.Superseded;
+        SupersededAt = now;
+        SupersededByGrantId = supersededByGrantId;
+        UpdatedAt = now;
+        DeleteDeliveryEnvelopes();
+
+        EmitSuperseded(names);
     }
 
     private void DeleteDeliveryEnvelopes()
@@ -365,4 +387,22 @@ internal abstract class Grant : EventEntityBase
         ScriptExecutionGrant scriptExecution => scriptExecution.ScriptEntryId,
         _ => null,
     };
+
+    private void EmitSuperseded(GrantNames names)
+    {
+        var durationActive = SupersededAt.HasValue ? SupersededAt.Value - CreatedAt : Duration.Zero;
+        AddEvent(new GrantSupersededEvent(
+            Id,
+            SupersededByGrantId!.Value,
+            VaultId,
+            OrganizationId,
+            AgentId,
+            EventEntryId!.Value,
+            Type,
+            names.AgentName,
+            names.EntryLabel,
+            names.VaultName,
+            (long)durationActive.TotalSeconds,
+            UpdatedAt));
+    }
 }

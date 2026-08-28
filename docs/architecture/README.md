@@ -1,6 +1,6 @@
 # Architecture Reference
 
-This directory is the cross-cutting architecture reference for the Palladin .NET backend. It complements `CLAUDE.MD` (conventions and rules) with shared building blocks and protocol-level decisions. Module-specific architecture is colocated with each domain module in `src/modules/{ModuleName}/README.md` or each OpenHost module in `src/modules/OpenHost/{ModuleName}/README.md`.
+This directory is the cross-cutting architecture reference for the Palladin .NET backend. It complements the byte-identical `AGENTS.md` / `CLAUDE.MD` instruction files with shared building blocks and protocol-level decisions. Module-specific architecture is colocated with each domain module in `src/modules/{ModuleName}/README.md` or each OpenHost module in `src/modules/OpenHost/{ModuleName}/README.md`.
 
 ## Pre-production database reset
 
@@ -24,6 +24,7 @@ The backend is a modular monolith. Everything cross-cutting — base entity/even
 |-----|----------|
 | [vault-protocol-2-canonical-wire.md](vault-protocol-2-canonical-wire.md) | Canonical envelope, X25519 wrapper, public trust-anchor, and zero-knowledge delivery contract |
 | [building-blocks.md](building-blocks.md) | Full catalog of `Palladin.Core.*` shared building blocks, missing abstractions to add, and dead code to remove |
+| [database-guidelines.md](database-guidelines.md) | Domain persistence boundaries, EF-first queries, index design, raw SQL exceptions, transactions and migration review |
 | [Identity README](../../src/modules/Identity/README.md) | Auth, sessions, organization & user lifecycle |
 | [Vault README](../../src/modules/Vault/README.md) | Vaults, entries, grants, agent credential delivery |
 | [Agents README](../../src/modules/Agents/README.md) | Agent enrollment, API keys, agent authentication |

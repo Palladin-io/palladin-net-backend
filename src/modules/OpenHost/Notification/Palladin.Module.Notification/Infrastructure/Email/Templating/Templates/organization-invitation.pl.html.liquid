@@ -1,6 +1,5 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">Dołącz do {{ organizationName }}</h1>
-<p style="margin:0 0 16px">{{ invitedByName }} zaprasza Cię do organizacji {{ organizationName }} z rolą {{ role }}.</p>
-<p style="margin:4px 0 20px;text-align:center"><a href="{{ invitationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Przyjmij zaproszenie</a></p>
-<p style="margin:0;font-size:11px;line-height:1.45;color:#6a6a6a">Link wygaśnie za {{ expiryHours }} godziny. Przed przyjęciem zaloguj się lub utwórz konto przy użyciu tego adresu e-mail. Jeśli nie oczekujesz tego zaproszenia, możesz bezpiecznie zignorować tę wiadomość.</p>
+{% include '_header.html.liquid', emailTitlePrefix: "Dołącz do ", emailTitle: organizationName %}
+<p style="margin:0 0 40px">{{ invitedByName }} zaprasza Cię do organizacji {{ organizationName }} z rolą {{ role }}.</p>
+{% include '_cta.html.liquid', emailCtaUrl: invitationUrl, emailCtaLabel: "Przyjmij zaproszenie" %}
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">Link wygaśnie za {{ expiryHours }} godziny. Przed przyjęciem zaloguj się lub utwórz konto przy użyciu tego adresu e-mail. Jeśli nie oczekujesz tego zaproszenia, możesz bezpiecznie zignorować tę wiadomość.</p>
 {% include '_footer.pl.html.liquid' %}

@@ -1,8 +1,10 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.ValueObjects;
+using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
@@ -19,6 +21,70 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class RefreshAccessTokenTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_EligibleHistoryHasNoClaim_Then_RefreshActivatesDeveloperBenefit()
+    {
+        // Given — both verified records predate the migration, so neither benefit column is populated.
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var email = $"refresh-history-{Guid.NewGuid():N}@example.com";
+        var entry = WaitlistEntry.Join(
+            Guid.NewGuid(),
+            email,
+            "en",
+            "history-token",
+            TokenService.HashToken($"history-{Guid.NewGuid():N}"),
+            Duration.FromDays(2),
+            now - Duration.FromDays(2));
+        entry.Verify(now - Duration.FromDays(1));
+        await using (var entryScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = entryScope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            writeContext.WaitlistEntries.Add(entry);
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(
+            userFaker: UserFaker.Create()
+                .RuleFor(candidate => candidate.Email, email)
+                .RuleFor(candidate => candidate.EmailVerified, true));
+        var rawToken = Convert.ToBase64String(
+            Enumerable.Range(150, 32).Select(value => (byte)value).ToArray());
+        await apiFactory.Services.SeedRefreshTokenAsync(user.Id, rawToken);
+
+        // When
+        var response = await apiFactory.CreateClient().PostAsJsonAsync(
+            "api/auth/refresh",
+            new { RefreshToken = rawToken },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var responseStream = await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken);
+        using var result = await JsonDocument.ParseAsync(
+            responseStream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        result.RootElement.GetProperty("waitlistDeveloperBenefitStartedAt").ValueKind
+            .ShouldBe(JsonValueKind.String);
+        result.RootElement.GetProperty("waitlistDeveloperBenefitEndsAt").ValueKind
+            .ShouldBe(JsonValueKind.String);
+        new JwtSecurityTokenHandler()
+            .ReadJwtToken(result.RootElement.GetProperty("accessToken").GetString())
+            .Claims.First(claim => claim.Type == JwtClaimNames.Plan).Value
+            .ShouldBe(PlanType.Pro.ToString());
+
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = verificationScope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var persistedEntry = await readContext.WaitlistEntries.SingleAsync(
+            candidate => candidate.Id == entry.Id,
+            TestContext.Current.CancellationToken);
+        var persistedUser = await readContext.Users.SingleAsync(
+            candidate => candidate.Id == user.Id,
+            TestContext.Current.CancellationToken);
+        persistedEntry.DeveloperBenefitUserId.ShouldBe(user.Id);
+        persistedUser.WaitlistDeveloperBenefitStartedAt.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task When_RefreshTokenSurvivesBulkRevocationRace_Then_AuthorizationVersionFenceRejectsIt()
     {
@@ -70,6 +136,49 @@ public sealed class RefreshAccessTokenTests(ApiFactory apiFactory) : TestBase
             .ReadJwtToken(result!.AccessToken)
             .Claims.First(c => c.Type == JwtClaimNames.Plan).Value;
         plan.ShouldBe(PlanType.Pro.ToString());
+    }
+
+    [Fact]
+    public async Task When_RefreshingDuringWaitlistBenefit_Then_DeveloperAccessEndsWithBenefit()
+    {
+        // Given
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var benefitEndsAt = now + Duration.FromMinutes(15);
+        var userFaker = UserFaker.Create()
+            .RuleFor(user => user.EmailVerified, true)
+            .RuleFor(user => user.IsOnboarded, true)
+            .RuleFor(user => user.WaitlistDeveloperBenefitStartedAt, now - Duration.FromDays(1))
+            .RuleFor(user => user.WaitlistDeveloperBenefitEndsAt, benefitEndsAt);
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(userFaker: userFaker);
+        var rawToken = Convert.ToBase64String(
+            Enumerable.Range(100, 32).Select(value => (byte)value).ToArray());
+        await apiFactory.Services.SeedRefreshTokenAsync(user.Id, rawToken);
+
+        // When
+        var response = await apiFactory.CreateClient().PostAsJsonAsync(
+            "api/auth/refresh",
+            new { RefreshToken = rawToken },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var responseStream = await response.Content.ReadAsStreamAsync(
+            TestContext.Current.CancellationToken);
+        using var result = await JsonDocument.ParseAsync(
+            responseStream,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var responseRoot = result.RootElement;
+        responseRoot.GetProperty("userId").GetGuid().ShouldBe(user.Id);
+        responseRoot.GetProperty("waitlistDeveloperBenefitStartedAt").GetDateTimeOffset()
+            .ShouldBe((now - Duration.FromDays(1)).ToDateTimeOffset(), TimeSpan.FromMilliseconds(1));
+        responseRoot.GetProperty("waitlistDeveloperBenefitEndsAt").GetDateTimeOffset()
+            .ShouldBe(benefitEndsAt.ToDateTimeOffset(), TimeSpan.FromMilliseconds(1));
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(
+            responseRoot.GetProperty("accessToken").GetString());
+        jwt.Claims.First(claim => claim.Type == JwtClaimNames.Plan).Value
+            .ShouldBe(PlanType.Pro.ToString());
+        jwt.ValidTo.ShouldBe(benefitEndsAt.ToDateTimeUtc(), TimeSpan.FromSeconds(1));
     }
 
     [Fact]

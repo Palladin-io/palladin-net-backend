@@ -142,11 +142,14 @@ public sealed class EnvelopeDescriptorCodecTests
     }
 
     [Fact]
-    public void SealedBoxContract_RequiresFrozenPackageSize()
+    public void WrappedKeyPackageContract_DispatchesValidationBySuite()
     {
-        X25519SealedBoxContract.ValidatePackage(new byte[120]);
-        var act = () => X25519SealedBoxContract.ValidatePackage(new byte[80]);
-        act.ShouldThrow<DomainException>();
+        WrappedKeyPackageContract.ValidatePackage(X25519SealedBoxContract.SuiteId, new byte[120]);
+
+        Should.Throw<DomainException>(() => WrappedKeyPackageContract.ValidatePackage(
+            X25519SealedBoxContract.SuiteId, new byte[80]));
+        Should.Throw<DomainException>(() => WrappedKeyPackageContract.ValidatePackage(
+            "unsupported-suite", new byte[120]));
     }
 
     [Fact]
@@ -184,7 +187,7 @@ public sealed class EnvelopeDescriptorCodecTests
 
         Convert.ToHexStringLower(X25519WrapperContextCodec.Encode(context)).ShouldBe(
             root.GetProperty("expectedContextHex").GetString());
-        X25519SealedBoxContract.ValidatePackage(
+        WrappedKeyPackageContract.ValidatePackage(X25519SealedBoxContract.SuiteId,
             Convert.FromHexString(root.GetProperty("sealedPackageHex").GetString()!));
     }
 

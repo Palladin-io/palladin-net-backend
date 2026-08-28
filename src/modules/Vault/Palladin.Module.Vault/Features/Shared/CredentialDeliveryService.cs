@@ -140,6 +140,8 @@ internal sealed class CredentialDeliveryService(
         AgentWrappedVaultKeyContract? agentWrappedVaultKey = null;
         VaultEntryKeyContract? entryKey = null;
         MemberSecretEnvelopeContract? memberSecret = null;
+        VaultKeyVersion? fullMaterialVaultKeyVersion = null;
+        EntryKeyWrapperRevision? fullMaterialEntryKeyWrapperRevision = null;
         if (input.Type == GrantType.Full)
         {
             var fullWrap = await domainReadContext.AgentWrappedVaultKeys
@@ -164,6 +166,8 @@ internal sealed class CredentialDeliveryService(
                 && currentVersion is not null
                 && fullWrap.VaultKeyVersion == currentEntryKey.WrappingKeyVersion)
             {
+                fullMaterialVaultKeyVersion = fullWrap.VaultKeyVersion;
+                fullMaterialEntryKeyWrapperRevision = currentEntryKey.WrapperRevision;
                 agentWrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToContract(fullWrap);
                 entryKey = VaultEnvelopeContractMapper.ToContract(currentEntryKey);
                 memberSecret = VaultEnvelopeContractMapper.ToContract(currentVersion.GetMemberSecret());
@@ -231,6 +235,10 @@ internal sealed class CredentialDeliveryService(
         var consumed = false;
         var materialEntryRevision = material?.EntryRevision ?? activeEntry.CurrentRevision.Value;
         var materialGrantEnvelopeRevision = material?.GrantEnvelopeRevision ?? 0UL;
+        var fullMaterialVaultKeyVersionValue = fullMaterialVaultKeyVersion?.Value ?? 0U;
+        var fullMaterialEntryKeyWrapperRevisionValue = fullMaterialEntryKeyWrapperRevision?.Value ?? 0UL;
+        var expectedFullVaultKeyVersion = fullMaterialVaultKeyVersion ?? default;
+        var expectedFullEntryKeyWrapperRevision = fullMaterialEntryKeyWrapperRevision ?? default;
 
         if (input.QueryLimit is not null)
         {
@@ -297,6 +305,8 @@ internal sealed class CredentialDeliveryService(
                                      AND entry."CurrentRevision" = {materialEntryRevision}
                                      AND wrapped_vk."AgentId" = {input.AgentId}
                                      AND wrapped_vk."AgentAccessEpoch" = {input.AgentAccessEpoch}
+                                     AND wrapped_vk."VaultKeyVersion" = {fullMaterialVaultKeyVersionValue}
+                                     AND entry_key."WrapperRevision" = {fullMaterialEntryKeyWrapperRevisionValue}
                                      AND wrapped_vk."VaultKeyVersion" = entry_key."WrappingKeyVersion")))
                            AND "QueryCount" < "QueryLimit"
                          RETURNING "QueryCount", "Status"
@@ -351,11 +361,13 @@ internal sealed class CredentialDeliveryService(
                             && wrapped.GrantId == input.GrantId
                             && wrapped.AgentId == input.AgentId
                             && wrapped.AgentAccessEpoch == input.AgentAccessEpoch
+                            && wrapped.VaultKeyVersion == expectedFullVaultKeyVersion
                             && domainReadContext.EntryKeys.Any(key =>
                                 key.OrganizationId == input.OrganizationId
                                 && key.VaultId == input.VaultId
                                 && key.EntryId == input.EntryId
                                 && key.KeyVersion == activeEntry.CurrentKeyVersion
+                                && key.WrapperRevision == expectedFullEntryKeyWrapperRevision
                                 && key.WrappingKeyVersion == wrapped.VaultKeyVersion), ct)
                         : await domainReadContext.GrantEntryEnvelopes.AnyAsync(
                             envelope =>
@@ -440,6 +452,8 @@ internal sealed class CredentialDeliveryService(
                              AND entry."CurrentRevision" = {materialEntryRevision}
                              AND wrapped_vk."AgentId" = {input.AgentId}
                              AND wrapped_vk."AgentAccessEpoch" = {input.AgentAccessEpoch}
+                             AND wrapped_vk."VaultKeyVersion" = {fullMaterialVaultKeyVersionValue}
+                             AND entry_key."WrapperRevision" = {fullMaterialEntryKeyWrapperRevisionValue}
                              AND wrapped_vk."VaultKeyVersion" = entry_key."WrappingKeyVersion")))
                  """,
                 ct);

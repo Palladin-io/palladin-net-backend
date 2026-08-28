@@ -32,6 +32,8 @@ internal sealed class OnWaitlistJoinedEmail(IOptions<WaitlistOptions> options) :
             {
                 ["verificationUrl"] = verificationUrl,
                 ["expiryHours"] = msg.ExpiryHours.ToString(),
+                ["baseUrl"] = new Uri(options.Value.VerifiedRedirectUrl)
+                    .GetLeftPart(UriPartial.Authority),
             },
             msg.OccurredAt));
     }

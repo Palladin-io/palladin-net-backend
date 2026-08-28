@@ -6,6 +6,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Infrastructure.Totp;
 using FastEndpoints;
 using FluentValidation;
@@ -38,7 +39,9 @@ public sealed record LoginResponse(
     string? RefreshToken,
     Guid? UserId,
     bool? IsOnboarded,
-    bool? EmailVerified);
+    bool? EmailVerified,
+    Instant? WaitlistDeveloperBenefitStartedAt,
+    Instant? WaitlistDeveloperBenefitEndsAt);
 
 [UsedImplicitly]
 internal sealed class LoginValidator : Validator<LoginRequest>
@@ -62,6 +65,7 @@ internal sealed class LoginEndpoint(
     LoginThrottleService loginThrottle,
     IGuidProvider guidProvider,
     IOptions<TotpOptions> totpOptions,
+    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     IClock clock) : Endpoint<LoginRequest, LoginResponse>
 {
     private const int ConcurrentAuthRetryAfterSeconds = 1;
@@ -178,7 +182,7 @@ internal sealed class LoginEndpoint(
                 Duration.FromMinutes(totpOptions.Value.ChallengeTtlMinutes), now));
             await domainWriteContext.CommitAsync(ct);
 
-            await Send.OkAsync(new LoginResponse(true, challengeToken, null, null, null, null, null), ct);
+            await Send.OkAsync(new LoginResponse(true, challengeToken, null, null, null, null, null, null, null), ct);
             return;
         }
 
@@ -189,6 +193,9 @@ internal sealed class LoginEndpoint(
             return;
         }
 
+        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
+        await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
+
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
             user.OrganizationId,
@@ -198,7 +205,7 @@ internal sealed class LoginEndpoint(
             now);
         try
         {
-            await domainWriteContext.CommitAsync(ct);
+            await domainWriteContext.CommitAsync(transaction, ct);
         }
         catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception))
         {
@@ -207,7 +214,16 @@ internal sealed class LoginEndpoint(
         }
 
         await Send.OkAsync(
-            new LoginResponse(false, null, accessToken, refreshToken, user.Id, user.IsOnboarded, user.EmailVerified),
+            new LoginResponse(
+                false,
+                null,
+                accessToken,
+                refreshToken,
+                user.Id,
+                user.IsOnboarded,
+                user.EmailVerified,
+                user.ActiveWaitlistDeveloperBenefitStartedAt(now),
+                user.ActiveWaitlistDeveloperBenefitEndsAt(now)),
             ct);
     }
 

@@ -40,6 +40,12 @@ internal sealed class AgentWrappedVaultKey
         byte[]? vaultSigningKeyFingerprint = null,
         byte[]? producerSignature = null)
     {
+        if (protocolVersion != VaultProtocol.CurrentVersion)
+        {
+            throw new DomainException("Agent Vault-key wrapper protocol is invalid.");
+        }
+
+        WrappedKeyPackageContract.ValidatePackage(wrapperSuiteId, encodedSealedVaultKeyPackage);
         var context = new X25519WrapperContext(
             X25519WrapperPurpose.AgentVaultKey,
             new EnvelopeScope(organizationId, vaultId, GrantOrRequestId: grantId, AgentId: agentId),

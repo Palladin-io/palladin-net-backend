@@ -555,6 +555,12 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<Instant?>("SupersededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SupersededByGrantId")
+                        .HasColumnType("uuid");
+
                     b.Property<Instant>("UpdatedAt")
                         .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");

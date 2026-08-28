@@ -2,7 +2,7 @@
 
 Detailed checklist for each review category. Load this file in full before starting the review.
 
-> **PR czysto toolingowy** (workflow CI, pliki skill, dokumentacja — brak `.cs` w diffie): pomiń sekcje 1–7 w całości. Sprawdź wyłącznie bezpieczeństwo GitHub Actions (brak `${{ }}` interpolacji w blokach `run:` — używaj `env:`) i czy zmiana robi to co opisuje PR.
+> **PR czysto toolingowy** (workflow CI, pliki skill, dokumentacja — brak `.cs` w diffie): pomiń kryteria aplikacyjne. Sprawdź bezpieczeństwo GitHub Actions (brak `${{ }}` interpolacji w blokach `run:` — używaj `env:`), spójność zmienianych instrukcji i czy zmiana robi to, co opisuje PR.
 
 ---
 
@@ -27,18 +27,29 @@ Detailed checklist for each review category. Load this file in full before start
 - Registered via `HangfireModule.AddScopedCronJob` in `InfrastructureModule`.
 
 ### Module boundaries
-- Modules communicate **only** via MassTransit integration events — no direct service-to-service calls, no shared DbContexts across modules.
-- Domain events stay within the module that emits them. Cross-module reactions use integration events.
-- Architecture tests in `Palladin.Tests.Architecture` enforce boundaries — ensure new dependencies don't break them.
+- Modules communicate through MassTransit integration events and commands — no direct service-to-service calls or shared persistence contexts across modules.
+- Domain events stay within the emitting module. OpenHost read models consume only their own commands; the owning module translates its event into the host command.
+- Architecture tests in `tests/Palladin.Tests.Unit/Architecture/` enforce boundaries — ensure new dependencies don't break them.
 
-### DbContext split
-- Read operations: read-only `*DbReadContext`. Write operations: `*DbWriteContext`.
-- No write operations via a read context.
+### Domain persistence split
+- Features never inject `*DbReadContext`, `*DbWriteContext`, base `DbContext` or `DbSet`.
+- Read operations use the module `*DomainReadContext` and no-tracking projections. Mutations load tracked aggregates through `*DomainWriteContext`, call domain methods and persist through `CommitAsync(...)`.
+- A feature may inject both split domain contexts only when it genuinely reads and writes. A combined `*DomainContext` is forbidden.
 - EF configurations live in `Infrastructure/Persistence/Configurations/`.
 
 ---
 
-## 2. Code Quality — DRY · SRP · OCP · Clean Code
+## 2. Business Requirements & Scope
+
+- Build a requirement checklist from the PR description, linked or quoted acceptance criteria and the applicable module README.
+- Map every stated requirement to an implementation path and focused test. Flag a missing business branch, authorization rule, no-op/idempotency behavior, error contract or observable outcome.
+- Verify that tests prove the requirement rather than only execute the happy path. Security and zero-knowledge requirements are blocking even when omitted from the PR description because they are repository invariants.
+- Do not invent unavailable product requirements. If the PR does not contain enough business context to determine completeness, state that limitation instead of approving based on assumptions.
+- A review finding does not expand scope by itself. Defer unrelated enhancements unless they close a confirmed Critical or Warning issue in the stated acceptance criteria.
+
+---
+
+## 3. Code Quality — DRY · SRP · OCP · Clean Code
 
 ### Naming & structure
 - Classes: `internal sealed` unless they are module entry points (`AddXxxModule`) or public integration contracts.
@@ -66,21 +77,42 @@ Detailed checklist for each review category. Load this file in full before start
 
 ---
 
-## 3. Performance
+## 4. Database Access & Performance
 
-- **N+1 queries** — check for `Select(…)` in a loop that executes a DB call per item. Use `Include`, `Join`, or batch operations instead.
-- **Projection** — use `.Select(x => new { x.Id, x.Name })` when only a subset of columns is needed; avoid loading full entities for read-only queries.
-- **Tracking** — `AsNoTracking()` on read-only EF queries where the result is never mutated.
-- **Async** — no `.Result`, `.Wait()`, `.GetAwaiter().GetResult()`. All I/O must be `await`ed.
-- **Filter at DB** — `.ToList()` must never appear before a `.Where()` or `.Select()` that belongs at the DB level.
-- **Existence checks** — `.AnyAsync()` before fetching a full entity when only existence matters.
+Load `docs/architecture/database-guidelines.md` for every PR that changes a query, index, persistence path, transaction, lock, raw SQL, EF configuration or migration.
+
+### Query shape
+- Review every changed database access path, regardless of whether it is reached from HTTP GET/POST, a consumer or a job.
+- **N+1** — no database call per item; use one projection, join, correlated projection or bounded batch.
+- **Projection and tracking** — select only required columns and keep reads no-tracking. Never load a full aggregate for a read-only response when a projection is sufficient.
+- **Filter and paginate in PostgreSQL** — tenant, authorization, lifecycle, cursor and limit are applied before materialization. Growing or mutable collections use deterministic keyset pagination.
+- **Async** — no `.Result`, `.Wait()` or `.GetAwaiter().GetResult()` for I/O.
+- **Existence** — use `AnyAsync()` when only existence matters, unless an additional query would introduce a race or information leak.
+
+### Indexes
+- Compare `WHERE`, `JOIN`, range predicates, `ORDER BY` and keyset tie-breakers with PK, UNIQUE constraints and every existing ordinary, partial or specialized index.
+- Prefer an existing index when its leftmost prefix, predicate and ordering cover the access path.
+- Flag a missing index only when expected scale, cardinality and frequency make the resulting scan or sort materially harmful. Do not require an index for every query or small bounded table.
+- Flag a new reordered or overlapping index when it has no distinct current access path. Compare leftmost prefixes, equality versus range columns, ordering, partial predicates, included columns and uniqueness; the same column set in another order is not automatically equivalent.
+- Consider write amplification, storage, vacuum and migration cost. Hypothetical future queries do not justify another index.
+- A material performance claim or non-obvious overlapping index should include a representative, non-sensitive PostgreSQL plan or equivalent structural evidence; CI does not use unstable wall-clock thresholds.
+
+### EF Core, raw SQL and transactions
+- EF Core LINQ through split domain contexts is the default.
+- Raw SQL is a last resort for an EF expressiveness gap, verified material query-plan issue or reviewed PostgreSQL concurrency primitive. It stays behind a domain context, uses interpolated parameterized APIs, selects only required columns and has focused integration tests.
+- Flag `FromSqlRaw`, `ExecuteSqlRaw`, concatenated SQL or any user-controlled value outside parameter binding.
+- A raw write must preserve domain invariants and event dispatch through `DomainWriteContext`; it is never a direct endpoint-to-DbContext path.
+- `CommitAsync(...)` is the normal transaction boundary. Every explicit transaction or lock must name the invariant one commit cannot preserve, remain short/database-only and bounded, use deterministic ordering and have concurrency plus rollback coverage.
+- Set-based update/delete is allowed only for an entity with no lifecycle domain events.
+
+### Other performance
 - **IAiAdapter naming** — `WithName` follows `ModuleName:FeatureName:Prompt`. No dynamic IDs.
 
 ---
 
-## 4. Security
+## 5. Security
 
-- **Authorization** — every FastEndpoints endpoint must call `Roles(…)`, `Permissions(…)`, or `AllowAnonymous()` (with a comment justifying it) inside `Configure()`.
+- **Authorization** — every FastEndpoints endpoint explicitly declares an authenticated boundary with `AuthSchemes(…)` and/or a reviewed `Roles(…)`, `Permissions(…)` or `RequirePermission(…)` declaration, or calls `AllowAnonymous()` with justification. Never rely only on a mutable global default.
 - **Input validation** — all endpoints with a request body must have a corresponding `Validator<TRequest>`.
 - **Sensitive data in logs** — passwords, tokens, private keys, PII must never appear in Serilog log messages or exceptions.
 - **API boundaries** — domain entities never passed to API responses; map to DTOs. Value objects (records without `Id`) are safe to pass directly.
@@ -89,7 +121,7 @@ Detailed checklist for each review category. Load this file in full before start
 
 ---
 
-## 5. Stability & Error Handling
+## 6. Stability & Error Handling
 
 - **Consumer idempotency** — MassTransit consumers that modify state must tolerate duplicate delivery (idempotent by design or via deduplication).
 - **Exception types** — domain errors use typed exceptions, not raw `Exception`. Typed exceptions communicate intent.
@@ -99,15 +131,15 @@ Detailed checklist for each review category. Load this file in full before start
 
 ---
 
-## 6. Domain & Analytics Conventions
+## 7. Domain & Analytics Conventions
 
 ### Domain events
 - Emit methods are `private`, called from within domain entity methods — never from endpoints, consumers, or application services directly.
 - Entities own their events.
 
 ### Analytics
-- **Never** call `analyticsService.CaptureEvent()` (or any analytics method) inside endpoints, consumers, or application services.
-- Analytics flow: domain event → MassTransit trigger → analytics publish. The `be:` prefix is added internally by the analytics infrastructure; do not add it manually.
+- **Never** call analytics inside endpoints, command consumers or application services.
+- Analytics flow: domain event → MassTransit event trigger → analytics publish. The trigger is the only consumer allowed to call `CaptureEvent()`. The `be:` prefix is added internally; do not add it manually.
 
 ### Permissions
 - Implemented as `[Flags]` bitwise enum on the `Role` entity. Sum of binary values stored in JWT claims.
@@ -133,7 +165,7 @@ Detailed checklist for each review category. Load this file in full before start
 
 ---
 
-## 7. Tests
+## 8. Tests
 
 - **Naming** — `When_Condition_Then_Expectation` for every test method.
 - **Structure** — `// Given` / `// When` / `// Then` comment sections only; no other inline comments.
@@ -146,7 +178,7 @@ Detailed checklist for each review category. Load this file in full before start
 
 ---
 
-## 8. Over-Engineering Check
+## 9. Over-Engineering Check
 
 Flag any of the following:
 - An abstraction (interface, base class, generic wrapper) that has exactly one implementation and no concrete extension scenario.
@@ -154,3 +186,4 @@ Flag any of the following:
 - Excessive configuration options for behaviour that is constant across the codebase.
 - More than three layers of indirection to perform a simple operation.
 - A design decision that makes the code harder to read today for a hypothetical benefit tomorrow.
+- Do not classify required domain contexts, module boundaries, authorization controls, zero-knowledge boundaries or a documented concurrency invariant as over-engineering. Simplification must preserve those constraints.

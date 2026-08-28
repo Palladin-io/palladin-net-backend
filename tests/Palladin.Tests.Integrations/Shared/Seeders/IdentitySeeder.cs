@@ -48,6 +48,8 @@ internal static class IdentitySeeder
 
         writeContext.OrganizationMembers.Add(OrganizationMember.CreateOwner(
             organization.Id, user.Id, role, SystemClock.Instance.GetCurrentInstant()));
+        writeContext.OrganizationMemberDirectoryEntries.Add(OrganizationMemberDirectoryEntry.Create(
+            organization.Id, user.Id, user.DisplayName, SystemClock.Instance.GetCurrentInstant()));
 
         await writeContext.SaveChangesAsync();
 
@@ -85,6 +87,8 @@ internal static class IdentitySeeder
         writeContext.OrganizationMembers.Add(OrganizationMember.Create(
             organizationId, user.Id, role,
             user.DisplayName, user.Email, SystemClock.Instance.GetCurrentInstant()));
+        writeContext.OrganizationMemberDirectoryEntries.Add(OrganizationMemberDirectoryEntry.Create(
+            organizationId, user.Id, user.DisplayName, SystemClock.Instance.GetCurrentInstant()));
 
         await writeContext.SaveChangesAsync();
 

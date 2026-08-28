@@ -120,6 +120,8 @@ internal sealed class RegisterEndpoint(
             transportContext.Platform ?? "unknown", now);
         domainWriteContext.Add(user);
         domainWriteContext.Add(OrganizationMember.CreateOwner(orgId, userId, adminRole, now));
+        domainWriteContext.Add(OrganizationMemberDirectoryEntry.Create(
+            orgId, userId, req.DisplayName, now));
 
         var (serverHash, serverSalt) = passwordHasher.Hash(req.AuthCredential);
         domainWriteContext.Add(PasswordCredential.Create(
@@ -147,6 +149,13 @@ internal sealed class RegisterEndpoint(
             return;
         }
 
-        await Send.OkAsync(new AuthSessionResponse(accessToken, refreshToken, userId, user.IsOnboarded, user.EmailVerified), ct);
+        await Send.OkAsync(new AuthSessionResponse(
+            accessToken,
+            refreshToken,
+            userId,
+            user.IsOnboarded,
+            user.EmailVerified,
+            null,
+            null), ct);
     }
 }

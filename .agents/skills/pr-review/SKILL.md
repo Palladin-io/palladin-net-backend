@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Reviews a specifically requested Palladin .NET 10 backend pull request for architecture compliance, code quality, performance, security, and stability, then posts a structured GitHub review. Use only when the user explicitly requests review of a concrete PR number.
+description: Reviews a specifically requested Palladin .NET 10 backend pull request for business-requirement coverage, architecture compliance, database correctness, code quality, performance, security, and stability, then posts a structured GitHub review. Use only when the user explicitly requests review of a concrete PR number.
 allowed-tools: Read Grep Glob Bash(gh pr view *) Bash(gh pr diff *) Bash(gh api *) Bash(gh repo *) Bash(git log *)
 ---
 
@@ -45,16 +45,19 @@ Fail the review setup if any command above fails; never continue with missing or
 0. **Sprawdź poprzednie komentarze i limit rund** — zanim przejdziesz do nowego kodu, przeczytaj `/tmp/pr_reviews.json` i `/tmp/pr_inline_comments.json`, policz wcześniejsze review Codexa i przerwij po osiągnięciu limitu. Dla każdego wątku REQUEST_CHANGES ustal, czy problem został zaadresowany w aktualnym diffie. Zanotuj co naprawiono, co wisi oraz które uwagi świadomie odrzucono lub odłożono.
 1. Read `AGENTS.md` — it is the source of truth for all conventions in this project.
 2. Load [criteria.md](criteria.md) — it contains the detailed review checklist. Read it fully before starting.
-3. For each changed file: use `Read`, `Grep`, `Glob` to explore beyond the diff when context is needed. Cross-reference with unchanged files that are touched by the change (e.g. module registrations, consumers, domain entities).
-4. Cite **file path and line number** for every issue you raise.
-5. Be concrete — one clear sentence per finding beats a paragraph.
+3. Build a checklist from every requirement and acceptance criterion available in the PR body. Load the complete README of each changed module and map the checklist to implementation paths and tests. If necessary business context is unavailable, state that limitation; never invent it.
+4. If the PR changes a query, index, persistence path, transaction, lock, raw SQL, EF configuration or migration, read `docs/architecture/database-guidelines.md` in full and inspect the relevant unchanged query/configuration/migration context before commenting.
+5. For each changed file: use `Read`, `Grep`, `Glob` to explore beyond the diff when context is needed. Cross-reference with unchanged files that are touched by the change (e.g. module registrations, consumers, domain entities).
+6. Cite **file path and line number** for every issue you raise.
+7. Be concrete — one clear sentence per finding beats a paragraph.
 
 ## Review Focus Areas
 
 Cover all sections from `criteria.md`:
+- Business requirements and acceptance-criteria coverage
 - Vertical Slice Architecture & module boundaries
 - Code quality: DRY, SRP, OCP, Clean Code
-- Performance (N+1, async patterns, EF projections)
+- Database access and performance (domain contexts, query shape, indexes, EF/raw SQL, transactions)
 - Security (authorization, validation, sensitive data in logs)
 - Stability (error handling, idempotency in consumers)
 - Domain & analytics conventions (domain events, analytics via events, permissions, queues)

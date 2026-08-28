@@ -26,7 +26,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = Request(setup);
 
         var (response, result) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -61,25 +61,22 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = Request(setup);
         request = request with
         {
-            GrantEntries =
-            [
-                staleMemberGeneration
-                    ? request.GrantEntries.Single() with
+            GrantEntry = staleMemberGeneration
+                    ? request.GrantEntry with
                     {
-                        Descriptor = request.GrantEntries.Single().Descriptor with { MemberKeyGeneration = 2 },
+                        Descriptor = request.GrantEntry.Descriptor with { MemberKeyGeneration = 2 },
                     }
-                    : request.GrantEntries.Single() with
+                    : request.GrantEntry with
                     {
-                        Descriptor = request.GrantEntries.Single().Descriptor with
+                        Descriptor = request.GrantEntry.Descriptor with
                         {
-                            Binding = request.GrantEntries.Single().Descriptor.Binding with { RecipientKeyVersion = 2 },
+                            Binding = request.GrantEntry.Descriptor.Binding with { RecipientKeyVersion = 2 },
                         },
                     },
-            ],
         };
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -94,17 +91,17 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = Request(setup);
         request = request with
         {
-            GrantEntries = [request.GrantEntries.Single() with
+            GrantEntry = request.GrantEntry with
             {
-                Descriptor = request.GrantEntries.Single().Descriptor with
+                Descriptor = request.GrantEntry.Descriptor with
                 {
-                    Scope = request.GrantEntries.Single().Descriptor.Scope with { OrganizationId = Guid.NewGuid() },
+                    Scope = request.GrantEntry.Descriptor.Scope with { OrganizationId = Guid.NewGuid() },
                 },
-            }],
+            },
         };
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -116,17 +113,17 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = Request(setup);
         request = request with
         {
-            GrantEntries = [request.GrantEntries.Single() with
+            GrantEntry = request.GrantEntry with
             {
-                Descriptor = request.GrantEntries.Single().Descriptor with
+                Descriptor = request.GrantEntry.Descriptor with
                 {
-                    Binding = request.GrantEntries.Single().Descriptor.Binding with { EntryRevision = "2" },
+                    Binding = request.GrantEntry.Descriptor.Binding with { EntryRevision = "2" },
                 },
-            }],
+            },
         };
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
@@ -138,17 +135,14 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = Request(setup);
         request = request with
         {
-            GrantEntries =
-            [
-                request.GrantEntries.Single() with
+            GrantEntry = request.GrantEntry with
                 {
                     EncodedSuitePayload = new string('A', ((262_144 + 24 + 2) / 3) * 4 + 1),
                 },
-            ],
         };
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -164,17 +158,17 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         request = request with
         {
             ExpiresAt = expiresAt,
-            GrantEntries = [request.GrantEntries.Single() with
+            GrantEntry = request.GrantEntry with
             {
-                Descriptor = request.GrantEntries.Single().Descriptor with
+                Descriptor = request.GrantEntry.Descriptor with
                 {
-                    Binding = request.GrantEntries.Single().Descriptor.Binding with { ExpiresAt = expiresAt },
+                    Binding = request.GrantEntry.Descriptor.Binding with { ExpiresAt = expiresAt },
                 },
-            }],
+            },
         };
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -185,7 +179,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var setup = await ArrangeAsync();
         var request = Request(setup);
         var (_, created) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         var response = await setup.Client.DELETEAsync<RevokeGrantEndpoint, RevokeGrantRequest>(
             new RevokeGrantRequest { VaultId = setup.VaultId, GrantId = created!.Id });
@@ -202,10 +196,10 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
     {
         var setup = await ArrangeAsync();
         var (_, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(Request(setup));
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(Request(setup));
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(Request(setup));
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(Request(setup));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
@@ -216,14 +210,46 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var setup = await ArrangeAsync();
         var request = Request(setup);
         var (_, created) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
         await setup.Client.DELETEAsync<RevokeGrantEndpoint, RevokeGrantRequest>(
             new RevokeGrantRequest { VaultId = setup.VaultId, GrantId = created!.Id });
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task FullGrant_WithPreviouslyUsedPrimaryKey_ReturnsConflict()
+    {
+        var setup = await ArrangeAsync();
+        var request = FullRequest(setup);
+        var terminal = GrantFaker.CreateFull(
+            id: request.GrantId,
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            status: GrantStatus.Revoked).Generate();
+        await apiFactory.Services.SeedFullGrantAsync(terminal);
+        var granular = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId).Generate();
+        granular.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
+            setup.OrganizationId, setup.VaultId, granular.Id, setup.EntryId, granular.Methods));
+        await apiFactory.Services.SeedGranularGrantAsync(granular);
+
+        var (response, _) = await setup.Client
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.SingleAsync(grant => grant.Id == granular.Id)).Status.ShouldBe(GrantStatus.Active);
+        (await db.GrantEntryEnvelopes.AnyAsync(envelope => envelope.GrantId == granular.Id)).ShouldBeTrue();
+        (await db.AgentWrappedVaultKeys.AnyAsync(wrapper => wrapper.GrantId == request.GrantId)).ShouldBeFalse();
     }
 
     [Fact]
@@ -241,12 +267,24 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var fullRequest = FullRequest(setup);
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(fullRequest);
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(fullRequest);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await db.GrantEntryEnvelopes.AnyAsync(x => x.GrantId == oldGrant.Id)).ShouldBeFalse();
+        var superseded = await db.Grants.SingleAsync(x => x.Id == oldGrant.Id);
+        superseded.Status.ShouldBe(GrantStatus.Superseded);
+        superseded.SupersededByGrantId.ShouldBe(fullRequest.GrantId);
+        superseded.SupersededAt.ShouldNotBeNull();
+
+        var (getResponse, contract) = await setup.Client.GETAsync<
+            GetGrantEndpoint,
+            GetGrantRequest,
+            GrantResponse>(new GetGrantRequest { VaultId = setup.VaultId, GrantId = oldGrant.Id });
+        getResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        contract!.SupersededByGrantId.ShouldBe(fullRequest.GrantId);
+        contract.SupersededAt.ShouldNotBeNull();
     }
 
     [Fact]
@@ -269,13 +307,14 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
 
         var request = FullRequest(setup);
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var assertionScope = apiFactory.Services.CreateAsyncScope();
         var db = assertionScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await db.Grants.CountAsync(g => granular.Select(item => item.Id).Contains(g.Id)
-                                         && g.Status == GrantStatus.Revoked)).ShouldBe(101);
+                                         && g.Status == GrantStatus.Superseded
+                                         && g.SupersededByGrantId == request.GrantId)).ShouldBe(101);
         (await db.AgentWrappedVaultKeys.CountAsync(x => x.GrantId == request.GrantId)).ShouldBe(1);
     }
 
@@ -287,7 +326,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = FullRequest(setup);
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -304,14 +343,14 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var request = FullRequest(setup);
         request = request with
         {
-            AgentWrappedVaultKey = request.AgentWrappedVaultKey! with
+            AgentWrappedVaultKey = request.AgentWrappedVaultKey with
             {
                 ProducerSignature = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(new byte[64]),
             },
         };
 
         var (response, _) = await setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(request);
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -368,6 +407,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeTrue();
+        json.RootElement.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
 
         var listResponse = await setup.Client.GetAsync($"api/vaults/{setup.VaultId}/grants");
         var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
@@ -376,6 +416,138 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
 
         listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         listedTerminal.GetProperty("canGrantAgain").GetBoolean().ShouldBeTrue();
+        listedTerminal.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TerminalGranularGrant_WithCurrentActiveCoverage_ReturnsCoveringGrantId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync();
+        var terminal = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId,
+            status: GrantStatus.Revoked).Generate();
+        await apiFactory.Services.SeedGranularGrantAsync(terminal);
+        var active = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId).Generate();
+        active.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
+            setup.OrganizationId, setup.VaultId, active.Id, setup.EntryId, active.Methods));
+        await apiFactory.Services.SeedGranularGrantAsync(active);
+
+        var response = await setup.Client.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{terminal.Id}", ct);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        json.RootElement.GetProperty("activeCoveringGrantIds").EnumerateArray()
+            .Single().GetGuid().ShouldBe(active.Id);
+
+        var listResponse = await setup.Client.GetAsync($"api/vaults/{setup.VaultId}/grants", ct);
+        var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync(ct));
+        var listedTerminal = listJson.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == terminal.Id);
+
+        listResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        listedTerminal.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        listedTerminal.GetProperty("activeCoveringGrantIds").EnumerateArray()
+            .Single().GetGuid().ShouldBe(active.Id);
+    }
+
+    [Fact]
+    public async Task TerminalGranularGrant_WithOnlyPreviousEpochCoverage_CanBeGrantedAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync(agentAccessEpoch: 2);
+        var terminal = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId,
+            status: GrantStatus.Revoked,
+            agentAccessEpoch: 1).Generate();
+        await apiFactory.Services.SeedGranularGrantAsync(terminal);
+        var stale = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId,
+            agentAccessEpoch: 1).Generate();
+        stale.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
+            setup.OrganizationId, setup.VaultId, stale.Id, setup.EntryId, stale.Methods));
+        await apiFactory.Services.SeedGranularGrantAsync(stale);
+
+        var response = await setup.Client.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{terminal.Id}", ct);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeTrue();
+        json.RootElement.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TerminalFullGrant_ForDeletingVault_CannotBeGrantedAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync();
+        var terminal = GrantFaker.CreateFull(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            status: GrantStatus.Revoked).Generate();
+        terminal.AgentWrappedVaultKey.ShouldBeNull();
+        await apiFactory.Services.SeedFullGrantAsync(terminal);
+        var active = GrantFaker.CreateFull(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId).Generate();
+        await apiFactory.Services.SeedFullGrantAsync(active);
+        await using (var deletionScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = deletionScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+            var vault = await writeContext.Vaults.Include(value => value.VaultMembers)
+                .SingleAsync(value => value.Id == setup.VaultId, ct);
+            vault.BeginDeletion(Guid.NewGuid(), "test actor", apiFactory.FakeClock.GetCurrentInstant());
+            await writeContext.CommitAsync(ct);
+        }
+
+        var response = await setup.Client.GetAsync($"api/grants?vaultId={setup.VaultId}", ct);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var listedTerminal = json.RootElement.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetGuid() == terminal.Id);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        listedTerminal.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        listedTerminal.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TerminalGrant_ForInactiveAgent_CannotBeGrantedAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync(AgentStatus.Deactivated);
+        var terminal = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.EntryId,
+            status: GrantStatus.Revoked).Generate();
+        await apiFactory.Services.SeedGranularGrantAsync(terminal);
+
+        var response = await setup.Client.GetAsync(
+            $"api/vaults/{setup.VaultId}/grants/{terminal.Id}", ct);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        json.RootElement.GetProperty("canGrantAgain").GetBoolean().ShouldBeFalse();
+        json.RootElement.GetProperty("activeCoveringGrantIds").GetArrayLength().ShouldBe(0);
     }
 
     [Fact]
@@ -389,7 +561,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
             .SingleAsync(TestContext.Current.CancellationToken);
 
         var createTask = setup.Client
-            .POSTAsync<CreateGrantEndpoint, CreateGrantRequest, CreateGrantResponse>(Request(setup));
+            .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(Request(setup));
         await Task.Delay(100, TestContext.Current.CancellationToken);
         createTask.IsCompleted.ShouldBeFalse();
 
@@ -398,49 +570,113 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
     }
 
-    private async Task<Setup> ArrangeAsync()
+    [Fact]
+    public async Task CreateFullGrant_WithAgentKeyChangeBeforeLock_ReturnsConflict()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var setup = await ArrangeAsync();
+        var request = FullRequest(setup);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        await using var transaction = await writeContext.BeginTransactionAsync(ct);
+        var lockedAgent = await writeContext.LockAgent(setup.OrganizationId, setup.AgentId).SingleAsync(ct);
+
+        var createTask = setup.Client
+            .POSTAsync<CreateFullGrantEndpoint, CreateFullGrantRequest, CreateFullGrantResponse>(request);
+        await WaitForBlockedAgentLockAsync(ct);
+
+        lockedAgent.Apply(
+            lockedAgent.Status,
+            Convert.ToBase64String(Enumerable.Repeat((byte)0x42, 32).ToArray()),
+            checked(lockedAgent.RecipientKeyVersion + 1),
+            lockedAgent.SigningPublicKey,
+            lockedAgent.Name,
+            lockedAgent.IconKey,
+            lockedAgent.IconColor,
+            checked(lockedAgent.AccessEpoch + 1),
+            lockedAgent.UpdatedAt + Duration.FromSeconds(1),
+            lockedAgent.UpdatedAt + Duration.FromSeconds(1));
+        await writeContext.CommitAsync(transaction, ct);
+
+        var (response, _) = await createTask;
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var assertionScope = apiFactory.Services.CreateAsyncScope();
+        var db = assertionScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Grants.AnyAsync(grant => grant.Id == request.GrantId, ct)).ShouldBeFalse();
+    }
+
+    private async Task WaitForBlockedAgentLockAsync(CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+            var isBlocked = await db.Database.SqlQueryRaw<bool>(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND wait_event_type = 'Lock'
+                      AND query LIKE '%FROM "Agents"%'
+                      AND query LIKE '%FOR UPDATE%'
+                ) AS "Value"
+                """).SingleAsync(ct);
+            if (isBlocked)
+            {
+                return;
+            }
+
+            await Task.Delay(25, ct);
+        }
+
+        throw new TimeoutException("FULL grant creation did not reach the blocked Agent row lock.");
+    }
+
+    private async Task<Setup> ArrangeAsync(
+        AgentStatus agentStatus = AgentStatus.Active,
+        uint? agentAccessEpoch = null)
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
         var entry = await apiFactory.Services.SeedEntryAsync(vault.Id, user.Id);
-        var agent = await apiFactory.Services.SeedVaultAgentAsync(organization.Id);
+        var agent = await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id, agentStatus, accessEpoch: agentAccessEpoch);
         return new Setup(
             apiFactory.CreateAuthenticatedClient(user), organization.Id, vault.Id, entry.Id,
             agent.Id, agent.PublicKey);
     }
 
-    private static CreateGrantRequest Request(Setup setup)
+    private static CreateGranularGrantRequest Request(Setup setup)
     {
         var grantId = Guid.NewGuid();
-        return new CreateGrantRequest
+        return new CreateGranularGrantRequest
         {
             GrantId = grantId,
             VaultId = setup.VaultId,
             AgentId = setup.AgentId,
-            Type = GrantType.Granular,
             EntryId = setup.EntryId,
             Methods = GrantMethods.Get,
-            GrantEntries =
-            [
-                GrantEnvelopeTestData.Contract(
-                    setup.OrganizationId, setup.VaultId, grantId, setup.EntryId, setup.AgentPublicKey,
-                    agentId: setup.AgentId),
-            ],
+            GrantEntry = GrantEnvelopeTestData.Contract(
+                setup.OrganizationId, setup.VaultId, grantId, setup.EntryId, setup.AgentPublicKey,
+                agentId: setup.AgentId),
         };
     }
 
-    private static CreateGrantRequest FullRequest(Setup setup)
+    private static CreateFullGrantRequest FullRequest(Setup setup)
     {
-        var request = Request(setup);
-        return request with
+        var grantId = Guid.NewGuid();
+        return new CreateFullGrantRequest
         {
-            Type = GrantType.Full,
-            EntryId = null,
-            GrantEntries = [],
+            GrantId = grantId,
+            VaultId = setup.VaultId,
+            AgentId = setup.AgentId,
+            Methods = GrantMethods.Get,
             AgentWrappedVaultKey = GrantEnvelopeTestData.AgentVaultKeyContract(
                 setup.OrganizationId,
                 setup.VaultId,
-                request.GrantId,
+                grantId,
                 setup.AgentId,
                 agentPublicKey: setup.AgentPublicKey),
         };

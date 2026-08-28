@@ -2,6 +2,7 @@ using Palladin.Core.Events;
 using Palladin.Core.Security;
 using Palladin.Core.Types;
 using Palladin.Module.Identity.Contracts.Events;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Vault.Contracts.Commands;
 using Palladin.Module.Vault.Contracts.Events;
 using NodaTime;
@@ -32,6 +33,8 @@ internal sealed class User : EventEntityBase
 
     public bool EmailVerified { get; private set; }
     public Instant? EmailVerifiedAt { get; private set; }
+    public Instant? WaitlistDeveloperBenefitStartedAt { get; private set; }
+    public Instant? WaitlistDeveloperBenefitEndsAt { get; private set; }
 
     public Guid OrganizationId { get; private set; }
     public Instant CreatedAt { get; private set; }
@@ -156,6 +159,44 @@ internal sealed class User : EventEntityBase
 
         AddEvent(new EmailVerifiedEvent(Id, OrganizationId, now));
     }
+
+    internal void ActivateWaitlistDeveloperBenefit(Instant startsAt, Instant endsAt)
+    {
+        if (!EmailVerified
+            || WaitlistDeveloperBenefitStartedAt is not null
+            || endsAt <= startsAt)
+        {
+            return;
+        }
+
+        WaitlistDeveloperBenefitStartedAt = startsAt;
+        WaitlistDeveloperBenefitEndsAt = endsAt;
+        UpdatedAt = startsAt;
+        AddEvent(new WaitlistDeveloperBenefitActivatedEvent(
+            Id,
+            OrganizationId,
+            Email,
+            PreferredLanguage.Code,
+            startsAt,
+            endsAt,
+            startsAt));
+    }
+
+    internal Instant? ActiveWaitlistDeveloperBenefitEndsAt(Instant now) =>
+        WaitlistDeveloperBenefitEndsAt is { } endsAt && now < endsAt
+            ? endsAt
+            : null;
+
+    internal Instant? ActiveWaitlistDeveloperBenefitStartedAt(Instant now) =>
+        ActiveWaitlistDeveloperBenefitEndsAt(now) is not null
+            ? WaitlistDeveloperBenefitStartedAt
+            : null;
+
+    internal PlanType EffectivePlan(PlanType organizationPlan, Instant now) =>
+        ActiveWaitlistDeveloperBenefitEndsAt(now) is not null
+            && organizationPlan < PlanType.Pro
+                ? PlanType.Pro
+                : organizationPlan;
 
     internal void RecordLogin(string provider, string platform)
     {

@@ -856,7 +856,6 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             }
         }
     }
-
     private async Task ApplyEntryRotationPagesAsync(
         Guid organizationId,
         Guid vaultId,

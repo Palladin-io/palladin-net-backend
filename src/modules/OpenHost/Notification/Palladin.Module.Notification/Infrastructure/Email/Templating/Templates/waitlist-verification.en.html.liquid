@@ -1,9 +1,5 @@
-{% include '_header.html.liquid' %}
-<h1 style="margin:0 0 16px;font-size:20px;font-weight:700">One click to claim your free month</h1>
-<p style="margin:0 0 16px">Thanks for joining the {{ appName }} waitlist — the password manager built for AI agents. Confirm your email address to secure your spot and your reward: <b>one month of Premium, free, when we launch</b>.</p>
-<p style="margin:0 0 24px">
-  <a href="{{ verificationUrl }}" style="display:inline-block;background:#EB4747;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:8px;font-size:14px">Confirm my email</a>
-</p>
-<p style="margin:0 0 16px;font-size:13px;color:#6a6a6a">This link expires in {{ expiryHours }} hours. If it stops working, just sign up again on {{ baseUrl }}.</p>
-<p style="margin:0;font-size:13px;color:#6a6a6a">If you didn't sign up for the {{ appName }} waitlist, you can safely ignore this email — we won't contact you again.</p>
+{% include '_header.html.liquid', emailTitle: "Confirm your place on the waitlist" %}
+<p style="margin:0 0 40px">Thanks for joining the {{ appName }} waitlist. Confirm your email address to secure your place and qualify for <b>one month of the Developer plan at no charge</b> when you create your account.</p>
+{% include '_cta.html.liquid', emailCtaUrl: verificationUrl, emailCtaLabel: "Confirm my email" %}
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">This link expires in {{ expiryHours }} hours. If it stops working, just sign up again on <a href="{{ baseUrl }}" style="color:#8a8a8a;text-decoration:underline">{{ baseUrl }}</a>. If you didn't sign up for the {{ appName }} waitlist, you can safely ignore this email — we won't contact you again.</p>
 {% include '_footer.en.html.liquid' %}

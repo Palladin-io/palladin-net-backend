@@ -64,6 +64,8 @@ public sealed record GrantResponse(
     Instant? RevokedAt,
     Guid? RevokedBy,
     string? RevokedByName,
+    Instant? SupersededAt,
+    Guid? SupersededByGrantId,
     Instant? DeniedAt,
     Guid? DeniedBy,
     string? DeniedByName,
@@ -71,7 +73,8 @@ public sealed record GrantResponse(
     string? LastAccessIp,
     string? LastAccessHostname,
     bool CanRevoke,
-    bool CanGrantAgain);
+    bool CanGrantAgain,
+    IReadOnlyList<Guid> ActiveCoveringGrantIds);
 
 [PublicAPI]
 public sealed record GrantEntryScopeResponse(
@@ -275,6 +278,8 @@ internal static class GrantProjection
                 : g.RevokedBy == null
                     ? null
                     : ctx.Users.Where(u => u.Id == g.RevokedBy).Select(u => u.DisplayName).FirstOrDefault(),
+            g.SupersededAt,
+            g.SupersededByGrantId,
             g.DeniedAt,
             g.DeniedBy,
             g.DeniedBy == null
@@ -285,12 +290,13 @@ internal static class GrantProjection
             g.LastAccessHostname,
             // CanRevoke: only an Active grant can be revoked.
             g.Status == GrantStatus.Active,
-            // CanGrantAgain: a terminal grant (Expired/Consumed/Denied/Revoked) that the agent can be
+            // CanGrantAgain: a terminal grant (Expired/Consumed/Denied/Revoked/Superseded) that the agent can be
             // re-granted because it currently has NO active coverage of this entry — no active GRANULAR
             // on the entry and no active FULL on the vault. Coverage is scoped to the same agent. For a
-            // GRANULAR grant coverage is checked on its EntryId; for a FULL grant, on any active grant of
-            // the agent in the vault.
-            false);
+            // GRANULAR grant coverage is checked on its EntryId; for a FULL grant, on an active FULL grant
+            // of the same agent in the vault.
+            false,
+            Array.Empty<Guid>());
     }
 
     internal static void ApplyAgentSigningIdentity(IList<GrantResponse> grants)
@@ -403,7 +409,8 @@ internal static class GrantProjection
         CancellationToken ct)
     {
         var terminalRows = rows.Where(row => row.Status is GrantStatus.Expired
-            or GrantStatus.Consumed or GrantStatus.Denied or GrantStatus.Revoked).ToArray();
+            or GrantStatus.Consumed or GrantStatus.Denied or GrantStatus.Revoked
+            or GrantStatus.Superseded).ToArray();
         if (terminalRows.Length == 0)
         {
             return;
@@ -412,33 +419,74 @@ internal static class GrantProjection
         var agentIds = terminalRows.Where(row => row.AgentId is not null).Select(row => row.AgentId!.Value).Distinct().ToArray();
         var vaultIds = terminalRows.Select(row => row.VaultId).Distinct().ToArray();
         var entryIds = terminalRows.Where(row => row.EntryId is not null).Select(row => row.EntryId!.Value).Distinct().ToArray();
+        var availableVaultIds = (await ctx.Vaults
+                .Where(vault => vaultIds.Contains(vault.Id))
+                .Select(vault => vault.Id)
+                .ToListAsync(ct))
+            .ToHashSet();
+        var activeAgentIds = (await ctx.Agents
+                .Where(agent => agent.Status == AgentStatus.Active && agentIds.Contains(agent.Id))
+                .Select(agent => agent.Id)
+                .ToListAsync(ct))
+            .ToHashSet();
         var activeFull = (await ctx.Grants.OfType<FullGrant>()
                 .Where(grant => grant.Status == GrantStatus.Active
                                 && agentIds.Contains(grant.AgentId)
-                                && vaultIds.Contains(grant.VaultId))
-                .Select(grant => new { grant.AgentId, grant.VaultId })
+                                && availableVaultIds.Contains(grant.VaultId)
+                                && ctx.Agents.Any(agent => agent.Id == grant.AgentId
+                                                           && agent.Status == AgentStatus.Active
+                                                           && agent.AccessEpoch == grant.AgentAccessEpoch))
+                .Select(grant => new { grant.Id, grant.AgentId, grant.VaultId, grant.CreatedAt })
                 .ToListAsync(ct))
-            .Select(value => (value.AgentId, value.VaultId))
-            .ToHashSet();
+            .GroupBy(value => (value.AgentId, value.VaultId))
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(value => value.CreatedAt)
+                    .ThenByDescending(value => value.Id)
+                    .Select(value => value.Id)
+                    .ToArray());
         var activeFullExec = (await ctx.Grants.OfType<FullGrant>()
                 .Where(grant => grant.Status == GrantStatus.Active
                                 && (grant.Methods & GrantMethods.Exec) == GrantMethods.Exec
                                 && agentIds.Contains(grant.AgentId)
-                                && vaultIds.Contains(grant.VaultId))
-                .Select(grant => new { grant.AgentId, grant.VaultId })
+                                && availableVaultIds.Contains(grant.VaultId)
+                                && ctx.Agents.Any(agent => agent.Id == grant.AgentId
+                                                           && agent.Status == AgentStatus.Active
+                                                           && agent.AccessEpoch == grant.AgentAccessEpoch))
+                .Select(grant => new { grant.Id, grant.AgentId, grant.VaultId, grant.CreatedAt })
                 .ToListAsync(ct))
-            .Select(value => (value.AgentId, value.VaultId))
-            .ToHashSet();
+            .GroupBy(value => (value.AgentId, value.VaultId))
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(value => value.CreatedAt)
+                    .ThenByDescending(value => value.Id)
+                    .Select(value => value.Id)
+                    .ToArray());
         var activeScript = (await ctx.Grants.OfType<ScriptExecutionGrant>()
                 .Where(grant => grant.Status == GrantStatus.Active
                                 && agentIds.Contains(grant.AgentId)
-                                && vaultIds.Contains(grant.VaultId)
+                                && availableVaultIds.Contains(grant.VaultId)
                                 && entryIds.Contains(grant.ScriptEntryId)
-                                && grant.ScriptExecutionPackage != null)
-                .Select(grant => new { grant.AgentId, grant.VaultId, grant.ScriptEntryId })
+                                && grant.ScriptExecutionPackage != null
+                                && ctx.Agents.Any(agent => agent.Id == grant.AgentId
+                                                           && agent.Status == AgentStatus.Active
+                                                           && agent.AccessEpoch == grant.AgentAccessEpoch))
+                .Select(grant => new
+                {
+                    grant.Id,
+                    grant.AgentId,
+                    grant.VaultId,
+                    grant.ScriptEntryId,
+                    grant.CreatedAt,
+                })
                 .ToListAsync(ct))
-            .Select(value => (value.AgentId, value.VaultId, value.ScriptEntryId))
-            .ToHashSet();
+            .GroupBy(value => (value.AgentId, value.VaultId))
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(value => value.CreatedAt)
+                    .ThenByDescending(value => value.Id)
+                    .Select(value => (value.ScriptEntryId, value.Id))
+                    .ToArray());
         var currentRevisions = (await ctx.Entries
                 .Where(entry => entry.State == EntryState.Active
                                 && vaultIds.Contains(entry.VaultId)
@@ -449,14 +497,19 @@ internal static class GrantProjection
         var activeMaterial = await ctx.Grants
             .Where(grant => grant.Status == GrantStatus.Active
                             && agentIds.Contains(grant.AgentId)
-                            && vaultIds.Contains(grant.VaultId))
+                            && availableVaultIds.Contains(grant.VaultId)
+                            && ctx.Agents.Any(agent => agent.Id == grant.AgentId
+                                                       && agent.Status == AgentStatus.Active
+                                                       && agent.AccessEpoch == grant.AgentAccessEpoch))
             .SelectMany(
                 grant => grant.GrantEntryScopes.Where(scope =>
                     entryIds.Contains(scope.EntryId) && scope.Envelope != null),
                 (grant, scope) => new
                 {
+                    grant.Id,
                     grant.AgentId,
                     grant.VaultId,
+                    grant.CreatedAt,
                     scope.EntryId,
                     Revision = scope.Envelope!.EntryRevision,
                 })
@@ -470,20 +523,57 @@ internal static class GrantProjection
                 continue;
             }
 
-            var hasCoverage = row.Type switch
+            var isAgentActive = activeAgentIds.Contains(row.AgentId.Value);
+            var isVaultAvailable = availableVaultIds.Contains(row.VaultId);
+            var isTargetAvailable = isVaultAvailable
+                                    && (row.Type == GrantType.Full
+                                        || row.EntryId is not null
+                                        && currentRevisions.ContainsKey((row.VaultId, row.EntryId.Value)));
+            IReadOnlyList<Guid> activeCoveringGrantIds;
+            if (!isAgentActive || !isTargetAvailable)
             {
-                GrantType.Full => activeFull.Contains((row.AgentId.Value, row.VaultId)),
-                GrantType.ScriptExecution => row.EntryId is not null
-                    && (activeFullExec.Contains((row.AgentId.Value, row.VaultId))
-                        || activeScript.Contains((row.AgentId.Value, row.VaultId, row.EntryId.Value))),
-                _ => row.EntryId is not null
-                  && currentRevisions.TryGetValue((row.VaultId, row.EntryId.Value), out var currentRevision)
-                  && activeMaterial.Any(material => material.AgentId == row.AgentId.Value
-                                                    && material.VaultId == row.VaultId
-                                                    && material.EntryId == row.EntryId.Value
-                                                    && material.Revision == currentRevision),
+                activeCoveringGrantIds = [];
+            }
+            else if (row.Type == GrantType.Full)
+            {
+                activeCoveringGrantIds = activeFull.GetValueOrDefault((row.AgentId.Value, row.VaultId), []);
+            }
+            else if (row.Type == GrantType.ScriptExecution && row.EntryId is not null)
+            {
+                activeCoveringGrantIds = activeFullExec
+                    .GetValueOrDefault((row.AgentId.Value, row.VaultId), [])
+                    .Concat(activeScript
+                        .GetValueOrDefault((row.AgentId.Value, row.VaultId), [])
+                        .Where(value => value.ScriptEntryId == row.EntryId.Value)
+                        .Select(value => value.Id))
+                    .Distinct()
+                    .ToArray();
+            }
+            else if (row.EntryId is not null
+                     && currentRevisions.TryGetValue((row.VaultId, row.EntryId.Value), out var currentRevision))
+            {
+                activeCoveringGrantIds = activeMaterial
+                    .Where(material => material.AgentId == row.AgentId.Value
+                                       && material.VaultId == row.VaultId
+                                       && material.EntryId == row.EntryId.Value
+                                       && material.Revision == currentRevision)
+                    .OrderByDescending(material => material.CreatedAt)
+                    .ThenByDescending(material => material.Id)
+                    .Select(material => material.Id)
+                    .Distinct()
+                    .ToArray();
+            }
+            else
+            {
+                activeCoveringGrantIds = [];
+            }
+            rows[index] = row with
+            {
+                CanGrantAgain = isAgentActive
+                                && isTargetAvailable
+                                && activeCoveringGrantIds.Count == 0,
+                ActiveCoveringGrantIds = activeCoveringGrantIds,
             };
-            rows[index] = row with { CanGrantAgain = !hasCoverage };
         }
     }
 }

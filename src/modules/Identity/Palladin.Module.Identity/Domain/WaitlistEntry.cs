@@ -4,11 +4,13 @@ using NodaTime;
 
 namespace Palladin.Module.Identity.Domain;
 
-// A landing-page waitlist signup (double opt-in). Verified entries earn one free month of Premium
-// at launch. Only the token HASH is stored — the plaintext token exists in the verification link
-// and, transiently, in the WaitlistJoinedEvent that carries it to the email trigger.
+// A landing-page waitlist signup (double opt-in). Only the token HASH is stored — the plaintext
+// token exists in the verification link and, transiently, in the WaitlistJoinedEvent that carries
+// it to the email trigger.
 internal sealed class WaitlistEntry : EventEntityBase
 {
+    private const int DeveloperBenefitDurationMonths = 1;
+
     public Guid Id { get; private set; }
     public string Email { get; private set; } = string.Empty;
     public string Language { get; private set; } = "en";
@@ -16,6 +18,9 @@ internal sealed class WaitlistEntry : EventEntityBase
     public Instant TokenIssuedAt { get; private set; }
     public Instant TokenExpiresAt { get; private set; }
     public Instant? VerifiedAt { get; private set; }
+    public Guid? DeveloperBenefitUserId { get; private set; }
+    public Instant? DeveloperBenefitStartedAt { get; private set; }
+    public Instant? DeveloperBenefitEndsAt { get; private set; }
     public Instant CreatedAt { get; private set; }
 
     private WaitlistEntry() { }
@@ -60,6 +65,25 @@ internal sealed class WaitlistEntry : EventEntityBase
     {
         VerifiedAt = now;
         EmitVerified(now);
+    }
+
+    internal Instant? ClaimDeveloperBenefit(Guid userId, Instant accountCreatedAt, Instant now)
+    {
+        if (VerifiedAt is null
+            || CreatedAt > accountCreatedAt
+            || DeveloperBenefitUserId is not null)
+        {
+            return null;
+        }
+
+        var endsAt = now.InUtc().LocalDateTime
+            .PlusMonths(DeveloperBenefitDurationMonths)
+            .InUtc()
+            .ToInstant();
+        DeveloperBenefitUserId = userId;
+        DeveloperBenefitStartedAt = now;
+        DeveloperBenefitEndsAt = endsAt;
+        return endsAt;
     }
 
     private void EmitJoined(string token) =>

@@ -45,30 +45,4 @@ internal static class GrantNamesResolver
             string.Empty,
             raw?.ActorName);
     }
-
-    public static async Task<IReadOnlyDictionary<Guid, GrantNames>> ResolveForSupersedeAsync(
-        this VaultDomainReadContext ctx,
-        Guid agentId,
-        Guid vaultId,
-        IReadOnlyCollection<Guid> entryIds,
-        CancellationToken ct)
-    {
-        if (entryIds.Count == 0)
-        {
-            return new Dictionary<Guid, GrantNames>();
-        }
-
-        var header = await ctx.Agents
-            .Where(a => a.Id == agentId)
-            .Select(a => new
-            {
-                AgentName = a.Name,
-            })
-            .FirstOrDefaultAsync(ct);
-
-        var agentName = header?.AgentName ?? GrantNames.UnknownAgent;
-        return entryIds.ToDictionary(
-            id => id,
-            _ => new GrantNames(agentName, null, string.Empty, GrantNames.SystemActor));
-    }
 }

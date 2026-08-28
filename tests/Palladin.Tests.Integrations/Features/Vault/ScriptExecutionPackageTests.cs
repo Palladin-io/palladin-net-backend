@@ -369,13 +369,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         var package = PackageContract(setup, grantId);
 
         var response = await setup.UserClient.PostAsJsonAsync(
-            $"api/vaults/{setup.VaultId}/grants",
-            new CreateGrantRequest
+            $"api/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/grants",
+            new CreateScriptExecutionGrantRequest
             {
                 GrantId = grantId,
                 VaultId = setup.VaultId,
                 AgentId = setup.AgentId,
-                Type = GrantType.ScriptExecution,
                 ScriptEntryId = setup.ScriptEntryId,
                 ScriptPackage = package,
                 Methods = GrantMethods.Exec,
@@ -437,13 +436,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         });
 
         var response = await setup.UserClient.PostAsJsonAsync(
-            $"api/vaults/{setup.VaultId}/grants",
-            new CreateGrantRequest
+            $"api/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/grants",
+            new CreateScriptExecutionGrantRequest
             {
                 GrantId = grantId,
                 VaultId = setup.VaultId,
                 AgentId = setup.AgentId,
-                Type = GrantType.ScriptExecution,
                 ScriptEntryId = setup.ScriptEntryId,
                 ScriptPackage = nonCanonical,
                 Methods = GrantMethods.Exec,
@@ -466,13 +464,12 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         signature[0] ^= 0x01;
 
         var response = await setup.UserClient.PostAsJsonAsync(
-            $"api/vaults/{setup.VaultId}/grants",
-            new CreateGrantRequest
+            $"api/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/grants",
+            new CreateScriptExecutionGrantRequest
             {
                 GrantId = grantId,
                 VaultId = setup.VaultId,
                 AgentId = setup.AgentId,
-                Type = GrantType.ScriptExecution,
                 ScriptEntryId = setup.ScriptEntryId,
                 ScriptPackage = signed with
                 {
@@ -693,12 +690,11 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         var direct = DirectGrant(setup, queryLimit: 5);
         await apiFactory.Services.SeedScriptExecutionGrantAsync(direct);
         var fullGrantId = Guid.NewGuid();
-        var request = new CreateGrantRequest
+        var request = new CreateFullGrantRequest
         {
             GrantId = fullGrantId,
             VaultId = setup.VaultId,
             AgentId = setup.AgentId,
-            Type = GrantType.Full,
             Methods = GrantMethods.Exec,
             AgentWrappedVaultKey = GrantEnvelopeTestData.AgentVaultKeyContract(
                 setup.OrganizationId,
@@ -709,7 +705,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         };
 
         var response = await setup.UserClient.PostAsJsonAsync(
-            $"api/vaults/{setup.VaultId}/grants",
+            $"api/vaults/{setup.VaultId}/full-grants",
             request,
             TestContext.Current.CancellationToken);
 
@@ -717,7 +713,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await readContext.Grants.SingleAsync(value => value.Id == direct.Id)).Status
-            .ShouldBe(GrantStatus.Revoked);
+            .ShouldBe(GrantStatus.Superseded);
         (await readContext.ScriptExecutionPackages.AnyAsync(value => value.GrantId == direct.Id))
             .ShouldBeFalse();
         (await readContext.Grants.OfType<FullGrant>().AnyAsync(value => value.Id == fullGrantId))

@@ -255,6 +255,34 @@ internal sealed class RequestScriptExecutionAccessEndpoint(
             await Send.ErrorsAsync(409, ct);
             return;
         }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+        {
+            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "IX_Grants_ScriptExecution_Pending",
+        })
+        {
+            domainWriteContext.Clear();
+            var winner = await domainReadContext.Grants
+                .OfType<ScriptExecutionGrant>()
+                .Where(candidate => candidate.OrganizationId == agent.OrganizationId
+                                    && candidate.AgentId == agentId.Value
+                                    && candidate.AgentAccessEpoch == agent.AccessEpoch
+                                    && candidate.VaultId == req.VaultId
+                                    && candidate.ScriptEntryId == req.ScriptEntryId
+                                    && candidate.Status == GrantStatus.Pending)
+                .Select(candidate => new { candidate.Id, candidate.Status })
+                .SingleOrDefaultAsync(ct);
+            if (winner is not null)
+            {
+                await Send.OkAsync(new RequestAccessResponse(winner.Id, winner.Status), ct);
+                return;
+            }
+
+            AddError(request => request.EncryptedReason,
+                "A pending Script execution request already exists.");
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
 
         await Send.OkAsync(new RequestAccessResponse(grant.Id, grant.Status), ct);
     }

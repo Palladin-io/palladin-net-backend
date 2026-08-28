@@ -140,6 +140,13 @@ internal sealed class ApproveGrantEndpoint(
         }
 
         var granularGrant = (GranularGrant)grant;
+        if (req.GrantEntry is null || req.ScriptPackage is not null)
+        {
+            AddError(request => request.GrantEntry,
+                "A Granular approval requires one grant Entry envelope and no Script package.");
+            await Send.ErrorsAsync(cancellation: ct);
+            return;
+        }
         var grantEntry = req.GrantEntry!;
         if (grantEntry.OrganizationId != granularGrant.OrganizationId
             || grantEntry.VaultId != granularGrant.VaultId

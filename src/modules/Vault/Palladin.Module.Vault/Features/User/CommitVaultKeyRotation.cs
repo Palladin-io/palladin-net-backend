@@ -58,6 +58,7 @@ internal sealed class CommitVaultKeyRotationValidator : Validator<CommitVaultKey
 
 [PublicAPI]
 internal sealed class CommitVaultKeyRotationEndpoint(
+    VaultDomainReadContext domainReadContext,
     VaultDomainWriteContext domainWriteContext,
     VaultPrincipalDeprovisioningCoordinator deprovisioningCoordinator,
     IClock clock) : Endpoint<CommitVaultKeyRotationRequest, VaultKeyRotationResponse>
@@ -253,6 +254,11 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 wrapperSigningAnchor.Fingerprint,
                 wrapperSigningAnchor.PublicKey,
                 ct);
+        }
+        if (rotatesManifestSigning)
+        {
+            await RevokeScriptExecutionGrantsForSigningRotationAsync(
+                organizationId, req.VaultId, committedAt, ct);
         }
         var agentManifest = rotatesAgentProjection
             ? await ApplyAgentRotationPagesAsync(
@@ -781,6 +787,63 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                     expectedSigningKeyFingerprint,
                     expectedSigningPublicKey);
                 grant.AgentWrappedVaultKey!.ReplaceWith(replacement);
+            }
+
+            domainWriteContext.EnsureRotationPageTrackingIsBounded(0, CommitPageSize);
+            lastGrantId = grants[^1].Id;
+            await domainWriteContext.FlushAsync(cancellationToken);
+            domainWriteContext.Clear();
+            if (grants.Count < CommitPageSize)
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task RevokeScriptExecutionGrantsForSigningRotationAsync(
+        Guid organizationId,
+        Guid vaultId,
+        Instant now,
+        CancellationToken cancellationToken)
+    {
+        Guid? lastGrantId = null;
+        while (true)
+        {
+            var query = domainWriteContext.Grants
+                .OfType<ScriptExecutionGrant>()
+                .Include(grant => grant.ScriptExecutionPackage)
+                .Where(grant => grant.OrganizationId == organizationId
+                                && grant.VaultId == vaultId
+                                && grant.Status == GrantStatus.Active);
+            if (lastGrantId is not null)
+            {
+                query = query.Where(grant => grant.Id.CompareTo(lastGrantId.Value) > 0);
+            }
+
+            var grants = await query.OrderBy(grant => grant.Id)
+                .Take(CommitPageSize)
+                .ToListAsync(cancellationToken);
+            if (grants.Count == 0)
+            {
+                break;
+            }
+
+            var agentIds = grants.Select(grant => grant.AgentId).Distinct().ToArray();
+            var agentNames = await domainReadContext.Agents
+                .Where(agent => agent.OrganizationId == organizationId
+                                && agentIds.Contains(agent.Id))
+                .Select(agent => new { agent.Id, agent.Name })
+                .ToDictionaryAsync(agent => agent.Id, agent => agent.Name, cancellationToken);
+            foreach (var grant in grants)
+            {
+                grant.RevokeBySystem(
+                    new GrantNames(
+                        agentNames.GetValueOrDefault(grant.AgentId) ?? GrantNames.UnknownAgent,
+                        GrantNames.UnknownEntry,
+                        string.Empty,
+                        GrantNames.SystemActor),
+                    now);
+                grant.DeleteAgentEnvelopes();
             }
 
             domainWriteContext.EnsureRotationPageTrackingIsBounded(0, CommitPageSize);

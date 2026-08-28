@@ -9,6 +9,7 @@ using NodaTime;
 using NSubstitute;
 using Palladin.Core.Json;
 using Palladin.Core.Security;
+using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Contracts.Commands;
 using Palladin.Module.Vault.Contracts.Events;
@@ -119,6 +120,61 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var script = await apiFactory.Services.SeedEntryAsync(
+            vault.Id,
+            user.Id,
+            EntryFaker.Create(organizationId: organization.Id, vaultId: vault.Id, createdBy: user.Id)
+                .RuleFor(entry => entry.DeliveryPolicy, GrantDeliveryPolicy.ExecOnly));
+        var reference = await apiFactory.Services.SeedEntryAsync(vault.Id, user.Id);
+        var scriptGrantId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var agentPublicKey = Convert.ToBase64String(Enumerable.Repeat((byte)0x42, 32).ToArray());
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            AgentStatus.Deactivated,
+            agentId,
+            agentPublicKey);
+        var scriptPackage = ScriptExecutionPackage.Create(
+            organization.Id,
+            vault.Id,
+            scriptGrantId,
+            agentId,
+            1,
+            script.Id,
+            1,
+            1,
+            1,
+            1,
+            VaultKeyFingerprint.Compute(Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519),
+            1,
+            VaultKeyFingerprint.Compute(
+                VaultTrustAnchorFaker.ManifestSigningPublicKey,
+                VaultKeyKind.VaultSigningEd25519),
+            Enumerable.Repeat((byte)0xA5, 32).ToArray(),
+            Enumerable.Repeat((byte)0x5A, 64).ToArray(),
+            new byte[64]);
+        var scriptGrant = ScriptExecutionGrant.CreateProactively(
+            scriptGrantId,
+            vault.Id,
+            organization.Id,
+            agentId,
+            agentPublicKey,
+            script.Id,
+            [
+                ScriptExecutionScope.Create(
+                    organization.Id, vault.Id, scriptGrantId, script.Id, 1, true),
+                ScriptExecutionScope.Create(
+                    organization.Id, vault.Id, scriptGrantId, reference.Id, 1, false),
+            ],
+            scriptPackage,
+            null,
+            5,
+            "uses",
+            user.Id,
+            new GrantNames("agent", "script", "vault", "actor"),
+            SystemClock.Instance.GetCurrentInstant(),
+            1);
+        await apiFactory.Services.SeedScriptExecutionGrantAsync(scriptGrant);
         await SeedMemberDirectoryAsync(user.Id);
         var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
         var claim = await StartAndClaimAsync(client, vault.Id);
@@ -141,10 +197,19 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                     organization.Id, vault.Id, 2, 2, 2, 2, 2, 2),
                 VaultAgentMessagePublicKey = VaultContractFaker.CreateAgentMessagePublicKey(),
                 VaultManifestSigningPublicKey = VaultContractFaker.CreateManifestSigningPublicKey(),
+                EntryKeys =
+                [
+                    EntryEnvelopeFaker.CreateKey(
+                        organization.Id, vault.Id, script.Id,
+                        wrapperRevision: 2, memberKeyGeneration: 2, wrappingKeyVersion: 2, seed: 81),
+                    EntryEnvelopeFaker.CreateKey(
+                        organization.Id, vault.Id, reference.Id,
+                        wrapperRevision: 2, memberKeyGeneration: 2, wrappingKeyVersion: 2, seed: 82),
+                ],
             });
 
         batchResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        batch!.AcceptedItems.ShouldBe(7);
+        batch!.AcceptedItems.ShouldBe(9);
         await using (var beforeScope = apiFactory.Services.CreateAsyncScope())
         {
             var before = await beforeScope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
@@ -186,6 +251,13 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         persisted.AgentMessagePublicKey.ShouldBe(VaultTrustAnchorFaker.RotatedAgentMessagePublicKey);
         persisted.ManifestSigningPublicKey.ShouldBe(VaultTrustAnchorFaker.RotatedManifestSigningPublicKey);
         persisted.VaultMemberKeyEnvelopes.Single(x => x.MemberKeyGeneration.Value == 2).VaultKeyVersion.Value.ShouldBe(2U);
+        var revokedScriptGrant = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
+            .Grants.OfType<ScriptExecutionGrant>()
+            .Include(grant => grant.ScriptExecutionPackage)
+            .SingleAsync(grant => grant.Id == scriptGrantId);
+        revokedScriptGrant.Status.ShouldBe(GrantStatus.Revoked);
+        revokedScriptGrant.RevokedBySystem.ShouldBeTrue();
+        revokedScriptGrant.ScriptExecutionPackage.ShouldBeNull();
         client.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
         client.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "1");
         var (deltaResponse, reset) = await client.POSTAsync<

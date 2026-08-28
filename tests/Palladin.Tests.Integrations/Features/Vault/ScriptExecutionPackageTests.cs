@@ -127,6 +127,57 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
+    public async Task ConcurrentExecRequests_ReturnTheSameSinglePendingGrant()
+    {
+        var setup = await SetupScriptAsync();
+        var firstReason = GrantEnvelopeTestData.EncryptedReason(
+            setup.OrganizationId,
+            setup.VaultId,
+            setup.ScriptEntryId,
+            setup.AgentId,
+            setup.Signing,
+            setup.AgentMessageKeyFingerprint,
+            GrantMethods.Exec);
+        var secondReason = GrantEnvelopeTestData.EncryptedReason(
+            setup.OrganizationId,
+            setup.VaultId,
+            setup.ScriptEntryId,
+            setup.AgentId,
+            setup.Signing,
+            setup.AgentMessageKeyFingerprint,
+            GrantMethods.Exec);
+        var route = $"api/agent/vaults/{setup.VaultId}/scripts/{setup.ScriptEntryId}/request-access";
+
+        var responses = await Task.WhenAll(
+            setup.Client.PostAsJsonAsync(route,
+                new { setup.VaultId, setup.ScriptEntryId, EncryptedReason = firstReason },
+                TestContext.Current.CancellationToken),
+            setup.Client.PostAsJsonAsync(route,
+                new { setup.VaultId, setup.ScriptEntryId, EncryptedReason = secondReason },
+                TestContext.Current.CancellationToken));
+
+        responses.ShouldAllBe(response => response.StatusCode == HttpStatusCode.OK);
+        var ids = new List<Guid>();
+        foreach (var response in responses)
+        {
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            ids.Add(body.RootElement.GetProperty("grantId").GetGuid());
+            body.RootElement.GetProperty("status").GetString().ShouldBe("pending");
+        }
+        ids.Distinct().Count().ShouldBe(1);
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.OfType<ScriptExecutionGrant>().CountAsync(grant =>
+            grant.OrganizationId == setup.OrganizationId
+            && grant.VaultId == setup.VaultId
+            && grant.ScriptEntryId == setup.ScriptEntryId
+            && grant.AgentId == setup.AgentId
+            && grant.Status == GrantStatus.Pending)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task PendingScriptExecutionGrant_ApprovesOneCompletePackage()
     {
         var setup = await SetupScriptAsync();
@@ -173,6 +224,37 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         grant.EncryptedReason.ShouldNotBeNull();
         grant.ScriptExecutionPackage.ShouldNotBeNull();
         grant.ScriptExecutionScopes.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task GranularApproval_RejectsScriptPackageVariantWithoutServerError()
+    {
+        var setup = await SetupScriptAsync();
+        var granular = GrantFaker.CreateGranular(
+            vaultId: setup.VaultId,
+            organizationId: setup.OrganizationId,
+            agentId: setup.AgentId,
+            entryId: setup.ReferenceEntryId,
+            status: GrantStatus.Pending).Generate();
+        await apiFactory.Services.SeedGranularGrantAsync(granular);
+
+        var response = await setup.UserClient.PutAsJsonAsync(
+            $"api/vaults/{setup.VaultId}/grants/{granular.Id}/approve",
+            new
+            {
+                setup.VaultId,
+                GrantId = granular.Id,
+                ScriptPackage = PackageContract(setup, granular.Id),
+                Methods = GrantMethods.Get,
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest,
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Grants.SingleAsync(grant => grant.Id == granular.Id)).Status
+            .ShouldBe(GrantStatus.Pending);
     }
 
     [Fact]

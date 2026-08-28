@@ -14,5 +14,10 @@ internal sealed class ScriptExecutionGrantConfiguration : IEntityTypeConfigurati
         { x.OrganizationId, x.VaultId, x.ScriptEntryId, x.AgentId, x.AgentAccessEpoch, x.Status })
             .IsUnique()
             .HasFilter("\"GrantType\" = 'ScriptExecution' AND \"Status\" = 2");
+        builder.HasIndex(x => new
+            { x.OrganizationId, x.VaultId, x.ScriptEntryId, x.AgentId, x.AgentAccessEpoch, x.Status },
+            "IX_Grants_ScriptExecution_Pending")
+            .IsUnique()
+            .HasFilter("\"GrantType\" = 'ScriptExecution' AND \"Status\" = 1");
     }
 }

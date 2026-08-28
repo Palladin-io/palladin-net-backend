@@ -352,12 +352,17 @@ internal sealed class CreateGrantEndpoint(
             {
                 (scriptExecutionPackage, scriptExecutionScopes) =
                     ScriptExecutionPackageContractMapper.ToDomain(req.ScriptPackage!);
-                ValidateScriptPackage(
-                    req,
+                ScriptExecutionGrantMaterialValidator.Validate(
                     scriptExecutionPackage,
                     scriptExecutionScopes,
                     organizationId,
-                    agent,
+                    req.VaultId,
+                    req.GrantId,
+                    req.AgentId,
+                    agent.AccessEpoch,
+                    req.ScriptEntryId!.Value,
+                    agent.PublicKey,
+                    agent.RecipientKeyVersion,
                     lockedRevisions);
                 ScriptExecutionPackageCryptoValidator.ValidateProducer(req.ScriptPackage!, lockedVault);
             }
@@ -628,33 +633,6 @@ internal sealed class CreateGrantEndpoint(
                 agentAccessEpoch),
             _ => throw new ArgumentOutOfRangeException(nameof(req)),
         };
-    }
-
-    private static void ValidateScriptPackage(
-        CreateGrantRequest req,
-        ScriptExecutionPackage package,
-        IReadOnlyCollection<ScriptExecutionScope> scopes,
-        Guid organizationId,
-        Agent agent,
-        IReadOnlyDictionary<Guid, ulong> lockedRevisions)
-    {
-        var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
-        if (package.OrganizationId != organizationId || package.VaultId != req.VaultId
-            || package.GrantId != req.GrantId || package.AgentId != req.AgentId
-            || package.AgentAccessEpoch != agent.AccessEpoch
-            || package.ScriptEntryId != req.ScriptEntryId
-            || package.PackageRevision != 1
-            || package.RecipientAgentKeyVersion != agent.RecipientKeyVersion
-            || !package.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint)
-            || scopes.Count != lockedRevisions.Count
-            || scopes.Any(scope => !lockedRevisions.TryGetValue(scope.EntryId, out var revision)
-                || scope.EntryRevision != revision)
-            || package.ScriptRevision != lockedRevisions[req.ScriptEntryId!.Value])
-        {
-            throw new Palladin.Core.Types.Exceptions.DomainException(
-                "Script execution package binding is invalid or stale.");
-        }
     }
 
     private static GrantEntryScope ToScope(

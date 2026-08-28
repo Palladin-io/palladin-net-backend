@@ -16,6 +16,42 @@ internal sealed class ScriptExecutionGrant : Grant
 
     private ScriptExecutionGrant() { }
 
+    internal static ScriptExecutionGrant RequestAccess(
+        Guid id,
+        Guid vaultId,
+        Guid organizationId,
+        Guid agentId,
+        string agentPublicKey,
+        Guid scriptEntryId,
+        GrantNames names,
+        EncryptedReasonEnvelope encryptedReason,
+        Instant now,
+        uint agentAccessEpoch)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(agentAccessEpoch);
+        var grant = new ScriptExecutionGrant
+        {
+            Id = id,
+            VaultId = vaultId,
+            OrganizationId = organizationId,
+            AgentId = agentId,
+            AgentAccessEpoch = agentAccessEpoch,
+            AgentPublicKey = agentPublicKey,
+            ScriptEntryId = scriptEntryId,
+            Status = GrantStatus.Pending,
+            RequestType = GrantRequestType.AccessRequest,
+            EncryptedReason = encryptedReason,
+            Methods = GrantMethods.Exec,
+            QueryCount = 0,
+            CreatedAt = now,
+            CreatedBy = null,
+            UpdatedAt = now,
+        };
+
+        grant.EmitRequested(scriptEntryId, names);
+        return grant;
+    }
+
     internal static ScriptExecutionGrant CreateProactively(
         Guid id,
         Guid vaultId,
@@ -108,4 +144,65 @@ internal sealed class ScriptExecutionGrant : Grant
             ScriptExecutionScopes.Add(next);
         }
     }
+
+    internal void Approve(
+        Guid approvedBy,
+        GrantNames names,
+        ScriptExecutionPackage package,
+        IReadOnlyCollection<ScriptExecutionScope> scopes,
+        Instant? expiresAt,
+        int? queryLimit,
+        string expirySource,
+        Instant now)
+    {
+        EnsurePendingApproval();
+        if (!PackageMatchesGrant(
+                package,
+                scopes,
+                OrganizationId,
+                VaultId,
+                Id,
+                AgentId,
+                AgentAccessEpoch,
+                ScriptEntryId))
+        {
+            throw new DomainException("Script execution package does not match the pending grant.");
+        }
+
+        ScriptExecutionPackage = package;
+        ScriptExecutionScopes = scopes.ToList();
+        CompleteApproval(
+            approvedBy,
+            names,
+            expiresAt,
+            queryLimit,
+            expirySource,
+            GrantMethods.Exec,
+            now);
+    }
+
+    private static bool PackageMatchesGrant(
+        ScriptExecutionPackage package,
+        IReadOnlyCollection<ScriptExecutionScope> scopes,
+        Guid organizationId,
+        Guid vaultId,
+        Guid grantId,
+        Guid agentId,
+        uint agentAccessEpoch,
+        Guid scriptEntryId) =>
+        package.OrganizationId == organizationId
+        && package.VaultId == vaultId
+        && package.GrantId == grantId
+        && package.AgentId == agentId
+        && package.AgentAccessEpoch == agentAccessEpoch
+        && package.ScriptEntryId == scriptEntryId
+        && package.PackageRevision == 1
+        && scopes.Count is >= 1 and <= 65
+        && scopes.All(scope => scope.OrganizationId == organizationId
+                               && scope.VaultId == vaultId
+                               && scope.GrantId == grantId)
+        && scopes.Select(scope => scope.EntryId).Distinct().Count() == scopes.Count
+        && scopes.Count(scope => scope.IsScript) == 1
+        && scopes.Single(scope => scope.IsScript).EntryId == scriptEntryId
+        && scopes.Single(scope => scope.IsScript).EntryRevision == package.ScriptRevision;
 }

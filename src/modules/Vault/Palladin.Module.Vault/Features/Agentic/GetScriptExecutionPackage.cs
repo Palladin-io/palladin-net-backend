@@ -20,7 +20,7 @@ public sealed record GetScriptExecutionPackageRequest
 {
     public Guid VaultId { get; init; }
     public Guid ScriptEntryId { get; init; }
-    public string ScriptRevision { get; init; } = string.Empty;
+    public string? ScriptRevision { get; init; }
 }
 
 [PublicAPI]
@@ -58,9 +58,13 @@ internal sealed class GetScriptExecutionPackageValidator
         RuleFor(x => x.VaultId).NotEmpty();
         RuleFor(x => x.ScriptEntryId).NotEmpty();
         RuleFor(x => x.ScriptRevision)
-            .NotEmpty()
             .Must(value =>
             {
+                if (string.IsNullOrEmpty(value))
+                {
+                    return true;
+                }
+
                 try
                 {
                     return VaultEnvelopeContractMapper.ParseUInt64(value) > 0;
@@ -89,6 +93,7 @@ internal abstract record ScriptPackageDeliveryResult
     internal sealed record Granted(
         string AuthorizationSource,
         string AgentName,
+        ulong ScriptRevision,
         Guid GrantId,
         int QueryCount,
         int? QueryLimit,
@@ -114,7 +119,7 @@ internal sealed class ScriptExecutionPackageDeliveryService(
         uint agentAccessEpoch,
         Guid vaultId,
         Guid scriptEntryId,
-        ulong scriptRevision,
+        ulong? requestedScriptRevision,
         string? ip,
         string? hostname,
         Instant now,
@@ -225,7 +230,8 @@ internal sealed class ScriptExecutionPackageDeliveryService(
         {
             return new ScriptPackageDeliveryResult.Denied(ScriptPackageDenialReasons.MaterialUnavailable);
         }
-        if (script.CurrentRevision.Value != scriptRevision)
+        var scriptRevision = script.CurrentRevision.Value;
+        if (requestedScriptRevision is not null && scriptRevision != requestedScriptRevision)
         {
             return new ScriptPackageDeliveryResult.Denied(ScriptPackageDenialReasons.StaleScript);
         }
@@ -443,6 +449,7 @@ internal sealed class ScriptExecutionPackageDeliveryService(
         return new ScriptPackageDeliveryResult.Granted(
             authorizationSource,
             agent.Name ?? CredentialAccessedEvent.UnknownAgent,
+            scriptRevision,
             selected.Id,
             newCount.Value,
             selected.QueryLimit,
@@ -645,7 +652,9 @@ internal sealed class GetScriptExecutionPackageEndpoint(
             accessEpoch.Value,
             req.VaultId,
             req.ScriptEntryId,
-            VaultEnvelopeContractMapper.ParseUInt64(req.ScriptRevision),
+            string.IsNullOrEmpty(req.ScriptRevision)
+                ? null
+                : VaultEnvelopeContractMapper.ParseUInt64(req.ScriptRevision),
             HttpContext.Connection.RemoteIpAddress?.ToString(),
             HttpContext.Request.Headers[AgentAuthenticationOptions.AgentHostnameHeader].FirstOrDefault(),
             now,
@@ -674,7 +683,7 @@ internal sealed class GetScriptExecutionPackageEndpoint(
             agentId.Value,
             accessEpoch.Value,
             req.ScriptEntryId,
-            req.ScriptRevision,
+            granted.ScriptRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             granted.GrantId,
             granted.QueryCount,
             granted.QueryLimit,

@@ -19,7 +19,8 @@ public sealed record ApproveGrantRequest : IRequiresVaultMembership
 {
     public Guid VaultId { get; init; }
     public Guid GrantId { get; init; }
-    public GrantEntryEnvelopeContract GrantEntry { get; init; } = null!;
+    public GrantEntryEnvelopeContract? GrantEntry { get; init; }
+    public ScriptExecutionPackageContract? ScriptPackage { get; init; }
     public Instant? ExpiresAt { get; init; }
     public int? QueryLimit { get; init; }
 
@@ -44,8 +45,14 @@ internal sealed class ApproveGrantValidator : Validator<ApproveGrantRequest>
         RuleFor(x => x.QueryLimit!.Value).GreaterThan(0).When(x => x.QueryLimit.HasValue);
         RuleFor(x => x.Methods!.Value).Must(m => m.IsValidSet()).When(x => x.Methods.HasValue);
 
-        RuleFor(x => x.GrantEntry).NotNull();
-        RuleFor(x => x.GrantEntry).SetValidator(new GrantEntryEnvelopeContractValidator());
+        RuleFor(x => x)
+            .Must(x => (x.GrantEntry is null) != (x.ScriptPackage is null));
+        RuleFor(x => x.GrantEntry)
+            .SetValidator(new GrantEntryEnvelopeContractValidator()!)
+            .When(x => x.GrantEntry is not null);
+        RuleFor(x => x.ScriptPackage)
+            .SetValidator(new ScriptExecutionPackageContractValidator()!)
+            .When(x => x.ScriptPackage is not null);
     }
 }
 
@@ -65,7 +72,7 @@ internal sealed class ApproveGrantEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Approve a pending grant";
-            summary.Description = "Activates a pending agent access request. The approving user's client supplies the per-entry re-wrapped DEK (ciphertext only — the server never wraps VK). Sets at most one expiry policy (expiresAt or queryLimit); neither means lifetime access.";
+            summary.Description = "Activates one pending Granular or ScriptExecution request. The approving client supplies either one per-entry envelope or one complete encrypted Script package. Sets at most one expiry policy; neither means lifetime access.";
         });
         Tags("Vault/Grants");
     }
@@ -85,11 +92,11 @@ internal sealed class ApproveGrantEndpoint(
         }
 
         var grant = await domainWriteContext.Grants
-            .OfType<GranularGrant>()
             .Include(g => g.EncryptedReason)
             .FirstOrDefaultAsync(g => g.OrganizationId == organizationId
                                       && g.Id == req.GrantId
-                                      && g.VaultId == req.VaultId, ct);
+                                      && g.VaultId == req.VaultId
+                                      && (g is GranularGrant || g is ScriptExecutionGrant), ct);
         if (grant is null)
         {
             await Send.NotFoundAsync(ct);
@@ -107,16 +114,6 @@ internal sealed class ApproveGrantEndpoint(
             return;
         }
 
-        if (req.GrantEntry.OrganizationId != grant.OrganizationId
-            || req.GrantEntry.VaultId != grant.VaultId
-            || req.GrantEntry.GrantId != grant.Id
-            || req.GrantEntry.EntryId != grant.EntryId)
-        {
-            AddError(r => r.GrantEntry, "Crypto material does not match the granted entry.");
-            await Send.ErrorsAsync(cancellation: ct);
-            return;
-        }
-
         var currentAgent = await domainWriteContext.Agents
             .Where(agent => agent.OrganizationId == grant.OrganizationId
                             && agent.Id == grant.AgentId
@@ -129,29 +126,59 @@ internal sealed class ApproveGrantEndpoint(
             return;
         }
 
+        if (grant is ScriptExecutionGrant scriptExecutionGrant)
+        {
+            await ApproveScriptExecutionAsync(
+                req,
+                scriptExecutionGrant,
+                currentAgent,
+                lockedVault,
+                userId,
+                organizationId,
+                ct);
+            return;
+        }
+
+        var granularGrant = (GranularGrant)grant;
+        var grantEntry = req.GrantEntry!;
+        if (grantEntry.OrganizationId != granularGrant.OrganizationId
+            || grantEntry.VaultId != granularGrant.VaultId
+            || grantEntry.GrantId != granularGrant.Id
+            || grantEntry.EntryId != granularGrant.EntryId)
+        {
+            AddError(r => r.GrantEntry, "Crypto material does not match the granted entry.");
+            await Send.ErrorsAsync(cancellation: ct);
+            return;
+        }
+
         // Coverage invariant: refuse to activate if the agent already has active coverage of this entry
         // through another grant (active GRANULAR on the entry, or active FULL on the vault) — 409.
         if (await domainReadContext.HasActiveEntryCoverageAsync(
-                grant.AgentId, grant.AgentAccessEpoch, grant.VaultId, grant.EntryId, excludingGrantId: grant.Id, ct))
+                granularGrant.AgentId,
+                granularGrant.AgentAccessEpoch,
+                granularGrant.VaultId,
+                granularGrant.EntryId,
+                excludingGrantId: granularGrant.Id,
+                ct))
         {
             throw new AgentAlreadyHasActiveAccessException("entry");
         }
 
         var lockedEntry = await domainWriteContext.Entries.SingleOrDefaultAsync(
-            x => x.OrganizationId == grant.OrganizationId
-                 && x.VaultId == grant.VaultId
-                 && x.Id == grant.EntryId,
+            x => x.OrganizationId == granularGrant.OrganizationId
+                 && x.VaultId == granularGrant.VaultId
+                 && x.Id == granularGrant.EntryId,
             ct);
-        var finalMethods = req.Methods ?? grant.Methods;
+        var finalMethods = req.Methods ?? granularGrant.Methods;
         if (lockedEntry is null
             || lockedEntry.State != EntryState.Active
-            || req.GrantEntry.EntryRevision != lockedEntry.CurrentRevision.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            || req.GrantEntry.GrantEnvelopeRevision != "1"
-            || req.GrantEntry.GrantKeyVersion != 1
-            || req.GrantEntry.MemberKeyGeneration != lockedVault.MemberKeyGeneration.Value
-            || req.GrantEntry.RecipientAgentKeyVersion != currentAgent.RecipientKeyVersion
-            || req.GrantEntry.ExpiresAt != req.ExpiresAt
-            || req.GrantEntry.RemainingUses != req.QueryLimit)
+            || grantEntry.EntryRevision != lockedEntry.CurrentRevision.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            || grantEntry.GrantEnvelopeRevision != "1"
+            || grantEntry.GrantKeyVersion != 1
+            || grantEntry.MemberKeyGeneration != lockedVault.MemberKeyGeneration.Value
+            || grantEntry.RecipientAgentKeyVersion != currentAgent.RecipientKeyVersion
+            || grantEntry.ExpiresAt != req.ExpiresAt
+            || grantEntry.RemainingUses != req.QueryLimit)
         {
             AddError(r => r.GrantEntry, "Grant envelope revision or lifetime is stale.");
             await Send.ErrorsAsync(409, ct);
@@ -161,7 +188,7 @@ internal sealed class ApproveGrantEndpoint(
         GrantEntryScope scope;
         try
         {
-            scope = GrantEnvelopeContractMapper.ToDomain(req.GrantEntry, finalMethods, grant.AgentId);
+            scope = GrantEnvelopeContractMapper.ToDomain(grantEntry, finalMethods, granularGrant.AgentId);
             var expectedFingerprint = VaultKeyFingerprint.Compute(
                 Convert.FromBase64String(currentAgent.PublicKey), VaultKeyKind.AgentX25519);
             if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(expectedFingerprint))
@@ -177,10 +204,14 @@ internal sealed class ApproveGrantEndpoint(
         }
 
         var names = await domainReadContext.ResolveAsync(
-            grant.AgentId, grant.EntryId, grant.VaultId, userId, ct);
+            granularGrant.AgentId,
+            granularGrant.EntryId,
+            granularGrant.VaultId,
+            userId,
+            ct);
         var expirySource = ExpirySource.From(req.ExpiresAt, req.QueryLimit);
         var now = clock.GetCurrentInstant();
-        grant.Approve(
+        granularGrant.Approve(
             userId,
             names,
             scope,
@@ -190,6 +221,129 @@ internal sealed class ApproveGrantEndpoint(
             req.Methods,
             now);
 
+        currentAgent.FenceAccessMutation();
+        lockedVault.FenceAccessMutation(userId, now);
+        await domainWriteContext.CommitAsync(ct);
+
+        await Send.NoContentAsync(ct);
+    }
+
+    private async Task ApproveScriptExecutionAsync(
+        ApproveGrantRequest req,
+        ScriptExecutionGrant grant,
+        Agent currentAgent,
+        Palladin.Module.Vault.Domain.Vault lockedVault,
+        Guid userId,
+        Guid organizationId,
+        CancellationToken ct)
+    {
+        var finalMethods = req.Methods ?? grant.Methods;
+        if (req.ScriptPackage is null
+            || req.GrantEntry is not null
+            || finalMethods != GrantMethods.Exec)
+        {
+            AddError(request => request.ScriptPackage,
+                "A ScriptExecution approval requires one complete Script package and Exec only.");
+            await Send.ErrorsAsync(cancellation: ct);
+            return;
+        }
+
+        var hasActiveCoverage = await domainReadContext.Grants.AnyAsync(candidate =>
+            candidate.Id != grant.Id
+            && candidate.AgentId == grant.AgentId
+            && candidate.AgentAccessEpoch == grant.AgentAccessEpoch
+            && candidate.VaultId == grant.VaultId
+            && candidate.Status == GrantStatus.Active
+            && ((candidate is FullGrant
+                 && (candidate.Methods & GrantMethods.Exec) == GrantMethods.Exec
+                 && candidate.AgentWrappedVaultKey != null)
+                || (candidate is ScriptExecutionGrant
+                    && ((ScriptExecutionGrant)candidate).ScriptEntryId == grant.ScriptEntryId
+                    && candidate.ScriptExecutionPackage != null)), ct);
+        if (hasActiveCoverage)
+        {
+            throw new AgentAlreadyHasActiveAccessException("script");
+        }
+
+        var lockedRevisions = new Dictionary<Guid, ulong>();
+        var scriptDeliveryPolicy = GrantDeliveryPolicy.Standard;
+        foreach (var entryId in req.ScriptPackage.Scopes
+                     .Select(scope => scope.EntryId)
+                     .Distinct()
+                     .Order())
+        {
+            var entry = await domainWriteContext.Entries.SingleOrDefaultAsync(
+                candidate => candidate.OrganizationId == organizationId
+                             && candidate.VaultId == grant.VaultId
+                             && candidate.Id == entryId,
+                ct);
+            if (entry is null || entry.State != EntryState.Active)
+            {
+                AddError(request => request.ScriptPackage,
+                    "One or more Script package entries are no longer active.");
+                await Send.ErrorsAsync(409, ct);
+                return;
+            }
+
+            lockedRevisions.Add(entryId, entry.CurrentRevision.Value);
+            if (entryId == grant.ScriptEntryId)
+            {
+                scriptDeliveryPolicy = entry.DeliveryPolicy;
+            }
+        }
+
+        if (scriptDeliveryPolicy != GrantDeliveryPolicy.ExecOnly)
+        {
+            AddError(request => request.ScriptPackage,
+                "Script Entry must use the exec-only delivery policy.");
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+
+        ScriptExecutionPackage package;
+        IReadOnlyList<ScriptExecutionScope> scopes;
+        try
+        {
+            (package, scopes) = ScriptExecutionPackageContractMapper.ToDomain(req.ScriptPackage);
+            ScriptExecutionGrantMaterialValidator.Validate(
+                package,
+                scopes,
+                organizationId,
+                grant.VaultId,
+                grant.Id,
+                grant.AgentId,
+                grant.AgentAccessEpoch,
+                grant.ScriptEntryId,
+                currentAgent.PublicKey,
+                currentAgent.RecipientKeyVersion,
+                lockedRevisions);
+            ScriptExecutionPackageCryptoValidator.ValidateProducer(req.ScriptPackage, lockedVault);
+        }
+        catch (Exception ex) when (ex is FormatException
+                                   or Palladin.Core.Types.Exceptions.DomainException)
+        {
+            AddError(request => request.ScriptPackage,
+                "Script execution package is invalid or stale.");
+            await Send.ErrorsAsync(409, ct);
+            return;
+        }
+
+        var names = await domainReadContext.ResolveAsync(
+            grant.AgentId,
+            grant.ScriptEntryId,
+            grant.VaultId,
+            userId,
+            ct);
+        var now = clock.GetCurrentInstant();
+        grant.Approve(
+            userId,
+            names,
+            package,
+            scopes,
+            req.ExpiresAt,
+            req.QueryLimit,
+            ExpirySource.From(req.ExpiresAt, req.QueryLimit),
+            now);
         currentAgent.FenceAccessMutation();
         lockedVault.FenceAccessMutation(userId, now);
         await domainWriteContext.CommitAsync(ct);

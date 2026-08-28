@@ -173,19 +173,41 @@ internal abstract class Grant : EventEntityBase
         GrantMethods? methods,
         Instant now)
     {
+        EnsurePendingApproval();
+        GrantEntryScopes.Add(scope);
+        CompleteApproval(
+            approvedBy,
+            names,
+            expiresAt,
+            queryLimit,
+            expirySource,
+            methods ?? Methods,
+            now);
+    }
+
+    protected void EnsurePendingApproval()
+    {
         if (Status != GrantStatus.Pending)
         {
             throw new InvalidGrantStateTransitionException(GrantStatusTransition.Approve, Status);
         }
+    }
 
-        GrantEntryScopes.Add(scope);
-
+    protected void CompleteApproval(
+        Guid approvedBy,
+        GrantNames names,
+        Instant? expiresAt,
+        int? queryLimit,
+        string expirySource,
+        GrantMethods methods,
+        Instant now)
+    {
         Status = GrantStatus.Active;
         CreatedBy = approvedBy;
         ExpiresAt = expiresAt;
         QueryLimit = queryLimit;
         ExpirySource = expirySource;
-        Methods = methods ?? Methods;
+        Methods = methods;
         UpdatedAt = now;
         EmitApproved(names);
     }

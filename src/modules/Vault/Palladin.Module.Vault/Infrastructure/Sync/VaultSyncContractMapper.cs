@@ -30,6 +30,74 @@ internal static class VaultSyncContractMapper
         null,
         null);
 
+    internal static bool TryToCurrentMemberEntryHead(
+        VaultEntry entry,
+        VaultEntryKey? entryKey,
+        VaultEntryVersion? entryVersion,
+        CurrentMemberEntrySyncAuthority authority,
+        out CurrentMemberEntrySyncItem item)
+    {
+        item = null!;
+        if (entryKey is null
+            || entryVersion is null
+            || entry.OrganizationId != authority.OrganizationId
+            || entry.VaultId != authority.VaultId
+            || entry.MemberIndexRevision.Value != entry.CurrentRevision.Value
+            || entry.MemberIndexMemberKeyGeneration.Value != authority.MemberKeyGeneration
+            || entryKey.OrganizationId != authority.OrganizationId
+            || entryKey.VaultId != authority.VaultId
+            || entryKey.EntryId != entry.Id
+            || entryKey.KeyVersion != entry.CurrentKeyVersion
+            || entryKey.MemberKeyGeneration.Value != authority.MemberKeyGeneration
+            || entryKey.WrappingKeyVersion.Value != authority.VaultKeyVersion
+            || entryVersion.OrganizationId != authority.OrganizationId
+            || entryVersion.VaultId != authority.VaultId
+            || entryVersion.EntryId != entry.Id
+            || entryVersion.Revision != entry.CurrentRevision
+            || entryVersion.KeyVersion != entry.CurrentKeyVersion
+            || entryVersion.MemberKeyGeneration.Value != authority.MemberKeyGeneration)
+        {
+            return false;
+        }
+
+        var memberIndex = entry.GetMemberIndex();
+        var memberSecret = entryVersion.GetMemberSecret();
+        if (memberIndex.Revision.Value != entry.CurrentRevision.Value
+            || memberIndex.Header.KeyVersion != entry.CurrentKeyVersion.Value
+            || memberIndex.Header.MemberKeyGeneration.Value != authority.MemberKeyGeneration
+            || memberSecret.Revision != entry.CurrentRevision
+            || memberSecret.Header.KeyVersion != entry.CurrentKeyVersion.Value
+            || memberSecret.Header.MemberKeyGeneration.Value != authority.MemberKeyGeneration)
+        {
+            return false;
+        }
+
+        item = new CurrentMemberEntrySyncItem(
+            entry.Id,
+            VaultSyncProtocol.HeadKind,
+            entry.State,
+            entry.UpdatedAt,
+            entry.CurrentRevision.Value.ToString(CultureInfo.InvariantCulture),
+            entry.MemberIndexRevision.Value.ToString(CultureInfo.InvariantCulture),
+            entry.CurrentKeyVersion.Value,
+            VaultEnvelopeContractMapper.ToContract(entryKey),
+            VaultEnvelopeContractMapper.ToContract(memberIndex),
+            VaultEnvelopeContractMapper.ToContract(memberSecret));
+        return true;
+    }
+
+    internal static CurrentMemberEntrySyncItem ToCurrentMemberEntryTombstone(Guid entryId) => new(
+        entryId,
+        VaultSyncProtocol.TombstoneKind,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+
     internal static AgentDiscoverySyncItem ToDiscoveryHead(VaultEntry entry)
     {
         var discovery = entry.GetAgentDiscovery()!;

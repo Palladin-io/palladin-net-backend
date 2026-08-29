@@ -101,6 +101,7 @@ internal static class InfrastructureModule
         services.AddSingleton<IEntryPurgeLedger, S3EntryPurgeLedger>();
         services.AddApplicationStartingHook<ReplayEntryPurgeLedgerApplicationStartingHook>();
         services.AddSingleton<VaultSyncCursorProtector>();
+        services.AddSingleton<CurrentMemberEntrySyncCursorProtector>();
         return services;
     }
 }

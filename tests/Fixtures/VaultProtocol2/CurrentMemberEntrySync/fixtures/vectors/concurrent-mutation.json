@@ -1,0 +1,550 @@
+{
+  "contract": "palladin-current-member-entry-sync-concurrent-mutation-fixture",
+  "fixtureSchemaVersion": 1,
+  "protocolVersion": 2,
+  "syncPolicyVersion": 2,
+  "mutationSequence": "13",
+  "cases": [
+    {
+      "id": "mutation-visible-in-snapshot-winner",
+      "snapshotRequestAuthority": {
+        "authenticatedPrincipalId": "44444444-4444-4444-8444-444444444444",
+        "authenticatedOrganizationId": "11111111-1111-4111-8111-111111111111",
+        "currentOrganizationMembershipGeneration": "7",
+        "routeVaultId": "22222222-2222-4222-8222-222222222222",
+        "currentStructuralMemberId": "44444444-4444-4444-8444-444444444444",
+        "authoritativeMemberKeyGeneration": 4,
+        "authoritativeCurrentVaultKeyVersion": 3,
+        "authoritativeMemberRecipientKeyVersion": 2,
+        "authoritativeMemberRecipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+        "authoritativeOfflinePolicy": "24h",
+        "authoritativeOfflinePolicyVersion": 1,
+        "clientCryptographicAuthority": {
+          "expectedCurrentVaultKeyHex": "7b87efdee655afc73575ef71dd7a8c8fcc7b11c8ca78503c968f97fe516a975d",
+          "source": "synthetic-client-current-vault-key-trust-anchor"
+        },
+        "validationTime": "2026-08-29T08:30:00Z",
+        "authoritativeEntryHeads": [
+          {
+            "entryId": "33333333-3333-4333-8333-333333333333",
+            "kind": "head",
+            "state": "active",
+            "updatedAt": "2026-08-29T08:13:00Z",
+            "currentRevision": "13",
+            "memberIndexRevision": "13",
+            "currentKeyVersion": 5
+          }
+        ]
+      },
+      "deltaRequestAuthority": {
+        "authenticatedPrincipalId": "44444444-4444-4444-8444-444444444444",
+        "authenticatedOrganizationId": "11111111-1111-4111-8111-111111111111",
+        "currentOrganizationMembershipGeneration": "7",
+        "routeVaultId": "22222222-2222-4222-8222-222222222222",
+        "currentStructuralMemberId": "44444444-4444-4444-8444-444444444444",
+        "authoritativeMemberKeyGeneration": 4,
+        "authoritativeCurrentVaultKeyVersion": 3,
+        "authoritativeMemberRecipientKeyVersion": 2,
+        "authoritativeMemberRecipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+        "authoritativeOfflinePolicy": "24h",
+        "authoritativeOfflinePolicyVersion": 1,
+        "clientCryptographicAuthority": {
+          "expectedCurrentVaultKeyHex": "7b87efdee655afc73575ef71dd7a8c8fcc7b11c8ca78503c968f97fe516a975d",
+          "source": "synthetic-client-current-vault-key-trust-anchor"
+        },
+        "validationTime": "2026-08-29T08:30:00Z",
+        "authoritativeCurrentMemberSequence": "13",
+        "authoritativeMinRetainedMemberSequence": "1",
+        "requestAfterSequence": "13",
+        "requestPageSize": 100,
+        "deltaRequestKind": "initial",
+        "authenticatedCursorDeltaUpperBound": null,
+        "authoritativeEntryHeads": []
+      },
+      "snapshotResponse": {
+        "snapshotBaseSequence": "13",
+        "accessContext": {
+          "contextVersion": 1,
+          "principalId": "44444444-4444-4444-8444-444444444444",
+          "organizationId": "11111111-1111-4111-8111-111111111111",
+          "organizationMembershipGeneration": "7",
+          "vaultId": "22222222-2222-4222-8222-222222222222",
+          "memberId": "44444444-4444-4444-8444-444444444444",
+          "memberKeyGeneration": 4,
+          "vaultKeyVersion": 3,
+          "memberRecipientKeyVersion": 2,
+          "memberRecipientKeyFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+          "offlinePolicy": "24h",
+          "offlinePolicyVersion": 1,
+          "issuedAt": "2026-08-29T08:00:00Z",
+          "notAfter": "2026-08-30T08:00:00Z"
+        },
+        "memberVaultKey": {
+          "wrappedVaultKey": {
+            "descriptor": {
+              "protocolVersion": 2,
+              "wrapperSuiteId": "palladin-x25519-sealed-box-v1",
+              "purpose": "memberVaultKey",
+              "scope": {
+                "organizationId": "11111111-1111-4111-8111-111111111111",
+                "vaultId": "22222222-2222-4222-8222-222222222222",
+                "entryId": null,
+                "grantOrRequestId": null,
+                "agentId": null,
+                "memberId": "44444444-4444-4444-8444-444444444444"
+              },
+              "resourceRevision": "3",
+              "wrappedKeyVersion": 3,
+              "memberKeyGeneration": 4,
+              "recipientKeyKind": "memberX25519",
+              "recipientKeyVersion": 2,
+              "recipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+              "parentDescriptorHash": null
+            },
+            "encodedSealedKeyPackage": "8kgeXHbo4IgcFbsvIQcP6mWKYX2jwpTDzOllSh21ckXyLs06yxnlvZWexWkBUd3R1k5kv6D0VvXffzXD-zr2MScQXyXeuEkMkS0uokRA2WvlB-SO38FwFGuIk_QLZ8y_mR2Ay8LsdgyevvQvO4MoQiNGRghg8eYE"
+          }
+        },
+        "items": [
+          {
+            "entryId": "33333333-3333-4333-8333-333333333333",
+            "kind": "head",
+            "state": "active",
+            "updatedAt": "2026-08-29T08:13:00Z",
+            "currentRevision": "13",
+            "memberIndexRevision": "13",
+            "currentKeyVersion": 5,
+            "entryKey": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "entryDekByVaultKey",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "13",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {
+                  "wrappingVaultKeyVersion": 3
+                }
+              },
+              "encodedSuitePayload": "Md21QgyfHJqEmIdEwUFJaS1JKSuqfHKAXarLW_h3nTYReQ-r668Ji1dI245VFMWExHK0IAwafDA2DZJsUywAEKY_wzKUG8vy"
+            },
+            "memberIndex": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "memberIndex",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "13",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {}
+              },
+              "encodedSuitePayload": "9Y6sJOMchA8Yv4mZw6VXVtjD0ZN61Z-towODcjJ_lcBcW7Evzmk3zfmblPyR4GEEp2BQ4RJqtiVi1_DWBgcIwy2Q0kGVMhKZkRHcWW4vaXm6lWG5S8stmilRddttLPhqB_j1or3-Fo_mZxjAHCWRvduLc4l8nLPvlgDrlOIgsGCS0MfWju-ME3fmx0fHc-gQpNOrcc784jEBJm6-CPVQ"
+            },
+            "memberSecret": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "memberSecret",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "13",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {
+                  "operation": "updated"
+                }
+              },
+              "encodedSuitePayload": "WzVfFrmHm4VteaJsgYbWUU0xRbcqXcTdoqOXkC4YNMNHOSLv2xVSF5tJU29R0OQBFEmPjqSUF9VxgI9A_KPp4xO-rg1UbR-RR-0qbkePetUfbVPI80NbYP-pIiS1EjuUYzp4g-xrWlm15CaI1VS28WhDf9SujvFtwDetaMWnvVcyLr5D0J-FbifT7X_fUU1-nc4SltFljsToYhDWVGhukhFgBQM2sLVfHZKXS7VCevXfy3zYIuyfRIS7Jw6Vs-aYJ1klmcccfiXHk6QNtU80L4myxKUYDkNze79bBY8nsjoucKUxIsgTParQowv3NAzJOfGMNhyCU790tfoknJVvcV9N6fgzeGzwId0_O2v-a4vxdDHXUa5qR2qVCi90ofdVaJV5dYz8LzfJ2_0CT_gegTpThaczbC_tZ1JMnOwQx_WgrHQwsVlsVpKhygIZ-DowFjZVBBFZhtwpaZEF6Kfi67ySufiq53hxfSwDD7XuAhMzCBFkGVsmGmSyZN5TSaz3bYs5xzGTXvYM5zOvVlrGcuAbNjLQKnmdg21mjmL0IpR2H3Ia77uYuRXdotREx3Mn-cAfyc94HLjCkpCNNpoAh2o3qiB55PKqo4CL-Y73HqIphbS0uEG92eEpzX6NckLBOTidLaJ70P8c3iS8w8D_36Wr2rN-YDkcLfKcUyi8LCHgtXPK4U0gdztARdrfv0CAtKa7N0iqqdAsKZpgtyYP03Xs-I6DmIYV0DSX18lNLUuoA4Y4U1pvLUAxKPbIRdVu81p0jse4yO_61J8taM8zSZHnGIX1MK4Fcn59sBdW4E8xU7SMINA38Y8WWI89QAaDkm0pKttlCUQyu6O6Z0nSboj8tLzp6_hSaMXsNIKOfOxwb1SFqEqm88tZsvmYnFOmkiVMb9wgqzBUs3zJa2bVj3LrnLBT6F9GGKTk5QL9kJ1AOyiwiAd7jS-33--CES17VIK82480qTvqTJf3B0Q7sISQxjdEtrI4uLNxLf-pjhYavORZkLyyTeBsA9vMYNGR0dVzTnsMj-MVvKVo_rCJeq0hpLHUOJ98RGTOK8kXMRYXH1rCCArO52RXTu4wx6IKeJC9F9XfHUiWOYT7cBCy2G0Tnw1w3og62BVBw6XWGcSxaiLIs3Kn4xIF7Si8OkxJYQJAxDSCCtEAr9FoSqFhoc8e8ks_50imHPve20OKQ_Xmj9WpQDoYY8KlcM29q8BLIDYRJVWw_1mNFVDRBAmz_kkIg0N2VllCPk8bKNgbObjfr4L0YEw8i6Ld_b3BmRX6f44JS52xZA"
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "closingDeltaResponse": {
+        "deltaUpperBound": "13",
+        "appliedThroughSequence": "13",
+        "accessContext": {
+          "contextVersion": 1,
+          "principalId": "44444444-4444-4444-8444-444444444444",
+          "organizationId": "11111111-1111-4111-8111-111111111111",
+          "organizationMembershipGeneration": "7",
+          "vaultId": "22222222-2222-4222-8222-222222222222",
+          "memberId": "44444444-4444-4444-8444-444444444444",
+          "memberKeyGeneration": 4,
+          "vaultKeyVersion": 3,
+          "memberRecipientKeyVersion": 2,
+          "memberRecipientKeyFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+          "offlinePolicy": "24h",
+          "offlinePolicyVersion": 1,
+          "issuedAt": "2026-08-29T08:00:00Z",
+          "notAfter": "2026-08-30T08:00:00Z"
+        },
+        "memberVaultKey": {
+          "wrappedVaultKey": {
+            "descriptor": {
+              "protocolVersion": 2,
+              "wrapperSuiteId": "palladin-x25519-sealed-box-v1",
+              "purpose": "memberVaultKey",
+              "scope": {
+                "organizationId": "11111111-1111-4111-8111-111111111111",
+                "vaultId": "22222222-2222-4222-8222-222222222222",
+                "entryId": null,
+                "grantOrRequestId": null,
+                "agentId": null,
+                "memberId": "44444444-4444-4444-8444-444444444444"
+              },
+              "resourceRevision": "3",
+              "wrappedKeyVersion": 3,
+              "memberKeyGeneration": 4,
+              "recipientKeyKind": "memberX25519",
+              "recipientKeyVersion": 2,
+              "recipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+              "parentDescriptorHash": null
+            },
+            "encodedSealedKeyPackage": "8kgeXHbo4IgcFbsvIQcP6mWKYX2jwpTDzOllSh21ckXyLs06yxnlvZWexWkBUd3R1k5kv6D0VvXffzXD-zr2MScQXyXeuEkMkS0uokRA2WvlB-SO38FwFGuIk_QLZ8y_mR2Ay8LsdgyevvQvO4MoQiNGRghg8eYE"
+          }
+        },
+        "items": [],
+        "continuationCursor": null
+      },
+      "expectedApplyCount": 1,
+      "expectedFinalRevision": "13"
+    },
+    {
+      "id": "mutation-visible-in-closing-delta",
+      "snapshotRequestAuthority": {
+        "authenticatedPrincipalId": "44444444-4444-4444-8444-444444444444",
+        "authenticatedOrganizationId": "11111111-1111-4111-8111-111111111111",
+        "currentOrganizationMembershipGeneration": "7",
+        "routeVaultId": "22222222-2222-4222-8222-222222222222",
+        "currentStructuralMemberId": "44444444-4444-4444-8444-444444444444",
+        "authoritativeMemberKeyGeneration": 4,
+        "authoritativeCurrentVaultKeyVersion": 3,
+        "authoritativeMemberRecipientKeyVersion": 2,
+        "authoritativeMemberRecipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+        "authoritativeOfflinePolicy": "24h",
+        "authoritativeOfflinePolicyVersion": 1,
+        "clientCryptographicAuthority": {
+          "expectedCurrentVaultKeyHex": "7b87efdee655afc73575ef71dd7a8c8fcc7b11c8ca78503c968f97fe516a975d",
+          "source": "synthetic-client-current-vault-key-trust-anchor"
+        },
+        "validationTime": "2026-08-29T08:30:00Z",
+        "authoritativeEntryHeads": [
+          {
+            "entryId": "33333333-3333-4333-8333-333333333333",
+            "kind": "head",
+            "state": "active",
+            "updatedAt": "2026-08-29T08:12:00Z",
+            "currentRevision": "12",
+            "memberIndexRevision": "12",
+            "currentKeyVersion": 5
+          }
+        ]
+      },
+      "deltaRequestAuthority": {
+        "authenticatedPrincipalId": "44444444-4444-4444-8444-444444444444",
+        "authenticatedOrganizationId": "11111111-1111-4111-8111-111111111111",
+        "currentOrganizationMembershipGeneration": "7",
+        "routeVaultId": "22222222-2222-4222-8222-222222222222",
+        "currentStructuralMemberId": "44444444-4444-4444-8444-444444444444",
+        "authoritativeMemberKeyGeneration": 4,
+        "authoritativeCurrentVaultKeyVersion": 3,
+        "authoritativeMemberRecipientKeyVersion": 2,
+        "authoritativeMemberRecipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+        "authoritativeOfflinePolicy": "24h",
+        "authoritativeOfflinePolicyVersion": 1,
+        "clientCryptographicAuthority": {
+          "expectedCurrentVaultKeyHex": "7b87efdee655afc73575ef71dd7a8c8fcc7b11c8ca78503c968f97fe516a975d",
+          "source": "synthetic-client-current-vault-key-trust-anchor"
+        },
+        "validationTime": "2026-08-29T08:30:00Z",
+        "authoritativeCurrentMemberSequence": "13",
+        "authoritativeMinRetainedMemberSequence": "1",
+        "requestAfterSequence": "12",
+        "requestPageSize": 100,
+        "deltaRequestKind": "initial",
+        "authenticatedCursorDeltaUpperBound": null,
+        "authoritativeEntryHeads": [
+          {
+            "entryId": "33333333-3333-4333-8333-333333333333",
+            "kind": "head",
+            "state": "active",
+            "updatedAt": "2026-08-29T08:13:00Z",
+            "currentRevision": "13",
+            "memberIndexRevision": "13",
+            "currentKeyVersion": 5
+          }
+        ]
+      },
+      "snapshotResponse": {
+        "snapshotBaseSequence": "12",
+        "accessContext": {
+          "contextVersion": 1,
+          "principalId": "44444444-4444-4444-8444-444444444444",
+          "organizationId": "11111111-1111-4111-8111-111111111111",
+          "organizationMembershipGeneration": "7",
+          "vaultId": "22222222-2222-4222-8222-222222222222",
+          "memberId": "44444444-4444-4444-8444-444444444444",
+          "memberKeyGeneration": 4,
+          "vaultKeyVersion": 3,
+          "memberRecipientKeyVersion": 2,
+          "memberRecipientKeyFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+          "offlinePolicy": "24h",
+          "offlinePolicyVersion": 1,
+          "issuedAt": "2026-08-29T08:00:00Z",
+          "notAfter": "2026-08-30T08:00:00Z"
+        },
+        "memberVaultKey": {
+          "wrappedVaultKey": {
+            "descriptor": {
+              "protocolVersion": 2,
+              "wrapperSuiteId": "palladin-x25519-sealed-box-v1",
+              "purpose": "memberVaultKey",
+              "scope": {
+                "organizationId": "11111111-1111-4111-8111-111111111111",
+                "vaultId": "22222222-2222-4222-8222-222222222222",
+                "entryId": null,
+                "grantOrRequestId": null,
+                "agentId": null,
+                "memberId": "44444444-4444-4444-8444-444444444444"
+              },
+              "resourceRevision": "3",
+              "wrappedKeyVersion": 3,
+              "memberKeyGeneration": 4,
+              "recipientKeyKind": "memberX25519",
+              "recipientKeyVersion": 2,
+              "recipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+              "parentDescriptorHash": null
+            },
+            "encodedSealedKeyPackage": "8kgeXHbo4IgcFbsvIQcP6mWKYX2jwpTDzOllSh21ckXyLs06yxnlvZWexWkBUd3R1k5kv6D0VvXffzXD-zr2MScQXyXeuEkMkS0uokRA2WvlB-SO38FwFGuIk_QLZ8y_mR2Ay8LsdgyevvQvO4MoQiNGRghg8eYE"
+          }
+        },
+        "items": [
+          {
+            "entryId": "33333333-3333-4333-8333-333333333333",
+            "kind": "head",
+            "state": "active",
+            "updatedAt": "2026-08-29T08:12:00Z",
+            "currentRevision": "12",
+            "memberIndexRevision": "12",
+            "currentKeyVersion": 5,
+            "entryKey": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "entryDekByVaultKey",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "12",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {
+                  "wrappingVaultKeyVersion": 3
+                }
+              },
+              "encodedSuitePayload": "PRGY0MsnxCBFRlYhwSooMWHr36axPVnW08Q30632uGTnMKVmSYvP7xKgdzbMclGyBiEdl9PQVQRrSqng4C-Fb1rgepTKXJVI"
+            },
+            "memberIndex": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "memberIndex",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "12",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {}
+              },
+              "encodedSuitePayload": "S0R1vFzrfqKsUakgl7nHQS3b2M01OJfyHhE1keFVVdYn0zxhknO-ytxOFbVc_DzgMGRgJhN-z9JWrHcMKv7005vP1DowIXICRcYq0B6EvpwO8T6PaS2kW0UtkjVOj854c7lpgF8xIXgAKz78i5e_3gUmzEMqcMxFo3eiYxSh-QvWIzwD7MrCBRPw1hSAEuVkpb_0qFw4HW_HBaZx0kNp"
+            },
+            "memberSecret": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "memberSecret",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "12",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {
+                  "operation": "updated"
+                }
+              },
+              "encodedSuitePayload": "ZfxYVXfrphulYRt9mnoJc7XqB7U8Vvwlee-8FDoMy5_nNvTHTKYO2ybck0lNz0W_rb1-4ZwTeIJ4XpyEWWDwdWqhKQDpma82PDLr8m1ynhHLJWYy3XlecHJuZE-KvaWqEkMFiGBK4EzW6NgshJwRSGDupz3ViFvKVJS8GxtAycj-lRWUEOOiyWv5wPaLbAWSGLT2CE2VKzg5xc4hTfJ21oruh3AwiNPLQRqFp1VgszrUL_P7_lyoirX2vzP1BHIy_DpTkP9ut8mflFASD0nqfDlj3CAtaVnfwHTRduVlRSIjTULGzEM5b6YBANPc3THmMLlwPgTdkwU9zP_LEHIoZ45DJAAHvDfGBwcNDc5GfqMC55UlZ8OAbWtXhZhSnCvB3AtPqZgcqP9_LLJTYjnuswNI4kDxyp4ljMtvYj1jjNlQ46u0Cu98uN4hJtmd0PbrdBQUAjXspleIyjawYH8hZNSwez3P59mvBgzrpXYBGkiKPwis4x4aE0NDeEdj4SAYbuvkxiMC0SvT0Iuskrku7AMFyheKtqpI1YbU6epta2pcljBgBVhfO02ffdvkEHIMEprYbLOpcIGUeM2S8WKaQsvux2N_i6gBvKJCZi6eYSC77sMTiwEi7k-RjqmccnNub6tNIMWt78gfoqXjhFt0D2NvIV9MMVJP19MOsXDAQLn0fGJN4r2cQ5WOcVELMClEdqteenpPh9bLG2jTOVR7Fd_R7pTorseb5Zmt7g4VVNngEUuVHdpiUBlVpOrUuT0XOkiSQ6xjo--xuzdkXgiWTxJAxvGm3KIg5HpSSl8yZA7zoQLLj6Aah7EwOFX8hHlOChI7sSGSLrkGVuLdgPT9Qv4VgFmvTobf0whb_zisZj4_7wBEShWAIz-T6RyKNE4n0SYzl4_gBfUVMIxgh0veO2hzaZIyYyRHP0IQmuURwxQxZF5LXz_k-PlwXEw7Vl8scK2V9KaPhIVq8pXABHREeKsIh_o9KCNY0nJZTaSTeb0H1ZGoF57IDaagTwPPnuaiXIKFRtHHfzYCCpfJbRSlKYXAidMz46g6Eqjl78xAaONwwE1pAUBCq5veDi_BhNBS65ekiz4cY4WI9H_Ts0ir8DMccd4jEag2duh-D5O_L4hsuq5Kdo8huShL3D9vCvV6c4VbWYKXxM5Nkn7t0p1XVrVurRFamR8VJ0ajd2r3ETCv17Dbshb4rpavp5lor8L39tL2cFb-CgtCYZwsQ2IuDvmHD0aXOlj67v1CnfLsDDGgyCCSzt7dVdjijRh8BuDJlonoZ3CP3w"
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "closingDeltaResponse": {
+        "deltaUpperBound": "13",
+        "appliedThroughSequence": "13",
+        "accessContext": {
+          "contextVersion": 1,
+          "principalId": "44444444-4444-4444-8444-444444444444",
+          "organizationId": "11111111-1111-4111-8111-111111111111",
+          "organizationMembershipGeneration": "7",
+          "vaultId": "22222222-2222-4222-8222-222222222222",
+          "memberId": "44444444-4444-4444-8444-444444444444",
+          "memberKeyGeneration": 4,
+          "vaultKeyVersion": 3,
+          "memberRecipientKeyVersion": 2,
+          "memberRecipientKeyFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+          "offlinePolicy": "24h",
+          "offlinePolicyVersion": 1,
+          "issuedAt": "2026-08-29T08:00:00Z",
+          "notAfter": "2026-08-30T08:00:00Z"
+        },
+        "memberVaultKey": {
+          "wrappedVaultKey": {
+            "descriptor": {
+              "protocolVersion": 2,
+              "wrapperSuiteId": "palladin-x25519-sealed-box-v1",
+              "purpose": "memberVaultKey",
+              "scope": {
+                "organizationId": "11111111-1111-4111-8111-111111111111",
+                "vaultId": "22222222-2222-4222-8222-222222222222",
+                "entryId": null,
+                "grantOrRequestId": null,
+                "agentId": null,
+                "memberId": "44444444-4444-4444-8444-444444444444"
+              },
+              "resourceRevision": "3",
+              "wrappedKeyVersion": 3,
+              "memberKeyGeneration": 4,
+              "recipientKeyKind": "memberX25519",
+              "recipientKeyVersion": 2,
+              "recipientFingerprint": "kMtix1fwHouJJYm3dfCyTe28XAG7lT3aYS18rqPZKBM",
+              "parentDescriptorHash": null
+            },
+            "encodedSealedKeyPackage": "8kgeXHbo4IgcFbsvIQcP6mWKYX2jwpTDzOllSh21ckXyLs06yxnlvZWexWkBUd3R1k5kv6D0VvXffzXD-zr2MScQXyXeuEkMkS0uokRA2WvlB-SO38FwFGuIk_QLZ8y_mR2Ay8LsdgyevvQvO4MoQiNGRghg8eYE"
+          }
+        },
+        "items": [
+          {
+            "entryId": "33333333-3333-4333-8333-333333333333",
+            "kind": "head",
+            "state": "active",
+            "updatedAt": "2026-08-29T08:13:00Z",
+            "currentRevision": "13",
+            "memberIndexRevision": "13",
+            "currentKeyVersion": 5,
+            "entryKey": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "entryDekByVaultKey",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "13",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {
+                  "wrappingVaultKeyVersion": 3
+                }
+              },
+              "encodedSuitePayload": "Md21QgyfHJqEmIdEwUFJaS1JKSuqfHKAXarLW_h3nTYReQ-r668Ji1dI245VFMWExHK0IAwafDA2DZJsUywAEKY_wzKUG8vy"
+            },
+            "memberIndex": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "memberIndex",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "13",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {}
+              },
+              "encodedSuitePayload": "9Y6sJOMchA8Yv4mZw6VXVtjD0ZN61Z-towODcjJ_lcBcW7Evzmk3zfmblPyR4GEEp2BQ4RJqtiVi1_DWBgcIwy2Q0kGVMhKZkRHcWW4vaXm6lWG5S8stmilRddttLPhqB_j1or3-Fo_mZxjAHCWRvduLc4l8nLPvlgDrlOIgsGCS0MfWju-ME3fmx0fHc-gQpNOrcc784jEBJm6-CPVQ"
+            },
+            "memberSecret": {
+              "descriptor": {
+                "protocolVersion": 2,
+                "cryptoSuiteId": "palladin-vault-xchacha-v1",
+                "purpose": "memberSecret",
+                "scope": {
+                  "organizationId": "11111111-1111-4111-8111-111111111111",
+                  "vaultId": "22222222-2222-4222-8222-222222222222",
+                  "entryId": "33333333-3333-4333-8333-333333333333",
+                  "grantOrRequestId": null,
+                  "agentId": null,
+                  "memberId": null
+                },
+                "resourceRevision": "13",
+                "keyVersion": 5,
+                "memberKeyGeneration": 4,
+                "binding": {
+                  "operation": "updated"
+                }
+              },
+              "encodedSuitePayload": "WzVfFrmHm4VteaJsgYbWUU0xRbcqXcTdoqOXkC4YNMNHOSLv2xVSF5tJU29R0OQBFEmPjqSUF9VxgI9A_KPp4xO-rg1UbR-RR-0qbkePetUfbVPI80NbYP-pIiS1EjuUYzp4g-xrWlm15CaI1VS28WhDf9SujvFtwDetaMWnvVcyLr5D0J-FbifT7X_fUU1-nc4SltFljsToYhDWVGhukhFgBQM2sLVfHZKXS7VCevXfy3zYIuyfRIS7Jw6Vs-aYJ1klmcccfiXHk6QNtU80L4myxKUYDkNze79bBY8nsjoucKUxIsgTParQowv3NAzJOfGMNhyCU790tfoknJVvcV9N6fgzeGzwId0_O2v-a4vxdDHXUa5qR2qVCi90ofdVaJV5dYz8LzfJ2_0CT_gegTpThaczbC_tZ1JMnOwQx_WgrHQwsVlsVpKhygIZ-DowFjZVBBFZhtwpaZEF6Kfi67ySufiq53hxfSwDD7XuAhMzCBFkGVsmGmSyZN5TSaz3bYs5xzGTXvYM5zOvVlrGcuAbNjLQKnmdg21mjmL0IpR2H3Ia77uYuRXdotREx3Mn-cAfyc94HLjCkpCNNpoAh2o3qiB55PKqo4CL-Y73HqIphbS0uEG92eEpzX6NckLBOTidLaJ70P8c3iS8w8D_36Wr2rN-YDkcLfKcUyi8LCHgtXPK4U0gdztARdrfv0CAtKa7N0iqqdAsKZpgtyYP03Xs-I6DmIYV0DSX18lNLUuoA4Y4U1pvLUAxKPbIRdVu81p0jse4yO_61J8taM8zSZHnGIX1MK4Fcn59sBdW4E8xU7SMINA38Y8WWI89QAaDkm0pKttlCUQyu6O6Z0nSboj8tLzp6_hSaMXsNIKOfOxwb1SFqEqm88tZsvmYnFOmkiVMb9wgqzBUs3zJa2bVj3LrnLBT6F9GGKTk5QL9kJ1AOyiwiAd7jS-33--CES17VIK82480qTvqTJf3B0Q7sISQxjdEtrI4uLNxLf-pjhYavORZkLyyTeBsA9vMYNGR0dVzTnsMj-MVvKVo_rCJeq0hpLHUOJ98RGTOK8kXMRYXH1rCCArO52RXTu4wx6IKeJC9F9XfHUiWOYT7cBCy2G0Tnw1w3og62BVBw6XWGcSxaiLIs3Kn4xIF7Si8OkxJYQJAxDSCCtEAr9FoSqFhoc8e8ks_50imHPve20OKQ_Xmj9WpQDoYY8KlcM29q8BLIDYRJVWw_1mNFVDRBAmz_kkIg0N2VllCPk8bKNgbObjfr4L0YEw8i6Ld_b3BmRX6f44JS52xZA"
+            }
+          }
+        ],
+        "continuationCursor": null
+      },
+      "expectedApplyCount": 1,
+      "expectedFinalRevision": "13"
+    }
+  ],
+  "forbidden": [
+    "missing-revision-13",
+    "active-revision-12-and-13-at-once",
+    "cursor-before-incomplete-page-commit"
+  ]
+}

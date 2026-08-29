@@ -355,7 +355,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
             entryIds[0],
             user.Id,
             baseRevision: 2,
-            memberIndexRevision: 2,
+            memberIndexRevision: 3,
             agentDiscoveryRevision: 2,
             newKeyVersion: 2,
             seed: 128);
@@ -399,7 +399,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         delta.Items[0].EntryId.ShouldBe(entryIds[0]);
         delta.Items[0].CurrentRevision.ShouldBe("3");
         delta.Items[0].UpdatedAt.ShouldBe(deltaUpdatedAt);
-        delta.Items[0].MemberIndexRevision.ShouldBe("2");
+        delta.Items[0].MemberIndexRevision.ShouldBe("3");
         delta.Items[0].CurrentKeyVersion.ShouldBe(2u);
         var currentEntryKey = delta.Items[0].EntryKey.ShouldNotBeNull();
         currentEntryKey.EntryId.ShouldBe(entryIds[0]);

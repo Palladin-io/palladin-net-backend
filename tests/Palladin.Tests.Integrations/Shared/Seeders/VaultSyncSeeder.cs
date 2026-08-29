@@ -104,7 +104,7 @@ internal static class VaultSyncSeeder
             vault.CurrentVdkVersion,
             request.NewEntryKey is null ? null : VaultEnvelopeContractMapper.ToDomain(request.NewEntryKey),
             VaultEnvelopeContractMapper.ToDomain(request.MemberSecret),
-            request.MemberIndex is null ? null : VaultEnvelopeContractMapper.ToDomain(request.MemberIndex),
+            VaultEnvelopeContractMapper.ToDomain(request.MemberIndex),
             request.AgentDiscoveryChanged,
             request.AgentDiscovery is null ? null : VaultEnvelopeContractMapper.ToDomain(request.AgentDiscovery),
             GrantDeliveryPolicy.Standard,

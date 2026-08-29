@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Options;
 using Palladin.Module.Identity.Shared;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 
 namespace Palladin.Module.Identity.Infrastructure.Jwt;
 
@@ -24,6 +25,7 @@ internal static class JwtModule
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthSessionIssuer, AuthSessionIssuer>();
         services.AddScoped<IOrganizationMembershipValidator, OrganizationMembershipValidator>();
+        services.AddScoped<IOrganizationOfflineAccessAuthority, OrganizationOfflineAccessAuthorityReader>();
 
         return services;
     }

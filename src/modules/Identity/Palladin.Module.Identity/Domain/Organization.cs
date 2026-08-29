@@ -14,6 +14,8 @@ internal sealed class Organization : EventEntityBase
     public int SeatLimit { get; private set; } = 1;
     public Instant CreatedAt { get; private set; }
     internal ulong MembershipVersion { get; private set; }
+    internal OrganizationOfflineAccessPolicy OfflineAccessPolicy { get; private set; }
+    internal uint OfflineAccessPolicyVersion { get; private set; }
 
     // Org-level onboarding milestones — done for every member once anyone reaches them.
     public bool ApiKeyCreated { get; private set; }
@@ -57,6 +59,8 @@ internal sealed class Organization : EventEntityBase
             SeatLimit = 1,
             CreatedAt = now,
             MembershipVersion = 1,
+            OfflineAccessPolicy = OrganizationOfflineAccessPolicy.TwentyFourHours,
+            OfflineAccessPolicyVersion = 1,
         };
 
         organization.AddEvent(new OrganizationCreatedEvent(id, name, createdBy, createdByName, now));
@@ -84,5 +88,27 @@ internal sealed class Organization : EventEntityBase
         }
 
         MembershipVersion++;
+    }
+
+    internal bool SetOfflineAccessPolicy(OrganizationOfflineAccessPolicy policy)
+    {
+        if (!Enum.IsDefined(policy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(policy));
+        }
+
+        if (OfflineAccessPolicy == policy)
+        {
+            return false;
+        }
+
+        if (OfflineAccessPolicyVersion == uint.MaxValue)
+        {
+            throw new InvalidOperationException("Organization offline-access policy version namespace is exhausted.");
+        }
+
+        OfflineAccessPolicy = policy;
+        OfflineAccessPolicyVersion++;
+        return true;
     }
 }

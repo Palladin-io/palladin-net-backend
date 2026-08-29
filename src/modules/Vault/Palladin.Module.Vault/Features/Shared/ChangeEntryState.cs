@@ -25,7 +25,7 @@ public sealed record ChangeEntryStateRequest : IRequiresVaultMembership
     public string BaseRevision { get; init; } = string.Empty;
     public VaultEntryKeyContract? NewEntryKey { get; init; }
     public required MemberSecretEnvelopeContract MemberSecret { get; init; }
-    public MemberIndexEnvelopeContract? MemberIndex { get; init; }
+    public required MemberIndexEnvelopeContract MemberIndex { get; init; }
     public AgentDiscoveryEnvelopeContract? AgentDiscovery { get; init; }
 }
 
@@ -41,6 +41,7 @@ internal sealed class ChangeEntryStateValidator : Validator<ChangeEntryStateRequ
         RuleFor(x => x.EntryId).NotEmpty();
         RuleFor(x => x.BaseRevision).NotEmpty();
         RuleFor(x => x.MemberSecret).NotNull();
+        RuleFor(x => x.MemberIndex).NotNull();
     }
 }
 
@@ -245,14 +246,14 @@ internal sealed class EntryLifecycleService(
         VaultEnvelopeContractMapper.ToEntryRevision(request.BaseRevision),
         request.NewEntryKey is null ? null : VaultEnvelopeContractMapper.ToDomain(request.NewEntryKey),
         VaultEnvelopeContractMapper.ToDomain(request.MemberSecret),
-        request.MemberIndex is null ? null : VaultEnvelopeContractMapper.ToDomain(request.MemberIndex),
+        VaultEnvelopeContractMapper.ToDomain(request.MemberIndex),
         request.AgentDiscovery is null ? null : VaultEnvelopeContractMapper.ToDomain(request.AgentDiscovery));
 
     private sealed record EntryLifecycleTransition(
         EntryRevision BaseRevision,
         VaultEntryKey? NewKey,
         MemberSecretCiphertext MemberSecret,
-        MemberIndexCiphertext? MemberIndex,
+        MemberIndexCiphertext MemberIndex,
         AgentDiscoveryCiphertext? AgentDiscovery);
 }
 

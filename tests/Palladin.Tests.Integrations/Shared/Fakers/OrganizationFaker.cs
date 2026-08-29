@@ -11,5 +11,8 @@ internal static class OrganizationFaker
             .RuleFor(x => x.Id, id ?? Guid.NewGuid())
             .RuleFor(x => x.Name, f => f.Company.CompanyName())
             .RuleFor(x => x.PlanType, PlanType.Basic)
+            .RuleFor(x => x.MembershipVersion, 1UL)
+            .RuleFor(x => x.OfflineAccessPolicy, OrganizationOfflineAccessPolicy.TwentyFourHours)
+            .RuleFor(x => x.OfflineAccessPolicyVersion, 1u)
             .RuleFor(x => x.CreatedAt, SystemClock.Instance.GetCurrentInstant());
 }

@@ -22,7 +22,7 @@ public sealed record UpdateEntryRequest : IRequiresVaultMembership
     public string BaseRevision { get; init; } = string.Empty;
     public VaultEntryKeyContract? NewEntryKey { get; init; }
     public MemberSecretEnvelopeContract MemberSecret { get; init; } = null!;
-    public MemberIndexEnvelopeContract? MemberIndex { get; init; }
+    public required MemberIndexEnvelopeContract MemberIndex { get; init; }
     public bool AgentDiscoveryChanged { get; init; }
     public AgentDiscoveryEnvelopeContract? AgentDiscovery { get; init; }
     public GrantDeliveryPolicy DeliveryPolicy { get; init; } = GrantDeliveryPolicy.Standard;
@@ -43,6 +43,7 @@ internal sealed class UpdateEntryValidator : Validator<UpdateEntryRequest>
         RuleFor(x => x.EntryId).NotEmpty();
         RuleFor(x => x.BaseRevision).NotEmpty();
         RuleFor(x => x.MemberSecret).NotNull();
+        RuleFor(x => x.MemberIndex).NotNull();
         RuleFor(x => x.DeliveryPolicy).Must(x => x.IsValid());
         RuleFor(x => x.AgentDiscovery).Null().When(x => !x.AgentDiscoveryChanged);
         RuleForEach(x => x.GrantEnvelopes).SetValidator(new GrantEntryEnvelopeContractValidator());
@@ -79,9 +80,7 @@ internal sealed class UpdateEntryEndpoint(
         var organizationId = User.GetOrganizationId()!.Value;
         var baseRevision = VaultEnvelopeContractMapper.ToEntryRevision(req.BaseRevision);
         var memberSecret = VaultEnvelopeContractMapper.ToDomain(req.MemberSecret);
-        var memberIndex = req.MemberIndex is null
-            ? null
-            : VaultEnvelopeContractMapper.ToDomain(req.MemberIndex);
+        var memberIndex = VaultEnvelopeContractMapper.ToDomain(req.MemberIndex);
         var agentDiscovery = req.AgentDiscovery is null
             ? null
             : VaultEnvelopeContractMapper.ToDomain(req.AgentDiscovery);

@@ -1,6 +1,7 @@
 using Palladin.Core.Persistence;
 using Palladin.Module.Vault.Domain;
 using Microsoft.EntityFrameworkCore;
+using Palladin.Module.Vault.Infrastructure.Sync;
 
 namespace Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -71,6 +72,23 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
              LIMIT {take}
              """);
     }
+
+    public IQueryable<VaultSyncJournalRow> GetMemberSyncJournalPage(
+        Guid organizationId,
+        Guid vaultId,
+        ulong afterSequence,
+        ulong upperBound,
+        int take) =>
+        readContext.Database.SqlQuery<VaultSyncJournalRow>($"""
+            SELECT "EntryId", "MemberSequence" AS "Sequence"
+            FROM "VaultEntryVersions"
+            WHERE "OrganizationId" = {organizationId}
+              AND "VaultId" = {vaultId}
+              AND "MemberSequence" > {(decimal)afterSequence}
+              AND "MemberSequence" <= {(decimal)upperBound}
+            ORDER BY "MemberSequence"
+            LIMIT {take}
+            """);
 
     public IQueryable<VaultEntryVersion> GetEntryHistoryPage(
         Guid organizationId,

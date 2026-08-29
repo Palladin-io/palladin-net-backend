@@ -81,4 +81,28 @@ internal sealed class VaultEntryVersion
         return Domain.MemberSecretCiphertext.Create(Scope, Revision, Operation, header,
             SuitePayload.Ciphertext(MemberSecretEncodedSuitePayload));
     }
+
+    internal void ApplyRotationReencryption(
+        MemberSecretCiphertext replacement,
+        VaultEntryKey currentKey)
+    {
+        if (replacement.Scope != Scope
+            || replacement.Revision != Revision
+            || replacement.Operation != Operation
+            || replacement.Header.KeyVersion != KeyVersion.Value
+            || currentKey.Scope != Scope
+            || currentKey.KeyVersion != KeyVersion
+            || replacement.Header.MemberKeyGeneration != currentKey.MemberKeyGeneration)
+        {
+            throw new DomainException(
+                "Rotated Member secret must preserve the current head and bind the re-wrapped Entry key.");
+        }
+
+        ProtocolVersion = replacement.Header.ProtocolVersion;
+        CryptoSuiteId = Domain.CryptoSuiteId.XChaCha20Poly1305V1;
+        MemberKeyGeneration = replacement.Header.MemberKeyGeneration;
+        MemberSecretEncodedSuitePayload = SuitePayload.Encode(
+            replacement.Header.Nonce,
+            replacement.Ciphertext);
+    }
 }

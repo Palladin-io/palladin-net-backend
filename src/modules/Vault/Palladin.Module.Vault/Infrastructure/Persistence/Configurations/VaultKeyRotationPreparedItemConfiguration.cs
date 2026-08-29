@@ -20,7 +20,7 @@ internal sealed class VaultKeyRotationPreparedItemConfiguration : IEntityTypeCon
         builder.Property(x => x.Kind).HasConversion<int>();
         builder.Property(x => x.SubjectVersion).HasColumnType("numeric(20,0)");
         builder.Property(x => x.SourceRevision).HasColumnType("numeric(20,0)");
-        builder.Property(x => x.Payload).HasMaxLength(VaultProtocol.MaximumRotationPreparedPayloadBytes);
+        builder.Property(x => x.Payload).HasMaxLength(VaultProtocol.MaximumRotationPreparedEntryHeadPayloadBytes);
         builder.Property(x => x.PayloadDigest).HasMaxLength(32);
         builder.Property(x => x.PreparedAt);
         builder.HasIndex(x => new { x.OrganizationId, x.VaultId, x.RotationId, x.Kind });

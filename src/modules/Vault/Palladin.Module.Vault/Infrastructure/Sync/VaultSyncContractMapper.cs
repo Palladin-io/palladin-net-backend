@@ -43,8 +43,7 @@ internal static class VaultSyncContractMapper
             || entry.OrganizationId != authority.OrganizationId
             || entry.VaultId != authority.VaultId
             || entry.MemberIndexRevision.Value != entry.CurrentRevision.Value
-            || entry.MemberIndexMemberKeyGeneration != entryVersion.MemberKeyGeneration
-            || entry.MemberIndexMemberKeyGeneration.Value > authority.MemberKeyGeneration
+            || entry.MemberIndexMemberKeyGeneration.Value != authority.MemberKeyGeneration
             || entryKey.OrganizationId != authority.OrganizationId
             || entryKey.VaultId != authority.VaultId
             || entryKey.EntryId != entry.Id
@@ -56,7 +55,7 @@ internal static class VaultSyncContractMapper
             || entryVersion.EntryId != entry.Id
             || entryVersion.Revision != entry.CurrentRevision
             || entryVersion.KeyVersion != entry.CurrentKeyVersion
-            || entryVersion.MemberKeyGeneration.Value > authority.MemberKeyGeneration)
+            || entryVersion.MemberKeyGeneration.Value != authority.MemberKeyGeneration)
         {
             return false;
         }
@@ -65,10 +64,10 @@ internal static class VaultSyncContractMapper
         var memberSecret = entryVersion.GetMemberSecret();
         if (memberIndex.Revision.Value != entry.CurrentRevision.Value
             || memberIndex.Header.KeyVersion != entry.CurrentKeyVersion.Value
-            || memberIndex.Header.MemberKeyGeneration != entry.MemberIndexMemberKeyGeneration
+            || memberIndex.Header.MemberKeyGeneration.Value != authority.MemberKeyGeneration
             || memberSecret.Revision != entry.CurrentRevision
             || memberSecret.Header.KeyVersion != entry.CurrentKeyVersion.Value
-            || memberSecret.Header.MemberKeyGeneration != entryVersion.MemberKeyGeneration)
+            || memberSecret.Header.MemberKeyGeneration.Value != authority.MemberKeyGeneration)
         {
             return false;
         }

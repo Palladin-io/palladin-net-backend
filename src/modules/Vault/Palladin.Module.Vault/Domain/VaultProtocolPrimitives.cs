@@ -31,6 +31,7 @@ internal static class VaultProtocol
     internal const int RotationLeaseSeconds = 120;
     internal const int MaximumRotationBatchItems = 100;
     internal const int MaximumRotationPreparedPayloadBytes = 32 * 1024;
+    internal const int MaximumRotationPreparedEntryHeadPayloadBytes = 512 * 1024;
     internal const int MaximumPreparedGrantEnvelopeBytes = 384 * 1024;
 }
 

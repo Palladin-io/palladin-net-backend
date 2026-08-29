@@ -14,6 +14,7 @@ internal enum VaultKeyRotationPreparedItemKind
     VaultKeyMaterial = 6,
     VaultPublicTrustAnchor = 7,
     AgentWrappedVaultKey = 8,
+    EntryMemberHead = 9,
 }
 
 internal sealed class VaultKeyRotationPreparedItem
@@ -40,7 +41,10 @@ internal sealed class VaultKeyRotationPreparedItem
         byte[] payload,
         Instant preparedAt)
     {
-        if (subjectId == Guid.Empty || payload.Length is 0 or > VaultProtocol.MaximumRotationPreparedPayloadBytes)
+        var maximumPayloadBytes = kind == VaultKeyRotationPreparedItemKind.EntryMemberHead
+            ? VaultProtocol.MaximumRotationPreparedEntryHeadPayloadBytes
+            : VaultProtocol.MaximumRotationPreparedPayloadBytes;
+        if (subjectId == Guid.Empty || payload.Length is 0 || payload.Length > maximumPayloadBytes)
         {
             throw new DomainException("Prepared Vault rotation item is invalid.");
         }

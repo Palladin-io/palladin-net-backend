@@ -156,6 +156,12 @@ internal sealed class VaultDomainWriteContext(
                            AND entry_key."VaultId" = item."VaultId"
                            AND entry_key."EntryId" = item."SubjectId"
                            AND entry_key."KeyVersion" = item."SubjectVersion"))
+                 OR (item."Kind" = {(int)VaultKeyRotationPreparedItemKind.EntryMemberHead}
+                     AND (item."SubjectVersion" <> 0 OR NOT EXISTS (
+                         SELECT 1 FROM "VaultEntries" AS entry
+                         WHERE entry."OrganizationId" = item."OrganizationId"
+                           AND entry."VaultId" = item."VaultId"
+                           AND entry."Id" = item."SubjectId")))
                  OR (item."Kind" = {(int)VaultKeyRotationPreparedItemKind.EntryDiscovery}
                      AND (item."SubjectVersion" <> 0 OR NOT EXISTS (
                          SELECT 1 FROM "VaultEntries" AS entry

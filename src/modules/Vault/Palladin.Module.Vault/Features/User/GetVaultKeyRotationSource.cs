@@ -215,6 +215,115 @@ public sealed record VaultKeyRotationEntryKeySourceResponse(
     uint? NextAfterVersion);
 
 [PublicAPI]
+public sealed record VaultKeyRotationEntryMemberHeadSourceRequest : IRequiresVaultMembership
+{
+    public Guid VaultId { get; init; }
+    public Guid RotationId { get; init; }
+    public Guid FencingToken { get; init; }
+    public Guid? AfterId { get; init; }
+    public int PageSize { get; init; } = 10;
+}
+
+[UsedImplicitly]
+internal sealed class VaultKeyRotationEntryMemberHeadSourceValidator
+    : Validator<VaultKeyRotationEntryMemberHeadSourceRequest>
+{
+    public VaultKeyRotationEntryMemberHeadSourceValidator()
+    {
+        RuleFor(x => x.VaultId).NotEmpty();
+        RuleFor(x => x.RotationId).NotEmpty();
+        RuleFor(x => x.FencingToken).NotEmpty();
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 10);
+    }
+}
+
+[PublicAPI]
+public sealed record RotationEntryMemberHeadSourceContract(
+    Guid EntryId,
+    string CurrentRevision,
+    uint CurrentKeyVersion,
+    MemberIndexEnvelopeContract MemberIndex,
+    MemberSecretEnvelopeContract MemberSecret);
+
+[PublicAPI]
+public sealed record VaultKeyRotationEntryMemberHeadSourceResponse(
+    IReadOnlyList<RotationEntryMemberHeadSourceContract> Items,
+    Guid? NextAfterId);
+
+[PublicAPI]
+internal sealed class GetVaultKeyRotationEntryMemberHeadSourceEndpoint(
+    VaultDomainReadContext domainReadContext,
+    IClock clock)
+    : Endpoint<VaultKeyRotationEntryMemberHeadSourceRequest,
+        VaultKeyRotationEntryMemberHeadSourceResponse>
+{
+    public override void Configure()
+    {
+        Get("api/vaults/{vaultId:guid}/key-rotations/{rotationId:guid}/source/entry-member-heads");
+        AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        this.RequirePermission(Permission.VaultManage);
+        this.RequireEmailVerified();
+        this.RequireVaultMembership();
+        Summary(x => x.Description =
+            "Returns a bounded page of complete current Member Entry heads for target-generation reencryption.");
+        Tags("Vault/Key Rotation");
+    }
+
+    public override async Task HandleAsync(
+        VaultKeyRotationEntryMemberHeadSourceRequest req,
+        CancellationToken ct)
+    {
+        var organizationId = User.GetOrganizationId()!.Value;
+        var userId = User.GetUserId()!.Value;
+        await RotationSourceAuthorization.LoadAsync(
+            domainReadContext,
+            organizationId,
+            req.VaultId,
+            req.RotationId,
+            req.FencingToken,
+            userId,
+            clock.GetCurrentInstant(),
+            ct);
+
+        var query = domainReadContext.Entries.Where(x =>
+            x.OrganizationId == organizationId && x.VaultId == req.VaultId);
+        if (req.AfterId is { } after)
+        {
+            query = query.Where(x => x.Id.CompareTo(after) > 0);
+        }
+
+        var entries = await query.OrderBy(x => x.Id).Take(req.PageSize).ToListAsync(ct);
+        var entryIds = entries.Select(x => x.Id).ToArray();
+        var currentVersions = entryIds.Length == 0
+            ? new Dictionary<Guid, VaultEntryVersion>()
+            : await (
+                from version in domainReadContext.EntryVersions
+                join entry in domainReadContext.Entries
+                    on new { version.OrganizationId, version.VaultId, version.EntryId }
+                    equals new { entry.OrganizationId, entry.VaultId, EntryId = entry.Id }
+                where entry.OrganizationId == organizationId
+                      && entry.VaultId == req.VaultId
+                      && entryIds.Contains(entry.Id)
+                      && version.Revision == entry.CurrentRevision
+                select version)
+                .ToDictionaryAsync(x => x.EntryId, ct);
+
+        await Send.OkAsync(new VaultKeyRotationEntryMemberHeadSourceResponse(
+            entries.Select(entry =>
+            {
+                var version = currentVersions[entry.Id];
+                return new RotationEntryMemberHeadSourceContract(
+                    entry.Id,
+                    entry.CurrentRevision.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    entry.CurrentKeyVersion.Value,
+                    VaultEnvelopeContractMapper.ToContract(entry.GetMemberIndex()),
+                    VaultEnvelopeContractMapper.ToContract(version.GetMemberSecret()));
+            }).ToArray(),
+            entries.Count == req.PageSize ? entries[^1].Id : null), ct);
+    }
+}
+
+[PublicAPI]
 internal sealed class GetVaultKeyRotationEntryKeySourceEndpoint(
     VaultDomainReadContext domainReadContext,
     IClock clock) : Endpoint<VaultKeyRotationSourceRequest, VaultKeyRotationEntryKeySourceResponse>
@@ -316,18 +425,36 @@ internal static class RotationSourceAuthorization
         VaultKeyRotationSourceRequest request,
         Guid memberId,
         Instant now,
+        CancellationToken cancellationToken) => await LoadAsync(
+        context,
+        organizationId,
+        request.VaultId,
+        request.RotationId,
+        request.FencingToken,
+        memberId,
+        now,
+        cancellationToken);
+
+    internal static async Task<VaultKeyRotation> LoadAsync(
+        VaultDomainReadContext context,
+        Guid organizationId,
+        Guid vaultId,
+        Guid rotationId,
+        Guid fencingToken,
+        Guid memberId,
+        Instant now,
         CancellationToken cancellationToken)
     {
         var rotation = await context.VaultKeyRotations.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId
-            && x.VaultId == request.VaultId
-            && x.Id == request.RotationId,
+            && x.VaultId == vaultId
+            && x.Id == rotationId,
             cancellationToken);
         if (rotation is null)
         {
-            throw new EntityNotFoundException(typeof(VaultKeyRotation), request.RotationId.ToString());
+            throw new EntityNotFoundException(typeof(VaultKeyRotation), rotationId.ToString());
         }
-        rotation.AssertLease(memberId, request.FencingToken, now);
+        rotation.AssertLease(memberId, fencingToken, now);
         return rotation;
     }
 }

@@ -198,6 +198,8 @@ internal sealed class VaultEntry : EventEntityBase
 
     internal void CommitKeyRotation(
         IReadOnlyCollection<VaultEntryKey> rewrappedKeys,
+        MemberIndexCiphertext? memberIndex,
+        MemberSecretCiphertext? memberSecret,
         AgentDiscoveryCiphertext? discovery,
         bool rewrapEntryKeys,
         bool rotateDiscovery,
@@ -223,6 +225,38 @@ internal sealed class VaultEntry : EventEntityBase
             }
 
             current.ApplyRotationRewrap(replacement);
+        }
+
+        if (rewrapEntryKeys)
+        {
+            if (memberIndex is null || memberSecret is null)
+            {
+                throw new DomainException(
+                    "Vault rotation must re-encrypt the complete current Member head.");
+            }
+
+            var currentKey = Keys.Single(x => x.KeyVersion == CurrentKeyVersion);
+            var currentVersion = Versions.Single(x => x.Revision == CurrentRevision);
+            if (memberIndex.Scope != Scope
+                || memberIndex.Revision.Value != CurrentRevision.Value
+                || memberIndex.Header.KeyVersion != CurrentKeyVersion.Value
+                || memberIndex.Header.MemberKeyGeneration != targetMemberKeyGeneration
+                || memberSecret.Scope != Scope
+                || memberSecret.Revision != CurrentRevision
+                || memberSecret.Header.KeyVersion != CurrentKeyVersion.Value
+                || memberSecret.Header.MemberKeyGeneration != targetMemberKeyGeneration)
+            {
+                throw new DomainException(
+                    "Rotated Member head must preserve the current revision and bind the target generation.");
+            }
+
+            currentVersion.ApplyRotationReencryption(memberSecret, currentKey);
+            SetMemberIndex(memberIndex);
+        }
+        else if (memberIndex is not null || memberSecret is not null)
+        {
+            throw new DomainException(
+                "Member head re-encryption is allowed only for a Vault-key generation change.");
         }
 
         if (rotateDiscovery && (AgentDiscoveryRevision is not null) != (discovery is not null))

@@ -20,6 +20,13 @@ Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/pa
 - Compare the implementation and tests with every requirement stated in the PR and the applicable module README. Flag missing behavior, an unhandled business branch or a test suite that cannot prove an acceptance criterion. Do not invent requirements that are absent from the available context.
   Safe path: keep the PR description self-contained, map each acceptance criterion to code and focused tests, and call out unavailable product context instead of assuming it.
 
+### First-party contract authority
+
+- The backend is authoritative for server-owned domain state, lifecycle relationships and business invariants. Validate them on every relevant mutation and authorization path; never rely on a web, mobile, extension or Agent client to enforce them.
+- Do not require first-party clients to duplicate backend business invariants as runtime response validation. Contract drift must be caught before release with provider/consumer contract tests, integration tests covering every legitimate response variant, shared protocol fixtures or generated contracts, and CI.
+- When adding or changing a response, include legitimate boundary states such as pending/inactive lifecycle values in contract coverage. A valid item must not make a client reject an entire list merely because the client guessed a stricter invariant.
+- This authority does not replace zero-knowledge verification. Responses must expose the explicit authoritative scope fields clients need to verify signatures, commitments and cryptographic bindings independently; never ask a client to trust a wrapper's own claimed organization, Vault, principal, grant, key version or epoch.
+
 ### Simplicity
 
 - Flag material accidental complexity: a new abstraction, configuration surface, subsystem or chain of indirection that has no current requirement or concrete second use and makes the change harder to reason about.

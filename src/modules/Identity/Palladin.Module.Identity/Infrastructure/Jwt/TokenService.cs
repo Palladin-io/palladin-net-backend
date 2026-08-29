@@ -26,8 +26,20 @@ internal sealed class TokenService(
         Permission permissions,
         PlanType plan,
         uint authorizationVersion,
+        OrganizationOfflineAccessPolicy offlineAccessPolicy,
+        uint offlineAccessPolicyVersion,
         Instant? expiresAtCap = null)
     {
+        if (!Enum.IsDefined(offlineAccessPolicy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(offlineAccessPolicy));
+        }
+
+        if (offlineAccessPolicyVersion == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offlineAccessPolicyVersion));
+        }
+
         var options = jwtOptions.Value;
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.Secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -46,6 +58,12 @@ internal sealed class TokenService(
             new Claim(JwtClaimNames.OrganizationId, organizationId.ToString()),
             new Claim(JwtClaimNames.Permissions, ((int)permissions).ToString()),
             new Claim(JwtClaimNames.AuthorizationVersion, authorizationVersion.ToString()),
+            new Claim(
+                JwtClaimNames.OrganizationOfflineAccessPolicy,
+                ((ushort)offlineAccessPolicy).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new Claim(
+                JwtClaimNames.OrganizationOfflineAccessPolicyVersion,
+                offlineAccessPolicyVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new Claim(JwtClaimNames.Plan, plan.ToString()),
             new Claim(JwtClaimNames.DisplayName, user.DisplayName),
             new Claim(JwtClaimNames.EmailVerified, user.EmailVerified.ToString().ToLowerInvariant()),

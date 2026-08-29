@@ -14,13 +14,24 @@ internal static class IdentityExtensions
     {
         using var scope = apiFactory.Services.CreateScope();
         var tokenService = scope.ServiceProvider.GetRequiredService<ITokenService>();
-        var authorizationVersion = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+        var authority = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
             .OrganizationMembers
             .Where(x => x.OrganizationId == user.OrganizationId && x.UserId == user.Id)
-            .Select(x => x.AuthorizationVersion)
+            .Select(x => new
+            {
+                x.AuthorizationVersion,
+                x.Organization.OfflineAccessPolicy,
+                x.Organization.OfflineAccessPolicyVersion,
+            })
             .Single();
         var accessToken = tokenService.GenerateAccessToken(
-            user, user.OrganizationId, permissions, plan, authorizationVersion);
+            user,
+            user.OrganizationId,
+            permissions,
+            plan,
+            authority.AuthorizationVersion,
+            authority.OfflineAccessPolicy,
+            authority.OfflineAccessPolicyVersion);
 
         var client = apiFactory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -32,12 +43,23 @@ internal static class IdentityExtensions
     {
         using var scope = apiFactory.Services.CreateScope();
         var tokenService = scope.ServiceProvider.GetRequiredService<ITokenService>();
-        var authorizationVersion = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+        var authority = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
             .OrganizationMembers
             .Where(x => x.OrganizationId == user.OrganizationId && x.UserId == user.Id)
-            .Select(x => x.AuthorizationVersion)
+            .Select(x => new
+            {
+                x.AuthorizationVersion,
+                x.Organization.OfflineAccessPolicy,
+                x.Organization.OfflineAccessPolicyVersion,
+            })
             .Single();
         return tokenService.GenerateAccessToken(
-            user, user.OrganizationId, permissions, plan, authorizationVersion);
+            user,
+            user.OrganizationId,
+            permissions,
+            plan,
+            authority.AuthorizationVersion,
+            authority.OfflineAccessPolicy,
+            authority.OfflineAccessPolicyVersion);
     }
 }

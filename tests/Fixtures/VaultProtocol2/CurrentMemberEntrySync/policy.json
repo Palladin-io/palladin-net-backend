@@ -1,0 +1,335 @@
+{
+  "contract": "palladin-vault-v2-current-member-entry-sync-policy",
+  "schemaVersion": 1,
+  "policyVersion": 2,
+  "protocolVersion": 2,
+  "status": "frozen-for-cvt-555",
+  "predecessor": {
+    "path": "../v1/sync-retention-performance-policy.json",
+    "sha256": "fd357f631a5f4ce4b59190324641bfc26365624cdf475a805be0aead33cf9d40",
+    "policyVersion": 1,
+    "requiredInvariant": "secretsAndHistoryLazy remains true and the complete v1 file remains byte-for-byte unchanged"
+  },
+  "audience": {
+    "principalType": "member",
+    "scope": "one authenticated organization and Vault per request",
+    "clients": ["react-web-panel", "flutter-mobile", "browser-extension"],
+    "excluded": ["agent-runtime", "cli", "mcp"],
+    "agentRule": "Agent credential delivery and authorization do not consume this stream or its local cache"
+  },
+  "negotiation": {
+    "requestHeaders": {
+      "X-Palladin-Vault-Protocol": "2",
+      "X-Palladin-Sync-Policy": "2"
+    },
+    "responseHeaders": {
+      "X-Palladin-Vault-Protocol": "2",
+      "X-Palladin-Sync-Policy": "2",
+      "Content-Encoding": "identity"
+    },
+    "snapshot": {
+      "method": "POST",
+      "route": "/api/vaults/{vaultId}/current-entries/sync/snapshot",
+      "requestFields": ["vaultId", "cursor", "pageSize"]
+    },
+    "delta": {
+      "method": "POST",
+      "route": "/api/vaults/{vaultId}/current-entries/sync/delta",
+      "initialRequestFields": ["vaultId", "afterSequence", "pageSize"],
+      "continuationRequestFields": ["vaultId", "continuationCursor", "pageSize"]
+    },
+    "unsupportedHttpStatus": 426,
+    "unsupportedOutcome": "unsupported-protocol",
+    "legacyRoutesRemainSeparate": true,
+    "includeSecretsFlagForbidden": true
+  },
+  "wire": {
+    "encoding": {
+      "propertyNames": "lower-camel-case",
+      "uuid": "canonical-lowercase-rfc4122",
+      "u64": "canonical-decimal-string",
+      "binary": "unpadded-base64url",
+      "instant": "YYYY-MM-DDTHH:mm:ss[.ffffff]Z"
+    },
+    "offlineAccessContext": {
+      "requiredFields": [
+        "contextVersion",
+        "principalId",
+        "organizationId",
+        "organizationMembershipGeneration",
+        "vaultId",
+        "memberId",
+        "memberKeyGeneration",
+        "vaultKeyVersion",
+        "memberRecipientKeyVersion",
+        "memberRecipientKeyFingerprint",
+        "offlinePolicy",
+        "offlinePolicyVersion",
+        "issuedAt",
+        "notAfter"
+      ],
+      "contextVersion": 1,
+      "closedOfflinePolicyValues": ["disabled", "1h", "4h", "24h"],
+      "defaultOfflinePolicy": "24h",
+      "maximumOfflinePolicy": "24h",
+      "leaseDurationSecondsByPolicy": {
+        "disabled": 0,
+        "1h": 3600,
+        "4h": 14400,
+        "24h": 86400
+      },
+      "expiryRule": "notAfter is exactly issuedAt plus the duration selected by the authoritative organization policy; disabled requires notAfter == issuedAt and never authorizes disconnected use",
+      "canonicalInstantRequired": true,
+      "integrity": "the complete context is received over the authenticated member response and committed inside the authenticated local cache transaction; no field can be replaced or locally extended",
+      "principalMemberEqualityRequired": true
+    },
+    "snapshotResponse": {
+      "requiredFields": ["snapshotBaseSequence", "accessContext", "memberVaultKey", "items", "nextCursor"],
+      "nullableFields": ["nextCursor"]
+    },
+    "deltaResponse": {
+      "requiredFields": ["deltaUpperBound", "appliedThroughSequence", "accessContext", "memberVaultKey", "items", "continuationCursor"],
+      "nullableFields": ["continuationCursor"],
+      "appliedThroughSequence": "the highest MemberSequence in the largest fully scanned contiguous journal prefix represented by this page; coalescing may advance over scanned rows only when their newest complete head or tombstone is present",
+      "partialPageRule": "when continuationCursor is non-null, appliedThroughSequence is strictly below deltaUpperBound and the cursor is bound to that exact safe-prefix sequence; it never advances over the first unscanned or omitted candidate",
+      "completePageRule": "continuationCursor is null only after the fixed deltaUpperBound is exhausted, and then appliedThroughSequence equals deltaUpperBound",
+      "independentBoundaryAuthority": "on the initial page deltaUpperBound equals the authoritative Vault.MemberSequence captured after validating request afterSequence against Vault.MinRetainedMemberSequence; continuation pages recover the same upper bound and safe-prefix position from the authenticated cursor"
+    },
+    "headItem": {
+      "kind": "head",
+      "requiredFields": [
+        "entryId",
+        "kind",
+        "state",
+        "updatedAt",
+        "currentRevision",
+        "memberIndexRevision",
+        "currentKeyVersion",
+        "entryKey",
+        "memberIndex",
+        "memberSecret"
+      ],
+      "closedStateValues": ["active", "archived", "deleted"],
+      "completeOnly": true
+    },
+    "tombstoneItem": {
+      "kind": "tombstone",
+      "requiredFields": [
+        "entryId",
+        "kind",
+        "state",
+        "updatedAt",
+        "currentRevision",
+        "memberIndexRevision",
+        "currentKeyVersion",
+        "entryKey",
+        "memberIndex",
+        "memberSecret"
+      ],
+      "fieldsRequiredNull": [
+        "state",
+        "updatedAt",
+        "currentRevision",
+        "memberIndexRevision",
+        "currentKeyVersion",
+        "entryKey",
+        "memberIndex",
+        "memberSecret"
+      ]
+    },
+    "resetResponse": {
+      "httpStatus": 409,
+      "requiredFields": ["outcome", "currentSequence", "minRetainedSequence", "newSnapshotRequired"],
+      "outcome": "resetRequired",
+      "newSnapshotRequired": true
+    },
+    "memberSecretPayload": {
+      "shape": "the complete current MemberSecretPayload frozen by v1/registry.json",
+      "requiredPayloadFields": ["entryType", "memberLabel", "content", "agentVisibilityPolicy"],
+      "optionalPayloadFields": ["description", "agentLabel"],
+      "projectionOrFieldStrippingForbidden": true,
+      "historyExcluded": true,
+      "assetsExcluded": true,
+      "agentDiscoveryExcluded": true,
+      "grantAndDeliveryMaterialExcluded": true
+    },
+    "memberVaultKeyPackage": {
+      "wrapperSuiteId": "palladin-x25519-sealed-box-v1",
+      "decodedSealedPackageBytes": 120,
+      "openedPackageBytes": 72,
+      "openedPackageEncoding": "ASCII(PLDNX2K1)[8] || rawVaultKey[32] || SHA-256(ASCII(PLDNX2CTX) || encodedWrapperContext)[32]",
+      "wrapperContextEncoding": "ASCII(PLDNX2W1) || u16be(protocolVersion) || ascii16(wrapperSuiteId) || u16be(purpose) || u16be(scopeBitmap) || present scoped UUIDs in organization-vault-entry-grantOrRequest-agent-member order || u64be(resourceRevision) || u32be(wrappedKeyVersion) || optional-u32(memberKeyGeneration) || u16be(recipientKeyKind) || u32be(recipientKeyVersion) || recipientFingerprint[32] || optional-bytes32(parentDescriptorHash)",
+      "memberVaultKeyPurpose": 1,
+      "memberVaultKeyScopeBitmap": 35,
+      "memberRecipientKeyKind": 5,
+      "independentValidation": "the expected wrapper descriptor is built from authenticated request/Vault/Member/key state before opening; the context hash inside the package must match that independent descriptor",
+      "openedVaultKeyContinuity": "the opened raw Vault key must match the client-side current Vault-key trust anchor when that generation is already established; first installation additionally requires the exact backend-authoritative current MemberVaultKeyEnvelope bytes, never an envelope reconstructed from its own descriptor"
+    }
+  },
+  "independentAuthority": {
+    "requestAuthority": ["authenticated principalId", "authenticated organizationId", "route vaultId", "current organization membership generation", "initial delta afterSequence and pageSize or authenticated continuation cursor"],
+    "vaultAuthority": ["current memberId", "MemberSequence", "MinRetainedMemberSequence", "memberKeyGeneration", "current vaultKeyVersion", "current MemberVaultKeyEnvelope"],
+    "clientCryptoAuthority": ["current raw Vault key already established in memory for the same generation, when present", "recipient private key used to authenticate and open the exact authoritative wrapper"],
+    "entryHeadAuthority": ["entryId", "state", "updatedAt", "currentRevision", "memberIndexRevision", "currentKeyVersion"],
+    "requiredEqualities": [
+      "accessContext.principalId == authenticated principalId",
+      "accessContext.organizationId == authenticated organizationId",
+      "accessContext.organizationMembershipGeneration == current organization membership generation",
+      "accessContext.vaultId == route vaultId",
+      "accessContext.memberId == current structural Vault member and authenticated principalId",
+      "accessContext.memberKeyGeneration == authoritative Vault memberKeyGeneration",
+      "accessContext.vaultKeyVersion == authoritative current Vault key version",
+      "accessContext.memberRecipientKeyVersion/memberRecipientKeyFingerprint == authoritative current Member X25519 key binding",
+      "accessContext.offlinePolicy/offlinePolicyVersion == authoritative organization policy",
+      "memberVaultKey scope organizationId/vaultId/memberId == request and access context",
+      "memberVaultKey memberKeyGeneration/vaultKeyVersion == access context",
+      "memberVaultKey recipient key version/fingerprint == access context and authoritative current Member X25519 key binding",
+      "memberVaultKey exact envelope bytes == backend-authoritative current MemberVaultKeyEnvelope; opened raw key == existing client-side same-generation Vault-key trust anchor when present",
+      "every head entryId/kind/state/updatedAt/currentRevision/memberIndexRevision/currentKeyVersion == the independently loaded authoritative Entry head",
+      "every Entry envelope scope organizationId/vaultId/entryId == request and authoritative head",
+      "memberSecret resourceRevision == head currentRevision",
+      "memberIndex resourceRevision == head memberIndexRevision",
+      "memberIndexRevision == currentRevision",
+      "entryKey keyVersion == head currentKeyVersion",
+      "memberIndex and memberSecret keyVersion == head currentKeyVersion",
+      "entryKey, memberIndex and memberSecret memberKeyGeneration == access context memberKeyGeneration",
+      "entryKey wrappingVaultKeyVersion == access context vaultKeyVersion",
+      "delta request afterSequence >= authoritative MinRetainedMemberSequence or the response is resetRequired",
+      "initial deltaUpperBound == authoritative Vault.MemberSequence captured for the page; continuation deltaUpperBound == the authenticated cursor boundary",
+      "appliedThroughSequence stays between request/cursor safe-prefix position and deltaUpperBound"
+    ],
+    "forbiddenAuthority": "an expected organization, Vault, principal, Member, Entry, revision, key version, generation, policy or expiry value must never be copied from the same envelope or access context being validated"
+  },
+  "sequenceSemantics": {
+    "counter": "Vault.MemberSequence",
+    "floor": "Vault.MinRetainedMemberSequence",
+    "journalField": "VaultEntryVersion.MemberSequence",
+    "snapshotBase": "Vault current MemberSequence captured before the first page",
+    "snapshotOrder": "entryId raw UUID ascending",
+    "closingDelta": "strictly after snapshotBaseSequence",
+    "concurrentMutation": "visible exactly once in the snapshot winner or closing delta",
+    "deltaUpperBound": "Vault current MemberSequence captured on the first delta page and stable through continuation",
+    "deltaOrder": "MemberSequence ascending",
+    "deltaCoalescing": "newest complete current head or tombstone for every affected Entry in the largest safe contiguous prefix",
+    "appliedThroughSequence": "highest MemberSequence in that fully scanned safe contiguous prefix; below deltaUpperBound while continuation remains and equal to deltaUpperBound only after exhaustion",
+    "continuationCursor": "authenticated cursor bound to the same appliedThroughSequence; a retry resumes strictly after it without skipping the first omitted candidate",
+    "candidateLookaheadDoesNotAdvanceCursor": true,
+    "pageAndCursorCommit": "atomic",
+    "duplicateApply": "idempotent by stream generation and monotonic authoritative projection revisions",
+    "timestampsAreNeverCompletenessCursors": true,
+    "unchangedFromPolicyVersion1ExceptCompleteItemMaterial": true
+  },
+  "pagination": {
+    "defaultItemsOrJournalRows": 100,
+    "maximumItemsOrJournalRows": 200,
+    "operationalResponseBytes": 2097152,
+    "maximumResponseBytes": 4194304,
+    "responseByteMeasurement": "UTF-8 JSON bytes before transport encoding",
+    "completeItemNeverSplit": true,
+    "firstCompleteItemOverOperationalBudget": "size-limit-exceeded-without-cursor-advance",
+    "cursorTtlSeconds": 900,
+    "cursorAuthentication": "server-HMAC",
+    "cursorBinding": [
+      "principalType",
+      "principalId",
+      "organizationId",
+      "organizationMembershipGeneration",
+      "vaultId",
+      "memberId",
+      "memberKeyGeneration",
+      "vaultKeyVersion",
+      "audience",
+      "protocolVersion",
+      "syncPolicyVersion",
+      "offlinePolicyVersion",
+      "sequence boundary",
+      "last safe item or sequence",
+      "expiresAt"
+    ]
+  },
+  "resetAndLifecycle": {
+    "resetCondition": "afterSequence < MinRetainedMemberSequence or an authoritative membership/key/policy generation cannot continue safely",
+    "snapshotRebuild": "new authenticated ciphertext cache namespace followed by one atomic swap after the closing delta",
+    "resetPrecedence": "invalidate and delete the affected active generation before staging a replacement",
+    "tombstonePrecedence": "a newer tombstone cannot be undone by a delayed head or duplicate page",
+    "mutations": {
+      "create": "complete head",
+      "update": "complete head",
+      "import": "one complete head per committed Entry",
+      "archive": "complete non-active head or the existing lifecycle-defined tombstone",
+      "restore": "complete head at the new current revision",
+      "delete": "existing lifecycle-defined non-active head or tombstone",
+      "purge": "tombstone",
+      "agentVisibilityPolicyChange": "complete head with the complete MemberSecret",
+      "entryDekRotation": "complete head at the new key version",
+      "vaultOrMemberRekey": "complete new-generation material or reset",
+      "membershipRemoval": "access denial or reset without ciphertext disclosure"
+    },
+    "mutationResponsesAreNotCacheCommits": true
+  },
+  "offlineAccess": {
+    "leaseRenewalChannel": "snapshot, delta or authoritative repair only",
+    "perUseRenewalForbidden": true,
+    "exactExpiryFailsClosed": true,
+    "maximumClockRollbackSeconds": 300,
+    "alreadyOfflineTightening": "the client retains no authority beyond the earlier notAfter in its last valid context",
+    "connectedRevocation": "policy disablement, access denial, membership removal, tombstone, reset and logout purge the affected material immediately",
+    "leaseExpiry": "clear decrypted memory, delete the affected current ciphertext generation and require authoritative resynchronization",
+    "lock": "clear plaintext and every raw key from memory; an unexpired authenticated ciphertext generation may remain",
+    "logout": "delete the whole local profile, cache, cursors, access context and native AutoFill derivative"
+  },
+  "localStorage": {
+    "allowed": [
+      "authenticated current MemberIndex ciphertext",
+      "authenticated current MemberSecret ciphertext",
+      "authenticated current EntryKey ciphertext",
+      "current encrypted Member key wrappers",
+      "structural heads and binding metadata",
+      "authenticated cursors and finite offline access context",
+      "KDF parameters and encrypted private-key blobs required by the reviewed local unlock path"
+    ],
+    "forbidden": [
+      "master key",
+      "user private key",
+      "Vault key",
+      "EntryDEK",
+      "decrypted MemberIndex",
+      "decrypted Entry plaintext",
+      "TOTP seed outside the selected in-memory operation"
+    ],
+    "mobileNativeException": "a dedicated non-exportable OS-protected cache key requiring user presence may wrap the native ciphertext cache; it is not MK, the user private key, VK or EntryDEK",
+    "maximumQueuedPages": 2,
+    "maximumAdditionalSyncMemoryBytes": 16777216,
+    "maximumProfileCacheBytes": 536870912,
+    "quotaFailure": "reject the new generation without partial activation"
+  },
+  "performance": {
+    "referenceEntries": 10000,
+    "referenceItemBytes": {
+      "memberSecretMaximum": 8192,
+      "memberIndexMaximum": 2048,
+      "entryKeyAndStructuralMaximum": 2048
+    },
+    "maximumInitialRequestsAtDefaultPageIncludingClosingDelta": 101,
+    "maximumReferenceTransferBytes": 138412032,
+    "maximumCommittedCacheBytes": 167772160,
+    "maximumCompletionMsOnReference20MbpsLink": 120000,
+    "perUseHttpRequests": {
+      "reveal": 0,
+      "copy": 0,
+      "totp": 0,
+      "userAutofill": 0
+    },
+    "backendQueryCount": "bounded by page construction and independent of Entry count; no per-Entry or per-projection query",
+    "releaseEvidence": ["cold snapshot", "closing delta", "one-percent delta", "near-256-KiB MemberSecret", "query counter", "HTTP request counter", "peak additional memory"]
+  },
+  "compatibility": {
+    "policyVersion1Path": "/api/vaults/{vaultId}/sync/snapshot and /api/vaults/{vaultId}/sync/delta",
+    "policyVersion1Header": "X-Palladin-Sync-Policy: 1",
+    "policyVersion1ResponseUnchanged": true,
+    "policyVersion1SecretsAndHistoryLazy": true,
+    "policyVersion2IsAdditive": true,
+    "mixedItemMaterialForbidden": true,
+    "temporaryEndpointVariantForbidden": true
+  }
+}

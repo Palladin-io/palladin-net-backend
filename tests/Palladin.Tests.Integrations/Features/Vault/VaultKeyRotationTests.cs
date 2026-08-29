@@ -207,10 +207,15 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                         organization.Id, vault.Id, reference.Id,
                         wrapperRevision: 2, memberKeyGeneration: 2, wrappingKeyVersion: 2, seed: 82),
                 ],
+                EntryMemberHeads =
+                [
+                    CreateRotationEntryMemberHead(organization.Id, vault.Id, script, 91),
+                    CreateRotationEntryMemberHead(organization.Id, vault.Id, reference, 92),
+                ],
             });
 
         batchResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        batch!.AcceptedItems.ShouldBe(9);
+        batch!.AcceptedItems.ShouldBe(11);
         await using (var beforeScope = apiFactory.Services.CreateAsyncScope())
         {
             var before = await beforeScope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
@@ -276,6 +281,103 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_VaultKeyRotationCommits_Then_CurrentEntrySnapshotUsesCompleteTargetGeneration()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var entry = (await SeedEntriesAsync(vault.Id, user.Id, 1)).Single();
+        await SeedMemberDirectoryAsync(user.Id);
+        var rotationClient = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+        var claim = await StartAndClaimAsync(rotationClient, vault.Id);
+        await PrepareRotationAsync(rotationClient, organization.Id, vault, user.Id, [entry], claim);
+        var commitResponse = await rotationClient.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/commit",
+            new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim.Rotation.Id,
+                FencingToken = claim.FencingToken,
+            },
+            TestContext.Current.CancellationToken);
+        commitResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await using (var persistedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var persistedEntry = await persistedScope.ServiceProvider
+                .GetRequiredService<VaultDbReadContext>()
+                .Entries.Include(x => x.Versions)
+                .SingleAsync(x => x.OrganizationId == organization.Id
+                                  && x.VaultId == vault.Id
+                                  && x.Id == entry.Id,
+                    TestContext.Current.CancellationToken);
+            persistedEntry.CurrentRevision.ShouldBe(entry.CurrentRevision);
+            persistedEntry.Versions.Count.ShouldBe(entry.Versions.Count);
+            persistedEntry.Versions.Single(x => x.Revision == persistedEntry.CurrentRevision)
+                .Operation.ShouldBe(entry.Versions.Single(x => x.Revision == entry.CurrentRevision).Operation);
+        }
+
+        var syncClient = apiFactory.CreateAuthenticatedClient(user);
+        syncClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+        syncClient.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "2");
+        var (snapshotResponse, snapshot) = await syncClient.POSTAsync<
+            GetCurrentMemberEntrySnapshotEndpoint,
+            GetCurrentMemberEntrySnapshotRequest,
+            CurrentMemberEntrySnapshotResponse>(new GetCurrentMemberEntrySnapshotRequest { VaultId = vault.Id });
+
+        snapshotResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        snapshot.ShouldNotBeNull();
+        snapshot.AccessContext.MemberKeyGeneration.ShouldBe(2U);
+        var item = snapshot.Items.Single();
+        item.EntryId.ShouldBe(entry.Id);
+        item.EntryKey!.Descriptor.MemberKeyGeneration.ShouldBe(2U);
+        item.MemberIndex!.Descriptor.MemberKeyGeneration.ShouldBe(2U);
+        item.MemberSecret!.Descriptor.MemberKeyGeneration.ShouldBe(2U);
+    }
+
+    [Fact]
+    public async Task When_CurrentMemberHeadIsMissing_Then_CommitReportsEntryAndKeepsCurrentGeneration()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var entry = (await SeedEntriesAsync(vault.Id, user.Id, 1)).Single();
+        await SeedMemberDirectoryAsync(user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+        var claim = await StartAndClaimAsync(client, vault.Id);
+        await PrepareRotationAsync(client, organization.Id, vault, user.Id, [entry], claim);
+        await using (var preparationScope = apiFactory.Services.CreateAsyncScope())
+        {
+            await preparationScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>()
+                .VaultKeyRotationPreparedItems
+                .Where(x => x.OrganizationId == organization.Id
+                            && x.VaultId == vault.Id
+                            && x.RotationId == claim.Rotation.Id
+                            && x.Kind == VaultKeyRotationPreparedItemKind.EntryMemberHead
+                            && x.SubjectId == entry.Id)
+                .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        }
+
+        var response = await client.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/commit",
+            new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim.Rotation.Id,
+                FencingToken = claim.FencingToken,
+            },
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var incomplete = await response.Content.ReadFromJsonAsync<VaultKeyRotationIncompleteResponse>(
+            TestContext.Current.CancellationToken);
+        incomplete!.MissingEntryMemberHeadIds.ShouldContain(entry.Id);
+        await using var persistedScope = apiFactory.Services.CreateAsyncScope();
+        var persistedVault = await persistedScope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
+            .Vaults.SingleAsync(x => x.OrganizationId == organization.Id && x.Id == vault.Id,
+                TestContext.Current.CancellationToken);
+        persistedVault.MemberKeyGeneration.Value.ShouldBe(1U);
+    }
+
+    [Fact]
     public async Task When_DiscoveryChangesAfterPreparation_Then_CommitReportsDirtyAndKeepsCurrentGeneration()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -320,6 +422,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                 VaultManifestSigningPublicKey = VaultContractFaker.CreateManifestSigningPublicKey(),
                 EntryKeys = [EntryEnvelopeFaker.CreateKey(organization.Id, vault.Id, entry.Id,
                     wrapperRevision: 2, memberKeyGeneration: 2, wrappingKeyVersion: 2, seed: 91)],
+                EntryMemberHeads = [CreateRotationEntryMemberHead(
+                    organization.Id, vault.Id, entry, 93)],
                 EntryDiscoveries = [new RotationEntryDiscoveryContract("1",
                     EntryEnvelopeFaker.CreateAgentDiscovery(organization.Id, vault.Id, entry.Id,
                         revision: 1, vdkVersion: 2, memberKeyGeneration: 2, seed: 92))],
@@ -344,6 +448,7 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
 
         commitResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         var incomplete = await commitResponse.Content.ReadFromJsonAsync<VaultKeyRotationIncompleteResponse>();
+        incomplete!.DirtyEntryMemberHeadIds.ShouldContain(entry.Id);
         incomplete!.DirtyEntryDiscoveryIds.ShouldContain(entry.Id);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var persisted = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
@@ -358,6 +463,15 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                 VaultId = vault.Id,
                 RotationId = claim.Rotation.Id,
                 FencingToken = claim.FencingToken,
+                EntryMemberHeads = [new RotationEntryMemberHeadContract(
+                    "2",
+                    EntryEnvelopeFaker.CreateMemberIndex(
+                        organization.Id, vault.Id, entry.Id,
+                        revision: 2, memberKeyGeneration: 2, seed: 111),
+                    EntryEnvelopeFaker.CreateMemberSecret(
+                        organization.Id, vault.Id, entry.Id,
+                        revision: 2, operation: EntryOperation.Updated,
+                        memberKeyGeneration: 2, seed: 111))],
                 EntryDiscoveries = [new RotationEntryDiscoveryContract("2",
                     EntryEnvelopeFaker.CreateAgentDiscovery(organization.Id, vault.Id, entry.Id,
                         revision: 2, vdkVersion: 2, memberKeyGeneration: 2, seed: 112))],
@@ -494,6 +608,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
             EntryKeys = [EntryEnvelopeFaker.CreateKey(
                 organization.Id, vault.Id, entry.Id,
                 wrapperRevision: 2, memberKeyGeneration: 2, wrappingKeyVersion: 2, seed: 81)],
+            EntryMemberHeads = [CreateRotationEntryMemberHead(
+                organization.Id, vault.Id, entry, 91)],
         };
         (await client.PutAsJsonAsync(
             $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/batch", batch)).EnsureSuccessStatusCode();
@@ -522,6 +638,7 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         var items = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
             .VaultKeyRotationPreparedItems.Where(x => x.RotationId == claim.Rotation.Id).ToListAsync();
         items.ShouldNotContain(x => x.Kind == VaultKeyRotationPreparedItemKind.EntryKey);
+        items.ShouldNotContain(x => x.Kind == VaultKeyRotationPreparedItemKind.EntryMemberHead);
     }
 
     [Fact]
@@ -846,6 +963,21 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         second!.Items.Count.ShouldBe(1);
         first.Items.Concat(second.Items).Select(x => (x.EntryId, x.KeyVersion)).Distinct().Count().ShouldBe(3);
 
+        var memberHeads = await client.GetFromJsonAsync<VaultKeyRotationEntryMemberHeadSourceResponse>(
+            $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/source/entry-member-heads?fencingToken={claim.FencingToken}&pageSize=2",
+            PalladinJsonSerializationSettings.DefaultOptions);
+        memberHeads!.Items.Count.ShouldBe(2);
+        memberHeads.NextAfterId.ShouldNotBeNull();
+        memberHeads.Items.ShouldAllBe(x =>
+            x.EntryId == x.MemberIndex.Descriptor.Scope.EntryId
+            && x.EntryId == x.MemberSecret.Descriptor.Scope.EntryId
+            && x.CurrentRevision == x.MemberIndex.Descriptor.ResourceRevision
+            && x.CurrentRevision == x.MemberSecret.Descriptor.ResourceRevision
+            && x.CurrentKeyVersion == x.MemberIndex.Descriptor.KeyVersion
+            && x.CurrentKeyVersion == x.MemberSecret.Descriptor.KeyVersion
+            && x.MemberIndex.Descriptor.MemberKeyGeneration == 1U
+            && x.MemberSecret.Descriptor.MemberKeyGeneration == 1U);
+
         var stale = await client.GetAsync(
             $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/source/entry-keys?fencingToken={Guid.NewGuid()}&pageSize=2");
         stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -874,6 +1006,7 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
     [Theory]
     [InlineData("members")]
     [InlineData("entry-keys")]
+    [InlineData("entry-member-heads")]
     [InlineData("discoveries")]
     public async Task When_RotationSourceDoesNotExist_Then_ReturnsNotFound(string source)
     {
@@ -932,8 +1065,38 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                 EntryKeys = entries.Select((entry, index) => EntryEnvelopeFaker.CreateKey(
                     organizationId, vault.Id, entry.Id,
                     wrapperRevision: 2, memberKeyGeneration: 2, wrappingKeyVersion: 2, seed: 200 + index)).ToArray(),
+                EntryMemberHeads = entries.Select((entry, index) => CreateRotationEntryMemberHead(
+                    organizationId, vault.Id, entry, 300 + index)).ToArray(),
             }, TestContext.Current.CancellationToken);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+    }
+
+    private static RotationEntryMemberHeadContract CreateRotationEntryMemberHead(
+        Guid organizationId,
+        Guid vaultId,
+        VaultEntry entry,
+        int seed)
+    {
+        var currentVersion = entry.Versions.Single(x => x.Revision == entry.CurrentRevision);
+        return new RotationEntryMemberHeadContract(
+            entry.CurrentRevision.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            EntryEnvelopeFaker.CreateMemberIndex(
+                organizationId,
+                vaultId,
+                entry.Id,
+                entry.CurrentRevision.Value,
+                entry.CurrentKeyVersion.Value,
+                memberKeyGeneration: 2,
+                seed: seed),
+            EntryEnvelopeFaker.CreateMemberSecret(
+                organizationId,
+                vaultId,
+                entry.Id,
+                entry.CurrentRevision.Value,
+                currentVersion.Operation,
+                entry.CurrentKeyVersion.Value,
+                memberKeyGeneration: 2,
+                seed: seed));
     }
 
     private async Task<ClaimVaultKeyRotationResponse> StartAndClaimAsync(HttpClient client, Guid vaultId)

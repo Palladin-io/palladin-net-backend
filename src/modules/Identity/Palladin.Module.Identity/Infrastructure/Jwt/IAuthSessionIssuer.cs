@@ -1,6 +1,5 @@
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
-using Palladin.Module.Identity.Contracts.ValueObjects;
 using NodaTime;
 
 namespace Palladin.Module.Identity.Infrastructure.Jwt;
@@ -11,9 +10,8 @@ internal interface IAuthSessionIssuer
     // The caller commits (so it can persist other changes in the same unit of work).
     (string AccessToken, string RefreshToken) Issue(
         User user,
-        Guid organizationId,
+        Organization organization,
         Permission permissions,
-        PlanType plan,
         uint authorizationVersion,
         Instant now);
 }

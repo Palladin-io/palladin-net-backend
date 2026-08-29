@@ -1,5 +1,6 @@
 using System.Net;
 using Palladin.Core.Security;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Features;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
@@ -30,6 +31,8 @@ public sealed class GetOrgTests(ApiFactory apiFactory) : TestBase
         result.MemberCount.ShouldBe(1);
         result.SeatUsage.ShouldBe(1);
         result.SeatLimit.ShouldBe(1);
+        result.OfflineAccessPolicy.ShouldBe(OrganizationOfflineAccessPolicy.TwentyFourHours);
+        result.OfflineAccessPolicyVersion.ShouldBe(1u);
     }
 
     [Fact]

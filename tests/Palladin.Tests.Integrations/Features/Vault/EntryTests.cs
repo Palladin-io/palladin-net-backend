@@ -400,7 +400,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_PrivateOnlyUpdateIsRetried_Then_AppendsExactlyOneImmutableVersion()
+    public async Task When_CurrentHeadUpdateIsRetried_Then_AppendsExactlyOneImmutableVersion()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -427,7 +427,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
         var persisted = await readContext.Entries.SingleAsync(x =>
             x.OrganizationId == organization.Id && x.VaultId == vault.Id && x.Id == entryId);
         persisted.CurrentRevision.Value.ShouldBe(2UL);
-        persisted.MemberIndexRevision.Value.ShouldBe(1UL);
+        persisted.MemberIndexRevision.Value.ShouldBe(2UL);
         persisted.AgentDiscoveryRevision!.Value.Value.ShouldBe(1UL);
         (await readContext.EntryVersions.CountAsync(x => x.OrganizationId == organization.Id
                                                          && x.VaultId == vault.Id
@@ -456,20 +456,24 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
 
         var (firstResponse, _) = await client
             .PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(complete);
-        var incompleteRetries = new[]
+        var conflictingRetries = new[]
         {
             complete with { NewEntryKey = null },
-            complete with { MemberIndex = null },
             complete with { AgentDiscoveryChanged = false, AgentDiscovery = null },
         };
 
         firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        foreach (var incompleteRetry in incompleteRetries)
+        foreach (var conflictingRetry in conflictingRetries)
         {
             var (retryResponse, _) = await client
-                .PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(incompleteRetry);
+                .PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(conflictingRetry);
             retryResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         }
+
+        var (invalidResponse, _) = await client
+            .PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(
+                complete with { MemberIndex = null! });
+        invalidResponse.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
@@ -499,7 +503,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
             vault.Id,
             entryId,
             baseRevision: 2,
-            memberIndexRevision: 2,
+            memberIndexRevision: 3,
             agentDiscoveryRevision: 2,
             seed: 96);
 
@@ -513,7 +517,7 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
         var persisted = await readContext.Entries.SingleAsync(x =>
             x.OrganizationId == organization.Id && x.VaultId == vault.Id && x.Id == entryId);
         persisted.CurrentRevision.Value.ShouldBe(3UL);
-        persisted.MemberIndexRevision.Value.ShouldBe(2UL);
+        persisted.MemberIndexRevision.Value.ShouldBe(3UL);
         persisted.AgentDiscoveryRevision!.Value.Value.ShouldBe(2UL);
     }
 
@@ -855,7 +859,10 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
             entryId,
             baseRevision: 1,
             newKeyVersion: 2,
-            seed: 64);
+            seed: 64) with
+        {
+            MemberIndex = null!,
+        };
 
         var (response, _) = await client
             .PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(partial);

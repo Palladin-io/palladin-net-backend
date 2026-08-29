@@ -1376,7 +1376,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("Payload")
                         .IsRequired()
-                        .HasMaxLength(32768)
+                        .HasMaxLength(524288)
                         .HasColumnType("bytea");
 
                     b.Property<byte[]>("PayloadDigest")

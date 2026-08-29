@@ -20,6 +20,7 @@ using Palladin.Module.Agents;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Audit;
 using Palladin.Module.Identity;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Shared;
 using Palladin.Module.Notification;
 using Palladin.Module.Search;
@@ -148,8 +149,10 @@ builder.Services
             {
                 var userId = context.Principal?.GetUserId();
                 var organizationId = context.Principal?.GetOrganizationId();
-                var authorizationVersion = context.Principal?.GetAuthorizationVersion();
-                if (userId is null || organizationId is null || authorizationVersion is null)
+                var organizationAuthority = context.Principal is null
+                    ? null
+                    : OrganizationOfflineAccessAuthority.FromAuthenticatedPrincipal(context.Principal);
+                if (userId is null || organizationId is null || organizationAuthority is null)
                 {
                     context.Fail("organization-membership-invalid");
                     return;
@@ -160,7 +163,9 @@ builder.Services
                 if (!await validator.IsCurrentAsync(
                         userId.Value,
                         organizationId.Value,
-                        authorizationVersion.Value,
+                        organizationAuthority.OrganizationMembershipGeneration,
+                        organizationAuthority.OfflineAccessPolicy,
+                        organizationAuthority.OfflineAccessPolicyVersion,
                         context.HttpContext.RequestAborted))
                 {
                     context.Fail("organization-membership-invalid");

@@ -13,6 +13,8 @@ internal interface ITokenService
         Permission permissions,
         PlanType plan,
         uint authorizationVersion,
+        OrganizationOfflineAccessPolicy offlineAccessPolicy,
+        uint offlineAccessPolicyVersion,
         Instant? expiresAtCap = null);
     (string rawToken, string tokenHash) GenerateRefreshToken();
 }

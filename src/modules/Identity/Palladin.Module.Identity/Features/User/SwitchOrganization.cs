@@ -73,9 +73,8 @@ internal sealed class SwitchOrganizationEndpoint(
         await waitlistDeveloperBenefitActivator.TryActivateAsync(member.User, now, ct);
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             member.User,
-            member.OrganizationId,
+            member.Organization,
             permissions,
-            member.Organization.PlanType,
             member.AuthorizationVersion,
             now);
         await domainWriteContext.CommitAsync(transaction, ct);

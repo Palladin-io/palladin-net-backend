@@ -1,4 +1,5 @@
 using JetBrains.Annotations;
+using Palladin.Module.Identity.Contracts.ValueObjects;
 
 namespace Palladin.Module.Identity.Shared;
 
@@ -9,6 +10,8 @@ public interface IOrganizationMembershipValidator
         Guid userId,
         Guid organizationId,
         uint authorizationVersion,
+        OrganizationOfflineAccessPolicy offlineAccessPolicy,
+        uint offlineAccessPolicyVersion,
         CancellationToken ct = default);
 
     Task<bool> IsActiveAsync(

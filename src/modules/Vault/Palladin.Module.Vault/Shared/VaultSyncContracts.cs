@@ -17,6 +17,36 @@ public sealed record MemberSyncItem(
     MemberIndexEnvelopeContract? MemberIndex);
 
 [PublicAPI]
+public sealed record CurrentMemberEntrySyncItem(
+    Guid EntryId,
+    string Kind,
+    EntryState? State,
+    Instant? UpdatedAt,
+    string? CurrentRevision,
+    string? MemberIndexRevision,
+    uint? CurrentKeyVersion,
+    VaultEntryKeyContract? EntryKey,
+    MemberIndexEnvelopeContract? MemberIndex,
+    MemberSecretEnvelopeContract? MemberSecret);
+
+[PublicAPI]
+public sealed record CurrentMemberEntryAccessContext(
+    ushort ContextVersion,
+    Guid PrincipalId,
+    Guid OrganizationId,
+    string OrganizationMembershipGeneration,
+    Guid VaultId,
+    Guid MemberId,
+    uint MemberKeyGeneration,
+    uint VaultKeyVersion,
+    uint MemberRecipientKeyVersion,
+    string MemberRecipientKeyFingerprint,
+    string OfflinePolicy,
+    uint OfflinePolicyVersion,
+    Instant IssuedAt,
+    Instant NotAfter);
+
+[PublicAPI]
 public sealed record AgentDiscoverySyncItem(
     Guid EntryId,
     string Kind,
@@ -30,6 +60,14 @@ public sealed record MemberSnapshotResponse(
     string? NextCursor);
 
 [PublicAPI]
+public sealed record CurrentMemberEntrySnapshotResponse(
+    string SnapshotBaseSequence,
+    CurrentMemberEntryAccessContext AccessContext,
+    MemberVaultKeyEnvelopeContract MemberVaultKey,
+    IReadOnlyList<CurrentMemberEntrySyncItem> Items,
+    string? NextCursor);
+
+[PublicAPI]
 public sealed record AgentDiscoverySnapshotResponse(
     string SnapshotBaseSequence,
     IReadOnlyList<AgentDiscoverySyncItem> Items,
@@ -40,6 +78,15 @@ public sealed record MemberDeltaResponse(
     string DeltaUpperBound,
     string AppliedThroughSequence,
     IReadOnlyList<MemberSyncItem> Items,
+    string? ContinuationCursor);
+
+[PublicAPI]
+public sealed record CurrentMemberEntryDeltaResponse(
+    string DeltaUpperBound,
+    string AppliedThroughSequence,
+    CurrentMemberEntryAccessContext AccessContext,
+    MemberVaultKeyEnvelopeContract MemberVaultKey,
+    IReadOnlyList<CurrentMemberEntrySyncItem> Items,
     string? ContinuationCursor);
 
 [PublicAPI]

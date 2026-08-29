@@ -28,6 +28,12 @@ public sealed record RotationEntryDiscoveryContract(
     AgentDiscoveryEnvelopeContract Envelope);
 
 [PublicAPI]
+public sealed record RotationEntryMemberHeadContract(
+    string SourceRevision,
+    MemberIndexEnvelopeContract MemberIndex,
+    MemberSecretEnvelopeContract MemberSecret);
+
+[PublicAPI]
 public sealed record PrepareVaultKeyRotationBatchRequest : IRequiresVaultMembership
 {
     public Guid VaultId { get; init; }
@@ -36,6 +42,7 @@ public sealed record PrepareVaultKeyRotationBatchRequest : IRequiresVaultMembers
     public MemberVaultMetadataEnvelopeContract? MemberVaultMetadata { get; init; }
     public IReadOnlyList<MemberVaultKeyEnvelopeContract> MemberVaultKeys { get; init; } = [];
     public IReadOnlyList<VaultEntryKeyContract> EntryKeys { get; init; } = [];
+    public IReadOnlyList<RotationEntryMemberHeadContract> EntryMemberHeads { get; init; } = [];
     public IReadOnlyList<RotationEntryDiscoveryContract> EntryDiscoveries { get; init; } = [];
     public IReadOnlyList<RotationAgentDiscoveryContract> AgentDiscoveries { get; init; } = [];
     public IReadOnlyList<AgentWrappedVaultKeyContract> AgentWrappedVaultKeys { get; init; } = [];
@@ -58,6 +65,7 @@ internal sealed class PrepareVaultKeyRotationBatchValidator : Validator<PrepareV
         RuleFor(x => x.FencingToken).NotEmpty();
         RuleFor(x => x.MemberVaultKeys).NotNull();
         RuleFor(x => x.EntryKeys).NotNull();
+        RuleFor(x => x.EntryMemberHeads).NotNull();
         RuleFor(x => x.EntryDiscoveries).NotNull();
         RuleFor(x => x.AgentDiscoveries).NotNull();
         RuleFor(x => x.AgentWrappedVaultKeys).NotNull();
@@ -81,6 +89,12 @@ internal sealed class PrepareVaultKeyRotationBatchValidator : Validator<PrepareV
             item.RuleFor(x => x.Descriptor).NotNull();
             item.RuleFor(x => x.EncodedSuitePayload).NotEmpty().MaximumLength(118);
         });
+        RuleForEach(x => x.EntryMemberHeads).ChildRules(item =>
+        {
+            item.RuleFor(x => x.SourceRevision).NotEmpty().MaximumLength(20);
+            item.RuleFor(x => x.MemberIndex).NotNull();
+            item.RuleFor(x => x.MemberSecret).NotNull();
+        });
         RuleForEach(x => x.EntryDiscoveries).ChildRules(item =>
         {
             item.RuleFor(x => x.SourceRevision).NotEmpty().MaximumLength(20);
@@ -98,6 +112,7 @@ internal sealed class PrepareVaultKeyRotationBatchValidator : Validator<PrepareV
                 (x.MemberVaultMetadata is null ? 0 : 1)
                 + (x.MemberVaultKeys?.Count ?? 0)
                 + (x.EntryKeys?.Count ?? 0)
+                + (x.EntryMemberHeads?.Count ?? 0)
                 + (x.EntryDiscoveries?.Count ?? 0)
                 + (x.AgentDiscoveries?.Count ?? 0)
                 + (x.AgentWrappedVaultKeys?.Count ?? 0)
@@ -167,10 +182,11 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                                      || rotation.Scope.HasFlag(VaultKeyRotationScope.ManifestSigning);
         if ((!(rotatesVaultKey || rotatesManifestSigning)
              && (req.MemberVaultMetadata is not null || req.MemberVaultKeys.Count > 0
-                 || req.EntryKeys.Count > 0 || req.AgentWrappedVaultKeys.Count > 0))
+                 || req.EntryKeys.Count > 0 || req.EntryMemberHeads.Count > 0
+                 || req.AgentWrappedVaultKeys.Count > 0))
             || (!rotatesVaultKey
                 && (req.MemberVaultMetadata is not null || req.MemberVaultKeys.Count > 0
-                    || req.EntryKeys.Count > 0))
+                    || req.EntryKeys.Count > 0 || req.EntryMemberHeads.Count > 0))
             || (!rotatesVdk && req.EntryDiscoveries.Count > 0)
             || (!rotatesAgentProjection && req.AgentDiscoveries.Count > 0)
             || (req.DiscoveryKey is not null && !IsKeyMaterialInScope(VaultKeyMaterialKind.DiscoveryKey, rotation.Scope))
@@ -353,6 +369,62 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                 userId, req.FencingToken, now);
         }
 
+        if (req.EntryMemberHeads.Count > 0)
+        {
+            var entryIds = req.EntryMemberHeads.Select(x => x.MemberIndex.EntryId).Distinct().ToArray();
+            if (entryIds.Length != req.EntryMemberHeads.Count)
+            {
+                throw new DomainException("A current Entry Member head may appear only once per batch.");
+            }
+
+            var entryHeads = await (
+                from entry in domainWriteContext.Entries
+                join version in domainWriteContext.EntryVersions
+                    on new { entry.OrganizationId, entry.VaultId, EntryId = entry.Id }
+                    equals new { version.OrganizationId, version.VaultId, version.EntryId }
+                where entry.OrganizationId == organizationId
+                      && entry.VaultId == req.VaultId
+                      && entryIds.Contains(entry.Id)
+                      && version.Revision == entry.CurrentRevision
+                select new { Entry = entry, version.Operation })
+                .ToDictionaryAsync(x => x.Entry.Id, ct);
+            foreach (var contract in req.EntryMemberHeads)
+            {
+                var memberIndex = VaultEnvelopeContractMapper.ToDomain(contract.MemberIndex);
+                var memberSecret = VaultEnvelopeContractMapper.ToDomain(contract.MemberSecret);
+                var sourceRevision = VaultEnvelopeContractMapper.ParseUInt64(contract.SourceRevision);
+                if (!entryHeads.TryGetValue(memberIndex.Scope.EntryId, out var entryHead)
+                    || memberSecret.Scope.EntryId != entryHead.Entry.Id
+                    || memberIndex.Scope.OrganizationId != organizationId
+                    || memberIndex.Scope.VaultId != req.VaultId
+                    || memberSecret.Scope.OrganizationId != organizationId
+                    || memberSecret.Scope.VaultId != req.VaultId
+                    || sourceRevision != entryHead.Entry.CurrentRevision.Value
+                    || memberIndex.Revision.Value != entryHead.Entry.CurrentRevision.Value
+                    || memberSecret.Revision.Value != entryHead.Entry.CurrentRevision.Value
+                    || memberIndex.Header.KeyVersion != entryHead.Entry.CurrentKeyVersion.Value
+                    || memberSecret.Header.KeyVersion != entryHead.Entry.CurrentKeyVersion.Value
+                    || memberIndex.Header.MemberKeyGeneration != rotation.TargetMemberKeyGeneration
+                    || memberSecret.Header.MemberKeyGeneration != rotation.TargetMemberKeyGeneration
+                    || entryHead.Operation != memberSecret.Operation)
+                {
+                    throw new DomainException(
+                        "Prepared current Entry Member head does not preserve the authoritative head in the target generation.");
+                }
+
+                accepted += Prepare(
+                    rotation,
+                    VaultKeyRotationPreparedItemKind.EntryMemberHead,
+                    entryHead.Entry.Id,
+                    0,
+                    sourceRevision,
+                    contract,
+                    userId,
+                    req.FencingToken,
+                    now);
+            }
+        }
+
         foreach (var contract in req.EntryDiscoveries)
         {
             var discovery = VaultEnvelopeContractMapper.ToDomain(contract.Envelope);
@@ -433,6 +505,11 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
             new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.MemberVaultKey, x.MemberId, 0)))
         .Concat(request.EntryKeys.Select(x =>
             new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.EntryKey, x.EntryId, x.KeyVersion)))
+        .Concat(request.EntryMemberHeads.Select(x =>
+            new PreparedItemIdentity(
+                VaultKeyRotationPreparedItemKind.EntryMemberHead,
+                x.MemberIndex.EntryId,
+                0)))
         .Concat(request.EntryDiscoveries.Select(x =>
             new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.EntryDiscovery, x.Envelope.EntryId, 0)))
         .Concat(request.AgentDiscoveries.Select(x =>

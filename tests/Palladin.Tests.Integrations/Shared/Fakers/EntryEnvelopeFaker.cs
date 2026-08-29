@@ -86,16 +86,14 @@ internal static class EntryEnvelopeFaker
             keyVersion: newKeyVersion ?? keyVersion,
             memberKeyGeneration: memberKeyGeneration,
             seed: seed),
-            MemberIndex = memberIndexRevision is { } indexRevision
-            ? CreateMemberIndex(
+            MemberIndex = CreateMemberIndex(
                 organizationId,
                 vaultId,
                 entryId,
-                revision: indexRevision,
+                revision: memberIndexRevision ?? baseRevision + 1,
                 keyVersion: newKeyVersion ?? keyVersion,
                 memberKeyGeneration: memberKeyGeneration,
-                seed: seed)
-            : null,
+                seed: seed),
             AgentDiscoveryChanged = agentDiscoveryRevision is not null || disableDiscovery,
             AgentDiscovery = agentDiscoveryRevision is { } discoveryRevision
             ? CreateAgentDiscovery(
@@ -127,6 +125,12 @@ internal static class EntryEnvelopeFaker
             baseRevision + 1,
             operation,
             seed: seed),
+            MemberIndex = CreateMemberIndex(
+                organizationId,
+                vaultId,
+                entryId,
+                baseRevision + 1,
+                seed: seed),
             AgentDiscovery = agentDiscoveryRevision is { } revision
             ? CreateAgentDiscovery(
                 organizationId,

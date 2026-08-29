@@ -34,8 +34,10 @@ public sealed record VaultKeyRotationIncompleteResponse(
     Guid[] DirtyAgentIds,
     Guid[] DirtyFullGrantIds,
     RotationEntryKeyIdentity[] MissingEntryKeys,
+    Guid[] MissingEntryMemberHeadIds,
     Guid[] MissingEntryDiscoveryIds,
     RotationEntryKeyIdentity[] DirtyEntryKeys,
+    Guid[] DirtyEntryMemberHeadIds,
     Guid[] DirtyEntryDiscoveryIds,
     bool VaultMetadataDirty,
     ushort[] MissingKeyMaterialKinds,
@@ -549,8 +551,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         }
 
         var missingKeys = new List<RotationEntryKeyIdentity>();
+        var missingMemberHeads = new List<Guid>();
         var missingDiscovery = new List<Guid>();
         var dirtyKeys = new List<RotationEntryKeyIdentity>();
+        var dirtyMemberHeads = new List<Guid>();
         var dirtyDiscovery = new List<Guid>();
         var isComplete = true;
         var hasMoreIssues = false;
@@ -604,6 +608,23 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                     }
                 }
 
+                if (requireEntryKeys)
+                {
+                    var memberHeadItem = items.SingleOrDefault(x =>
+                        x.Kind == VaultKeyRotationPreparedItemKind.EntryMemberHead
+                        && x.SubjectId == entry.Id);
+                    if (memberHeadItem is null)
+                    {
+                        isComplete = false;
+                        AddBounded(missingMemberHeads, entry.Id, ref hasMoreIssues);
+                    }
+                    else if (memberHeadItem.SourceRevision != entry.CurrentRevision.Value)
+                    {
+                        isComplete = false;
+                        AddBounded(dirtyMemberHeads, entry.Id, ref hasMoreIssues);
+                    }
+                }
+
                 if (!requireDiscovery || entry.AgentDiscoveryRevision is not { } revision)
                 {
                     continue;
@@ -633,8 +654,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         return new EntryCoverage(
             isComplete,
             missingKeys.ToArray(),
+            missingMemberHeads.ToArray(),
             missingDiscovery.ToArray(),
             dirtyKeys.ToArray(),
+            dirtyMemberHeads.ToArray(),
             dirtyDiscovery.ToArray(),
             hasMoreIssues);
     }
@@ -899,6 +922,20 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             domainWriteContext.EnsureRotationPageTrackingIsBounded(CommitPageSize, 0);
 
             var entryIds = entries.Select(x => x.Id).ToArray();
+            if (rewrapEntryKeys)
+            {
+                await (
+                    from version in domainWriteContext.EntryVersions
+                    join entry in domainWriteContext.Entries
+                        on new { version.OrganizationId, version.VaultId, version.EntryId }
+                        equals new { entry.OrganizationId, entry.VaultId, EntryId = entry.Id }
+                    where entry.OrganizationId == organizationId
+                          && entry.VaultId == vaultId
+                          && entryIds.Contains(entry.Id)
+                          && version.Revision == entry.CurrentRevision
+                    select version)
+                    .LoadAsync(cancellationToken);
+            }
             var items = await LoadEntryPreparedItemsAsync(
                 organizationId, vaultId, rotationId, entryIds, cancellationToken);
             foreach (var entry in entries)
@@ -914,8 +951,20 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                     ? null
                     : VaultEnvelopeContractMapper.ToDomain(
                         VaultPreparedPayloadCodec.Decode<AgentDiscoveryEnvelopeContract>(discoveryItem.Payload));
+                var memberHeadItem = items.SingleOrDefault(x =>
+                    x.Kind == VaultKeyRotationPreparedItemKind.EntryMemberHead
+                    && x.SubjectId == entry.Id);
+                var memberHead = memberHeadItem is null
+                    ? null
+                    : VaultPreparedPayloadCodec.Decode<RotationEntryMemberHeadContract>(memberHeadItem.Payload);
                 entry.CommitKeyRotation(
                     rewrappedKeys,
+                    memberHead is null
+                        ? null
+                        : VaultEnvelopeContractMapper.ToDomain(memberHead.MemberIndex),
+                    memberHead is null
+                        ? null
+                        : VaultEnvelopeContractMapper.ToDomain(memberHead.MemberSecret),
                     discovery,
                     rewrapEntryKeys,
                     rotateDiscovery,
@@ -1129,6 +1178,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                         && x.RotationId == rotationId
                         && entryIds.Contains(x.SubjectId)
                         && (x.Kind == VaultKeyRotationPreparedItemKind.EntryKey
+                            || x.Kind == VaultKeyRotationPreparedItemKind.EntryMemberHead
                             || x.Kind == VaultKeyRotationPreparedItemKind.EntryDiscovery))
             .ToListAsync(cancellationToken);
 
@@ -1203,8 +1253,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             agentCoverage.DirtyIds,
             fullGrantCoverage.DirtyIds,
             entryCoverage.MissingKeys,
+            entryCoverage.MissingMemberHeadIds,
             entryCoverage.MissingDiscoveryIds,
             entryCoverage.DirtyKeys,
+            entryCoverage.DirtyMemberHeadIds,
             entryCoverage.DirtyDiscoveryIds,
             metadataDirty,
             missingKeyMaterial,
@@ -1300,11 +1352,13 @@ internal sealed class CommitVaultKeyRotationEndpoint(
     private sealed record EntryCoverage(
         bool IsComplete,
         RotationEntryKeyIdentity[] MissingKeys,
+        Guid[] MissingMemberHeadIds,
         Guid[] MissingDiscoveryIds,
         RotationEntryKeyIdentity[] DirtyKeys,
+        Guid[] DirtyMemberHeadIds,
         Guid[] DirtyDiscoveryIds,
         bool HasMoreIssues)
     {
-        internal static readonly EntryCoverage Complete = new(true, [], [], [], [], false);
+        internal static readonly EntryCoverage Complete = new(true, [], [], [], [], [], [], false);
     }
 }

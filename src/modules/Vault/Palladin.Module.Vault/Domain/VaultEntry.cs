@@ -128,7 +128,7 @@ internal sealed class VaultEntry : EventEntityBase
         EntryRevision baseRevision,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         bool agentDiscoveryChanged,
         AgentDiscoveryCiphertext? agentDiscovery,
         GrantDeliveryPolicy deliveryPolicy)
@@ -150,8 +150,8 @@ internal sealed class VaultEntry : EventEntityBase
             return false;
         }
 
-        if ((memberIndex is not null) != currentVersion.MemberIndexChanged
-            || (memberIndex is not null && !GetMemberIndex().HasSameContent(memberIndex)))
+        if (!currentVersion.MemberIndexChanged
+            || !GetMemberIndex().HasSameContent(memberIndex))
         {
             return false;
         }
@@ -167,7 +167,7 @@ internal sealed class VaultEntry : EventEntityBase
         EntryState expectedState,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         AgentDiscoveryCiphertext? agentDiscovery)
     {
         if (State != expectedState
@@ -184,8 +184,8 @@ internal sealed class VaultEntry : EventEntityBase
         if ((newKey is not null) != keyChanged
             || (newKey is not null
                 && Keys.SingleOrDefault(x => x.KeyVersion == newKey.KeyVersion)?.HasSameContent(newKey) != true)
-            || ((memberIndex is not null) != currentVersion.MemberIndexChanged)
-            || (memberIndex is not null && !GetMemberIndex().HasSameContent(memberIndex)))
+            || !currentVersion.MemberIndexChanged
+            || !GetMemberIndex().HasSameContent(memberIndex))
         {
             return false;
         }
@@ -198,6 +198,8 @@ internal sealed class VaultEntry : EventEntityBase
 
     internal void CommitKeyRotation(
         IReadOnlyCollection<VaultEntryKey> rewrappedKeys,
+        MemberIndexCiphertext? memberIndex,
+        MemberSecretCiphertext? memberSecret,
         AgentDiscoveryCiphertext? discovery,
         bool rewrapEntryKeys,
         bool rotateDiscovery,
@@ -223,6 +225,38 @@ internal sealed class VaultEntry : EventEntityBase
             }
 
             current.ApplyRotationRewrap(replacement);
+        }
+
+        if (rewrapEntryKeys)
+        {
+            if (memberIndex is null || memberSecret is null)
+            {
+                throw new DomainException(
+                    "Vault rotation must re-encrypt the complete current Member head.");
+            }
+
+            var currentKey = Keys.Single(x => x.KeyVersion == CurrentKeyVersion);
+            var currentVersion = Versions.Single(x => x.Revision == CurrentRevision);
+            if (memberIndex.Scope != Scope
+                || memberIndex.Revision.Value != CurrentRevision.Value
+                || memberIndex.Header.KeyVersion != CurrentKeyVersion.Value
+                || memberIndex.Header.MemberKeyGeneration != targetMemberKeyGeneration
+                || memberSecret.Scope != Scope
+                || memberSecret.Revision != CurrentRevision
+                || memberSecret.Header.KeyVersion != CurrentKeyVersion.Value
+                || memberSecret.Header.MemberKeyGeneration != targetMemberKeyGeneration)
+            {
+                throw new DomainException(
+                    "Rotated Member head must preserve the current revision and bind the target generation.");
+            }
+
+            currentVersion.ApplyRotationReencryption(memberSecret, currentKey);
+            SetMemberIndex(memberIndex);
+        }
+        else if (memberIndex is not null || memberSecret is not null)
+        {
+            throw new DomainException(
+                "Member head re-encryption is allowed only for a Vault-key generation change.");
         }
 
         if (rotateDiscovery && (AgentDiscoveryRevision is not null) != (discovery is not null))
@@ -255,7 +289,7 @@ internal sealed class VaultEntry : EventEntityBase
         VdkVersion currentVdkVersion,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         bool agentDiscoveryChanged,
         AgentDiscoveryCiphertext? agentDiscovery,
         GrantDeliveryPolicy deliveryPolicy,
@@ -297,7 +331,6 @@ internal sealed class VaultEntry : EventEntityBase
             memberIndex,
             agentDiscoveryChanged,
             agentDiscovery,
-            newKey,
             currentKey,
             targetKey,
             currentMemberKeyGeneration,
@@ -306,7 +339,7 @@ internal sealed class VaultEntry : EventEntityBase
         var version = VaultEntryVersion.Create(
             memberSecret,
             sequences,
-            memberIndex is not null,
+            memberIndexChanged: true,
             now,
             ActorType.Member,
             updatedBy);
@@ -322,10 +355,7 @@ internal sealed class VaultEntry : EventEntityBase
         UpdatedAt = now;
         UpdatedBy = updatedBy;
 
-        if (memberIndex is not null)
-        {
-            SetMemberIndex(memberIndex);
-        }
+        SetMemberIndex(memberIndex);
 
         if (agentDiscoveryChanged)
         {
@@ -341,7 +371,7 @@ internal sealed class VaultEntry : EventEntityBase
         VaultKeyVersion currentVaultKeyVersion,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         AllocatedVaultSequences sequences,
         Instant now,
         Guid archivedBy)
@@ -374,7 +404,7 @@ internal sealed class VaultEntry : EventEntityBase
         VaultKeyVersion currentVaultKeyVersion,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         AllocatedVaultSequences sequences,
         Instant now,
         Guid deletedBy)
@@ -410,7 +440,7 @@ internal sealed class VaultEntry : EventEntityBase
         VdkVersion currentVdkVersion,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         AgentDiscoveryCiphertext? agentDiscovery,
         AllocatedVaultSequences sequences,
         Duration recentlyDeletedRetention,
@@ -440,7 +470,6 @@ internal sealed class VaultEntry : EventEntityBase
             memberIndex,
             agentDiscovery is not null,
             agentDiscovery,
-            newKey,
             currentKey,
             targetKey,
             currentMemberKeyGeneration,
@@ -526,7 +555,7 @@ internal sealed class VaultEntry : EventEntityBase
         VaultKeyVersion currentVaultKeyVersion,
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         EntryOperation operation,
         AllocatedVaultSequences sequences,
         Instant now,
@@ -545,7 +574,6 @@ internal sealed class VaultEntry : EventEntityBase
             memberIndex,
             disablesDiscovery,
             null,
-            newKey,
             currentKey,
             targetKey,
             currentMemberKeyGeneration,
@@ -585,7 +613,7 @@ internal sealed class VaultEntry : EventEntityBase
     private void AppendVersion(
         VaultEntryKey? newKey,
         MemberSecretCiphertext memberSecret,
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         bool agentDiscoveryChanged,
         AgentDiscoveryCiphertext? agentDiscovery,
         AllocatedVaultSequences sequences,
@@ -596,7 +624,7 @@ internal sealed class VaultEntry : EventEntityBase
         var version = VaultEntryVersion.Create(
             memberSecret,
             sequences,
-            memberIndex is not null,
+            memberIndexChanged: true,
             now,
             ActorType.Member,
             changedBy);
@@ -610,10 +638,7 @@ internal sealed class VaultEntry : EventEntityBase
         CurrentKeyVersion = targetKey.KeyVersion;
         UpdatedAt = now;
         UpdatedBy = changedBy;
-        if (memberIndex is not null)
-        {
-            SetMemberIndex(memberIndex);
-        }
+        SetMemberIndex(memberIndex);
 
         if (agentDiscoveryChanged)
         {
@@ -729,20 +754,14 @@ internal sealed class VaultEntry : EventEntityBase
     }
 
     private void ValidateProjectionMutation(
-        MemberIndexCiphertext? memberIndex,
+        MemberIndexCiphertext memberIndex,
         bool agentDiscoveryChanged,
         AgentDiscoveryCiphertext? agentDiscovery,
-        VaultEntryKey? newKey,
         VaultEntryKey previousKey,
         VaultEntryKey targetKey,
         MemberKeyGeneration currentMemberKeyGeneration,
         VdkVersion currentVdkVersion)
     {
-        if (newKey is not null && memberIndex is null)
-        {
-            throw new DomainException("A new Entry key requires a replacement Member index projection.");
-        }
-
         if (previousKey.MemberKeyGeneration != currentMemberKeyGeneration
             && GetAgentDiscovery() is not null
             && !agentDiscoveryChanged)
@@ -750,16 +769,13 @@ internal sealed class VaultEntry : EventEntityBase
             throw new DomainException("A Member generation change requires replacement Agent Discovery ciphertext.");
         }
 
-        if (memberIndex is not null)
+        ValidateScope(memberIndex.Scope);
+        if (CurrentRevision.Value == ulong.MaxValue
+            || memberIndex.Revision.Value != CurrentRevision.Value + 1
+            || memberIndex.Header.KeyVersion != targetKey.KeyVersion.Value
+            || memberIndex.Header.MemberKeyGeneration != targetKey.MemberKeyGeneration)
         {
-            ValidateScope(memberIndex.Scope);
-            if (MemberIndexRevision.Value == ulong.MaxValue
-                || memberIndex.Revision.Value != MemberIndexRevision.Value + 1
-                || memberIndex.Header.KeyVersion != targetKey.KeyVersion.Value
-                || memberIndex.Header.MemberKeyGeneration != targetKey.MemberKeyGeneration)
-            {
-                throw new DomainException("Changed Member index must advance its own revision and bind the selected Entry key.");
-            }
+            throw new DomainException("Member index must bind the complete next current Entry revision and selected key.");
         }
 
         if (!agentDiscoveryChanged && agentDiscovery is not null)

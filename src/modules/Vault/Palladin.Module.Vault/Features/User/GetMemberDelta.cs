@@ -120,16 +120,12 @@ internal sealed class GetMemberDeltaEndpoint(
         }
 
         var pageSize = req.PageSize ?? VaultSyncProtocol.DefaultPageSize;
-        var rows = await readContext.SqlQuery<VaultSyncJournalRow>($"""
-                SELECT "EntryId", "MemberSequence" AS "Sequence"
-                FROM "VaultEntryVersions"
-                WHERE "OrganizationId" = {organizationId}
-                  AND "VaultId" = {req.VaultId}
-                  AND "MemberSequence" > {(decimal)cursor.LastSafeScannedSequence}
-                  AND "MemberSequence" <= {(decimal)cursor.DeltaUpperBound}
-                ORDER BY "MemberSequence"
-                LIMIT {pageSize}
-                """)
+        var rows = await readContext.GetMemberSyncJournalPage(
+                organizationId,
+                req.VaultId,
+                cursor.LastSafeScannedSequence,
+                cursor.DeltaUpperBound,
+                pageSize)
             .ToListAsync(ct);
         if (rows.Count == 0)
         {

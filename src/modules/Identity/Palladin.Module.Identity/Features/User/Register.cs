@@ -137,7 +137,7 @@ internal sealed class RegisterEndpoint(
             Duration.FromMinutes(emailVerificationOptions.Value.TokenTtlMinutes), now));
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
-            user, orgId, adminRole.Permissions, PlanType.Basic, authorizationVersion: 1, now);
+            user, organization, adminRole.Permissions, authorizationVersion: 1, now);
 
         try
         {

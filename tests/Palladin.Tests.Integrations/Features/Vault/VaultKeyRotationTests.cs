@@ -276,6 +276,45 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_VaultKeyRotationCommits_Then_CurrentEntrySnapshotKeepsHistoricalCiphertextsUsable()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var entry = (await SeedEntriesAsync(vault.Id, user.Id, 1)).Single();
+        await SeedMemberDirectoryAsync(user.Id);
+        var rotationClient = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+        var claim = await StartAndClaimAsync(rotationClient, vault.Id);
+        await PrepareRotationAsync(rotationClient, organization.Id, vault, user.Id, [entry], claim);
+        var commitResponse = await rotationClient.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/commit",
+            new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim.Rotation.Id,
+                FencingToken = claim.FencingToken,
+            },
+            TestContext.Current.CancellationToken);
+        commitResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var syncClient = apiFactory.CreateAuthenticatedClient(user);
+        syncClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+        syncClient.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "2");
+        var (snapshotResponse, snapshot) = await syncClient.POSTAsync<
+            GetCurrentMemberEntrySnapshotEndpoint,
+            GetCurrentMemberEntrySnapshotRequest,
+            CurrentMemberEntrySnapshotResponse>(new GetCurrentMemberEntrySnapshotRequest { VaultId = vault.Id });
+
+        snapshotResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        snapshot.ShouldNotBeNull();
+        snapshot.AccessContext.MemberKeyGeneration.ShouldBe(2U);
+        var item = snapshot.Items.Single();
+        item.EntryId.ShouldBe(entry.Id);
+        item.EntryKey!.Descriptor.MemberKeyGeneration.ShouldBe(2U);
+        item.MemberIndex!.Descriptor.MemberKeyGeneration.ShouldBe(1U);
+        item.MemberSecret!.Descriptor.MemberKeyGeneration.ShouldBe(1U);
+    }
+
+    [Fact]
     public async Task When_DiscoveryChangesAfterPreparation_Then_CommitReportsDirtyAndKeepsCurrentGeneration()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();

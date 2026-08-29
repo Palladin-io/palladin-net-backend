@@ -49,7 +49,6 @@ internal sealed class GetCurrentMemberEntryDeltaValidator : Validator<GetCurrent
 [PublicAPI]
 internal sealed class GetCurrentMemberEntryDeltaEndpoint(
     VaultDomainReadContext readContext,
-    IOrganizationOfflineAccessAuthority organizationAuthority,
     CurrentMemberEntrySyncCursorProtector cursorProtector,
     IClock clock)
     : Endpoint<GetCurrentMemberEntryDeltaRequest, CurrentMemberEntryDeltaResponse>
@@ -83,6 +82,13 @@ internal sealed class GetCurrentMemberEntryDeltaEndpoint(
         var principalId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
         var organizationMembershipGeneration = User.GetAuthorizationVersion()!.Value;
+        var organizationAuthority = OrganizationOfflineAccessAuthority.FromAuthenticatedPrincipal(User);
+        if (organizationAuthority is null)
+        {
+            await Send.UnauthorizedAsync(cancellationToken);
+            return;
+        }
+
         var authority = await CurrentMemberEntrySyncAuthority.AcquireAsync(
             principalId,
             organizationId,
@@ -144,7 +150,7 @@ internal sealed class GetCurrentMemberEntryDeltaEndpoint(
 
         if (cursor.LastSafeScannedSequence == cursor.DeltaUpperBound)
         {
-            await SendEmptyAsync(authority, cursor, cancellationToken);
+            await SendEmptyAsync(authority, organizationAuthority, cursor, cancellationToken);
             return;
         }
 
@@ -312,6 +318,7 @@ internal sealed class GetCurrentMemberEntryDeltaEndpoint(
 
     private async Task SendEmptyAsync(
         CurrentMemberEntrySyncAuthority authority,
+        OrganizationOfflineAccessAuthority organizationAuthority,
         DeltaCursorPayload cursor,
         CancellationToken cancellationToken)
     {

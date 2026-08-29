@@ -116,12 +116,17 @@ internal sealed class RefreshAccessTokenEndpoint(
         await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
 
-        var organizationPlan = await domainWriteContext.Organizations
+        var organizationAuthority = await domainWriteContext.Organizations
             .Where(o => o.Id == existingToken.OrganizationId)
-            .Select(o => o.PlanType)
+            .Select(o => new
+            {
+                o.PlanType,
+                o.OfflineAccessPolicy,
+                o.OfflineAccessPolicyVersion,
+            })
             .FirstAsync(ct);
-        var plan = user.EffectivePlan(organizationPlan, now);
-        var accessTokenExpiresAtCap = organizationPlan < PlanType.Pro
+        var plan = user.EffectivePlan(organizationAuthority.PlanType, now);
+        var accessTokenExpiresAtCap = organizationAuthority.PlanType < PlanType.Pro
             ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
             : null;
         var permissions = membership.EffectivePermissions();
@@ -131,6 +136,8 @@ internal sealed class RefreshAccessTokenEndpoint(
             permissions,
             plan,
             membership.AuthorizationVersion,
+            organizationAuthority.OfflineAccessPolicy,
+            organizationAuthority.OfflineAccessPolicyVersion,
             accessTokenExpiresAtCap);
 
         var rawRefreshToken = req.RefreshToken;

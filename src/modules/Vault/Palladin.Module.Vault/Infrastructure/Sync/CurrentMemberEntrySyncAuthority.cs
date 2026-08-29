@@ -88,17 +88,13 @@ internal sealed record CurrentMemberEntrySyncAuthority(
         Guid organizationId,
         uint organizationMembershipGeneration,
         Guid vaultId,
-        IOrganizationOfflineAccessAuthority organizationAuthority,
+        OrganizationOfflineAccessAuthority organizationAuthority,
         VaultDomainReadContext readContext,
         CancellationToken cancellationToken)
     {
-        var currentOrganization = await organizationAuthority.GetCurrentAsync(
-            principalId,
-            organizationId,
-            organizationMembershipGeneration,
-            cancellationToken);
-        if (currentOrganization is null
-            || currentOrganization.OfflineAccessPolicyVersion < CurrentMemberEntrySyncProtocol.InitialOfflinePolicyVersion)
+        if (organizationAuthority.OrganizationMembershipGeneration != organizationMembershipGeneration
+            || organizationAuthority.OfflineAccessPolicyVersion
+                < CurrentMemberEntrySyncProtocol.InitialOfflinePolicyVersion)
         {
             return null;
         }
@@ -143,7 +139,7 @@ internal sealed record CurrentMemberEntrySyncAuthority(
         return new CurrentMemberEntrySyncAuthority(
             principalId,
             organizationId,
-            currentOrganization.OrganizationMembershipGeneration,
+            organizationAuthority.OrganizationMembershipGeneration,
             vaultId,
             principalId,
             currentVault.Vault.MemberSequence.Value,
@@ -152,8 +148,8 @@ internal sealed record CurrentMemberEntrySyncAuthority(
             currentVault.Vault.CurrentVaultKeyVersion.Value,
             currentVault.MemberRecipientKey.KeyVersion.Value,
             currentVault.MemberRecipientKey.Fingerprint.ToArray(),
-            currentOrganization.OfflineAccessPolicy,
-            currentOrganization.OfflineAccessPolicyVersion,
+            organizationAuthority.OfflineAccessPolicy,
+            organizationAuthority.OfflineAccessPolicyVersion,
             VaultEnvelopeContractMapper.ToContract(currentVault.MemberVaultKey.GetWrappedVaultKey()));
     }
 }

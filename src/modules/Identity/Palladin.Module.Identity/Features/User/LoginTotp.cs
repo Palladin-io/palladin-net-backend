@@ -180,9 +180,8 @@ internal sealed class LoginTotpEndpoint(
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
-            user.OrganizationId,
+            user.Organization,
             membership.EffectivePermissions(),
-            user.Organization.PlanType,
             membership.AuthorizationVersion,
             now);
         try

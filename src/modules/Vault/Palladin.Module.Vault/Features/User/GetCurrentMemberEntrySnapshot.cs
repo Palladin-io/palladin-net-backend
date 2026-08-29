@@ -41,7 +41,6 @@ internal sealed class GetCurrentMemberEntrySnapshotValidator
 [PublicAPI]
 internal sealed class GetCurrentMemberEntrySnapshotEndpoint(
     VaultDomainReadContext readContext,
-    IOrganizationOfflineAccessAuthority organizationAuthority,
     CurrentMemberEntrySyncCursorProtector cursorProtector,
     IClock clock)
     : Endpoint<GetCurrentMemberEntrySnapshotRequest, CurrentMemberEntrySnapshotResponse>
@@ -75,6 +74,13 @@ internal sealed class GetCurrentMemberEntrySnapshotEndpoint(
         var principalId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
         var organizationMembershipGeneration = User.GetAuthorizationVersion()!.Value;
+        var organizationAuthority = OrganizationOfflineAccessAuthority.FromAuthenticatedPrincipal(User);
+        if (organizationAuthority is null)
+        {
+            await Send.UnauthorizedAsync(cancellationToken);
+            return;
+        }
+
         var authority = await CurrentMemberEntrySyncAuthority.AcquireAsync(
             principalId,
             organizationId,

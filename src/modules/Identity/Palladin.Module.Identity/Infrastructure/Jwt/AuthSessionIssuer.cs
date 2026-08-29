@@ -19,23 +19,29 @@ internal sealed class AuthSessionIssuer(
 {
     public (string AccessToken, string RefreshToken) Issue(
         User user,
-        Guid organizationId,
+        Organization organization,
         Permission permissions,
-        PlanType plan,
         uint authorizationVersion,
         Instant now)
     {
-        var effectivePlan = user.EffectivePlan(plan, now);
-        var expiresAtCap = plan < PlanType.Pro
+        var effectivePlan = user.EffectivePlan(organization.PlanType, now);
+        var expiresAtCap = organization.PlanType < PlanType.Pro
             ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
             : null;
         var accessToken = tokenService.GenerateAccessToken(
-            user, organizationId, permissions, effectivePlan, authorizationVersion, expiresAtCap);
+            user,
+            organization.Id,
+            permissions,
+            effectivePlan,
+            authorizationVersion,
+            organization.OfflineAccessPolicy,
+            organization.OfflineAccessPolicyVersion,
+            expiresAtCap);
         var (rawRefreshToken, refreshTokenHash) = tokenService.GenerateRefreshToken();
 
         var expiresAt = now.Plus(Duration.FromDays(jwtOptions.Value.RefreshTokenExpiryDays));
         var refreshToken = RefreshToken.Create(
-            guidProvider.Generate(), user.Id, organizationId, refreshTokenHash,
+            guidProvider.Generate(), user.Id, organization.Id, refreshTokenHash,
             authorizationVersion, expiresAt, now);
         domainWriteContext.Add(refreshToken);
 

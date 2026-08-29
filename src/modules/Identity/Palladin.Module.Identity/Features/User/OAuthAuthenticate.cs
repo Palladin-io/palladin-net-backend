@@ -125,6 +125,7 @@ internal sealed class OAuthAuthenticateEndpoint(
 
         bool isNewUser;
         OrganizationMember? activeMembership = null;
+        Organization? createdOrganization = null;
 
         if (user is not null)
         {
@@ -142,7 +143,7 @@ internal sealed class OAuthAuthenticateEndpoint(
         }
         else
         {
-            user = CreateNewUser(provider.Provider, externalUser, platform, now);
+            (user, createdOrganization) = CreateNewUser(provider.Provider, externalUser, platform, now);
             isNewUser = true;
         }
 
@@ -155,7 +156,8 @@ internal sealed class OAuthAuthenticateEndpoint(
 
         await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
 
-        var organizationPlan = isNewUser ? PlanType.Basic : user.Organization.PlanType;
+        var organization = isNewUser ? createdOrganization! : user.Organization;
+        var organizationPlan = organization.PlanType;
         var plan = user.EffectivePlan(organizationPlan, now);
         var accessTokenExpiresAtCap = organizationPlan < PlanType.Pro
             ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
@@ -166,6 +168,8 @@ internal sealed class OAuthAuthenticateEndpoint(
             permissions,
             plan,
             authorizationVersion,
+            organization.OfflineAccessPolicy,
+            organization.OfflineAccessPolicyVersion,
             accessTokenExpiresAtCap);
         var (rawRefreshToken, refreshTokenHash) = tokenService.GenerateRefreshToken();
 
@@ -188,7 +192,11 @@ internal sealed class OAuthAuthenticateEndpoint(
             user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 
-    private User CreateNewUser(AuthProvider authProvider, ExternalUserInfo externalUser, string platform, Instant now)
+    private (User User, Organization Organization) CreateNewUser(
+        AuthProvider authProvider,
+        ExternalUserInfo externalUser,
+        string platform,
+        Instant now)
     {
         var orgId = guidProvider.Generate();
         var userId = guidProvider.Generate();
@@ -213,7 +221,7 @@ internal sealed class OAuthAuthenticateEndpoint(
         var oauthConnection = OAuthConnection.Create(connectionId, userId, authProvider, externalUser.SubjectId, externalUser.Email, now);
         domainWriteContext.Add(oauthConnection);
 
-        return user;
+        return (user, organization);
     }
 
     private void EnsureOAuthConnectionExists(User user, AuthProvider authProvider, ExternalUserInfo externalUser, Instant now)

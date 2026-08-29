@@ -169,9 +169,8 @@ internal sealed class AcceptOrganizationInvitationEndpoint(
         }
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,
-            organization.Id,
+            organization,
             member.EffectivePermissions(),
-            organization.PlanType,
             member.AuthorizationVersion,
             now);
         try

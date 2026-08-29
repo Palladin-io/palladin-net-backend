@@ -349,17 +349,27 @@ public sealed class CurrentMemberEntrySyncTests(ApiFactory apiFactory) : TestBas
         firstPage!.NextCursor.ShouldNotBeNull();
         await SetOfflinePolicyAsync(organization.Id, OrganizationOfflineAccessPolicy.OneHour);
 
-        var response = await client.PostAsJsonAsync(
+        var request = new GetCurrentMemberEntrySnapshotRequest
+        {
+            VaultId = vault.Id,
+            Cursor = firstPage.NextCursor,
+            PageSize = 1,
+        };
+        var staleSessionResponse = await client.PostAsJsonAsync(
             $"api/vaults/{vault.Id}/current-entries/sync/snapshot",
-            new GetCurrentMemberEntrySnapshotRequest
-            {
-                VaultId = vault.Id,
-                Cursor = firstPage.NextCursor,
-                PageSize = 1,
-            },
+            request,
+            TestContext.Current.CancellationToken);
+        var freshClient = apiFactory.CreateAuthenticatedClient(user);
+        AddCurrentEntrySyncHeaders(freshClient);
+        var response = await freshClient.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/current-entries/sync/snapshot",
+            request,
             TestContext.Current.CancellationToken);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
+        staleSessionResponse.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await staleSessionResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .ShouldNotContain("memberSecret", Case.Insensitive);
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         body.ShouldContain("resetRequired");
         body.ShouldNotContain("memberSecret", Case.Insensitive);

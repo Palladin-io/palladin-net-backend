@@ -1,4 +1,6 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Domain.Enums;
@@ -38,6 +40,11 @@ public sealed class RegisterTests(ApiFactory apiFactory) : TestBase
         result.AccessToken.ShouldNotBeNullOrWhiteSpace();
         result.RefreshToken.ShouldNotBeNullOrWhiteSpace();
         result.UserId.ShouldBe(accountId);
+        var accessTokenClaims = new JwtSecurityTokenHandler().ReadJwtToken(result.AccessToken).Claims;
+        accessTokenClaims.Single(claim => claim.Type == JwtClaimNames.OrganizationOfflineAccessPolicy)
+            .Value.ShouldBe(((ushort)OrganizationOfflineAccessPolicy.TwentyFourHours).ToString());
+        accessTokenClaims.Single(claim => claim.Type == JwtClaimNames.OrganizationOfflineAccessPolicyVersion)
+            .Value.ShouldBe("1");
 
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();

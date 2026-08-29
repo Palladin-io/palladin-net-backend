@@ -120,7 +120,10 @@ public sealed class RefreshAccessTokenTests(ApiFactory apiFactory) : TestBase
     public async Task When_RefreshingForProOrg_Then_AccessTokenCarriesProPlanClaim()
     {
         // Given
-        var proOrg = OrganizationFaker.Create().RuleFor(x => x.PlanType, PlanType.Pro);
+        var proOrg = OrganizationFaker.Create()
+            .RuleFor(x => x.PlanType, PlanType.Pro)
+            .RuleFor(x => x.OfflineAccessPolicy, OrganizationOfflineAccessPolicy.OneHour)
+            .RuleFor(x => x.OfflineAccessPolicyVersion, 7u);
         var (user, _, _) = await apiFactory.Services.SeedUserAsync(organizationFaker: proOrg);
         var rawToken = Convert.ToBase64String(new byte[] { 9, 9, 9, 9, 9, 9, 9, 9, 8, 8, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6 });
         await apiFactory.Services.SeedRefreshTokenAsync(user.Id, rawToken);
@@ -132,10 +135,12 @@ public sealed class RefreshAccessTokenTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<RefreshAccessTokenResponse>();
-        var plan = new JwtSecurityTokenHandler()
-            .ReadJwtToken(result!.AccessToken)
-            .Claims.First(c => c.Type == JwtClaimNames.Plan).Value;
-        plan.ShouldBe(PlanType.Pro.ToString());
+        var claims = new JwtSecurityTokenHandler().ReadJwtToken(result!.AccessToken).Claims;
+        claims.First(c => c.Type == JwtClaimNames.Plan).Value.ShouldBe(PlanType.Pro.ToString());
+        claims.First(c => c.Type == JwtClaimNames.OrganizationOfflineAccessPolicy).Value
+            .ShouldBe(((ushort)OrganizationOfflineAccessPolicy.OneHour).ToString());
+        claims.First(c => c.Type == JwtClaimNames.OrganizationOfflineAccessPolicyVersion).Value
+            .ShouldBe("7");
     }
 
     [Fact]

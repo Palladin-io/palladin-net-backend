@@ -30,6 +30,8 @@ Waitlist endpoints (anonymous, enumeration-safe):
 Every successful auth-session response carries nullable `WaitlistDeveloperBenefitStartedAt` / `WaitlistDeveloperBenefitEndsAt`. A token elevated only by this benefit expires no later than its end.
 
 Organization membership endpoints:
+- `GET api/org` — current organization details plus its authoritative finite offline-access policy and monotonic policy version.
+- `PUT api/org/offline-access-policy` (`OrganizationManagement`) — selects exactly `disabled`, `1h`, `4h` or `24h`. An exact retry is idempotent; a change increments the policy version, emits the normal organization-update Audit event and invalidates older access-token authority so the caller must refresh its session.
 - `GET api/organizations` — memberships available to the user; identifies the organization selected by the current JWT.
 - `POST api/auth/switch-organization` — issues a new access + refresh session only for a selected `Active` membership.
 - `GET api/organization/member-directory` (authenticated organization member) — minimal `{userId, displayName}` identities for current and former members of the active organization. This endpoint exists for client-side attribution of opaque actor IDs in Audit and immutable Vault history; it never returns e-mail, roles, permissions or Vault data.
@@ -81,7 +83,7 @@ EF Core + Postgres, MassTransit publish, custom JWT (`TokenService`), Google OAu
 ## Contracts (namespaces / types)
 - Public enums consumed cross-module: `Palladin.Module.Identity.Domain.Enums` (`PlanType`, `AuthProvider`) — Audit reads these.
 - Persistence contexts: `IdentityDbWriteContext`, `IdentityDbReadContext`, `IdentityDomainWriteContext`, `IdentityDomainReadContext`.
-- Current Entry sync authority is carried as signed access-token claims containing the membership generation plus the organization offline policy/version. Identity validates all three values against its own membership and organization state during JWT authentication; Vault consumes only that already-authenticated request context and performs no live cross-module read. A policy change therefore rejects an older access token, while refresh issues the current policy binding. The policy is never client-supplied or derived from a Vault wrapper.
+- Current Entry sync authority is carried as signed access-token claims containing the membership generation plus the organization offline policy/version. Identity validates all three values against its own membership and organization state during JWT authentication; Vault consumes only that already-authenticated request context and performs no live cross-module read. An authorized policy update accepts only the frozen finite enum, increments the version on an actual change and publishes an organization-update Audit event. The change therefore rejects an older access token, while refresh issues the current policy binding. The policy is never derived from a Vault wrapper.
 
 ## Critical points / invariants
 - Google OAuth is a direct Google Identity Services flow, not Firebase Auth. `Modules:Identity:Google:ClientId` must match the public client ID used by the web/mobile client; Identity validates that it is non-empty at application startup and checks every Google token audience against it. Tracked settings keep this value empty; local development supplies it through the ignored `appsettings.Local.json` or an environment variable, while deployed environments inject their own value at runtime.

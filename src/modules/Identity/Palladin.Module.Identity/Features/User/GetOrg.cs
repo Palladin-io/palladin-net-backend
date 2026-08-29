@@ -16,7 +16,9 @@ public sealed record GetOrgResponse(
     PlanType PlanType,
     int MemberCount,
     int SeatUsage,
-    int SeatLimit);
+    int SeatLimit,
+    OrganizationOfflineAccessPolicy OfflineAccessPolicy,
+    uint OfflineAccessPolicyVersion);
 
 [PublicAPI]
 internal sealed class GetOrgEndpoint(IdentityDomainReadContext domainReadContext, IClock clock)
@@ -55,7 +57,9 @@ internal sealed class GetOrgEndpoint(IdentityDomainReadContext domainReadContext
                     invitation.AcceptedAt == null
                     && invitation.CancelledAt == null
                     && invitation.ExpiresAt > now),
-                o.SeatLimit))
+                o.SeatLimit,
+                o.OfflineAccessPolicy,
+                o.OfflineAccessPolicyVersion))
             .FirstOrDefaultAsync(ct);
 
         if (org is null)

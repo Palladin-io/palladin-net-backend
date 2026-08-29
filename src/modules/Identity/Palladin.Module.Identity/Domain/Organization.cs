@@ -90,7 +90,11 @@ internal sealed class Organization : EventEntityBase
         MembershipVersion++;
     }
 
-    internal bool SetOfflineAccessPolicy(OrganizationOfflineAccessPolicy policy)
+    internal bool SetOfflineAccessPolicy(
+        OrganizationOfflineAccessPolicy policy,
+        Guid updatedBy,
+        string updatedByName,
+        Instant now)
     {
         if (!Enum.IsDefined(policy))
         {
@@ -109,6 +113,13 @@ internal sealed class Organization : EventEntityBase
 
         OfflineAccessPolicy = policy;
         OfflineAccessPolicyVersion++;
+        AddEvent(new OrganizationUpdatedEvent(
+            Id,
+            Name,
+            updatedBy,
+            updatedByName,
+            ["offlineAccessPolicy"],
+            now));
         return true;
     }
 }

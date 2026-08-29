@@ -6,8 +6,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using Palladin.Core.Security;
 using Palladin.Core.Types;
 using Palladin.Module.Identity.Contracts.ValueObjects;
+using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
@@ -253,7 +255,7 @@ public sealed class CurrentMemberEntrySyncTests(ApiFactory apiFactory) : TestBas
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
         await SeedMatchingMemberKeyDirectoryAsync(user.Id);
-        await SetOfflinePolicyAsync(organization.Id, policy);
+        await SetOfflinePolicyAsync(user, policy);
         var client = apiFactory.CreateAuthenticatedClient(user);
         AddCurrentEntrySyncHeaders(client);
 
@@ -347,7 +349,7 @@ public sealed class CurrentMemberEntrySyncTests(ApiFactory apiFactory) : TestBas
                 PageSize = 1,
             });
         firstPage!.NextCursor.ShouldNotBeNull();
-        await SetOfflinePolicyAsync(organization.Id, OrganizationOfflineAccessPolicy.OneHour);
+        await SetOfflinePolicyAsync(user, OrganizationOfflineAccessPolicy.OneHour);
 
         var request = new GetCurrentMemberEntrySnapshotRequest
         {
@@ -433,16 +435,16 @@ public sealed class CurrentMemberEntrySyncTests(ApiFactory apiFactory) : TestBas
     }
 
     private async Task SetOfflinePolicyAsync(
-        Guid organizationId,
+        Palladin.Module.Identity.Domain.User user,
         OrganizationOfflineAccessPolicy policy)
     {
-        await using var scope = apiFactory.Services.CreateAsyncScope();
-        var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
-        var organization = await writeContext.Organizations.SingleAsync(
-            x => x.Id == organizationId,
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.OrganizationManagement);
+        var response = await client.PutAsJsonAsync(
+            "api/org/offline-access-policy",
+            new UpdateOrganizationOfflineAccessPolicyRequest { Policy = policy },
             TestContext.Current.CancellationToken);
-        organization.SetOfflineAccessPolicy(policy).ShouldBeTrue();
-        await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK,
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 
     private async Task SeedMatchingMemberKeyDirectoryAsync(Guid userId)

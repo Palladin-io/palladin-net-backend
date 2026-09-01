@@ -12,7 +12,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.14.9" />
+        <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.103.1" />
         <PackageReference Include="AWSSDK.SQS" Version="4.0.3.8" />
         <PackageReference Include="FastEndpoints" Version="7.2.0" />
         <PackageReference Include="FirebaseAdmin" Version="3.6.0" />

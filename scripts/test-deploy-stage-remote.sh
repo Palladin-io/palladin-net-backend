@@ -84,6 +84,7 @@ fi
 printf "%s\n" "{\"status\":\"Healthy\"}"'
 
   create_mock "$case_dir/bin/sleep" 'exit 0'
+  create_mock "$case_dir/bin/flock" 'exit 0'
   printf '%s\n' "$case_dir"
 }
 
@@ -101,6 +102,7 @@ run_case() {
     PALLADIN_STAGE_REQUIRED_ENV_KEYS_FILE="$REQUIRED_KEYS" \
     PALLADIN_STAGE_CADDYFILE="$case_dir/Caddyfile" \
     PALLADIN_STAGE_DEPLOYMENT_DIRECTORY="$case_dir/deployments" \
+    PALLADIN_STAGE_LOCK_FILE="$case_dir/deploy.lock" \
     "$@" \
     "$DEPLOY_SCRIPT"
 }

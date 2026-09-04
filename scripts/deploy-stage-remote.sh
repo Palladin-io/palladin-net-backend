@@ -15,6 +15,8 @@ readonly CADDYFILE="${PALLADIN_STAGE_CADDYFILE:-/opt/palladin/caddy/Caddyfile}"
 readonly DOCKER_NETWORK="${PALLADIN_STAGE_DOCKER_NETWORK:-palladin-stage}"
 readonly DEPLOYMENT_DIRECTORY="${PALLADIN_STAGE_DEPLOYMENT_DIRECTORY:-/opt/palladin/deployments}"
 readonly PUBLIC_HEALTH_URL="${PALLADIN_STAGE_PUBLIC_HEALTH_URL:-https://api.stage.palladin.io/api/health}"
+readonly DEPLOYMENT_LOCK_FILE="${PALLADIN_STAGE_LOCK_FILE:-/var/lock/palladin-stage-api-deploy.lock}"
+readonly DEPLOYMENT_LOCK_WAIT_SECONDS="${PALLADIN_STAGE_LOCK_WAIT_SECONDS:-3600}"
 
 workdir=""
 candidate=""
@@ -95,7 +97,7 @@ cleanup() {
 trap 'on_error "$?"' ERR
 trap cleanup EXIT
 
-for command_name in aws chmod cp curl date docker grep install mktemp mv sed seq sleep; do
+for command_name in aws chmod cp curl date docker flock grep install mktemp mv sed seq sleep; do
   command -v "$command_name" >/dev/null || fail "Required command is unavailable: $command_name"
 done
 
@@ -106,8 +108,13 @@ done
 [[ "$RUNTIME_ENV_PARAMETER" =~ ^/[-A-Za-z0-9_./]+$ ]] || fail "Runtime parameter name is malformed."
 [[ "$ENUMERATION_SECRET_PARAMETER" =~ ^/[-A-Za-z0-9_./]+$ ]] \
   || fail "Enumeration-secret parameter name is malformed."
+[[ "$DEPLOYMENT_LOCK_WAIT_SECONDS" =~ ^[0-9]+$ ]] || fail "Deployment lock timeout is malformed."
 [[ -r "$REQUIRED_ENV_KEYS_FILE" ]] || fail "Required environment-key manifest is unavailable."
 [[ -f "$CADDYFILE" ]] || fail "Caddy configuration is unavailable."
+
+exec 9> "$DEPLOYMENT_LOCK_FILE"
+flock --exclusive --wait "$DEPLOYMENT_LOCK_WAIT_SECONDS" 9 \
+  || fail "Another stage deployment still owns the host lock."
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
 container_is_running "$CADDY_CONTAINER" || fail "Caddy is not running."

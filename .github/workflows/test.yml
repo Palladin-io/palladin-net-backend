@@ -13,7 +13,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Superseded PR validation may be cancelled, but main deployments must queue.
+  # Cancelling an in-flight deployment can otherwise strand Caddy between slots.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -61,6 +63,9 @@ jobs:
       - name: Build
         run: dotnet build Palladin.sln --no-restore
 
+      - name: Test the stage deployment rollback
+        run: ./scripts/test-deploy-stage-remote.sh
+
       - name: Test
         run: dotnet test Palladin.sln --no-build --verbosity normal
 
@@ -73,3 +78,15 @@ jobs:
       contents: read # Required to check out the tested source revision.
       id-token: write # Required for Sigstore-backed artifact attestations.
       attestations: write # Required to publish attestations for the repository.
+
+  deploy-stage:
+    name: Deploy backend to stage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - test
+      - release-backend-artifact
+    uses: ./.github/workflows/deploy-stage.yml
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

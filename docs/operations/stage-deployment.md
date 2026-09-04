@@ -2,7 +2,7 @@
 
 Every push to `main` is deployed to `https://api.stage.palladin.io` only after the backend tests pass and the tested release artifact is built. Pull-request runs never deploy.
 
-Main workflow runs and their reusable release-artifact jobs do not share a GitHub concurrency group because GitHub retains only one pending run per group. Before promotion, each run discovers and waits for the immediately preceding `main` push workflow to complete. This forms a chain that preserves every run and deployment order even when several pushes arrive quickly. A host-level lock waits up to one hour and prevents overlapping SSM commands after manual workflow cancellation or infrastructure interruption.
+Main workflow runs and their reusable release-artifact jobs do not share a GitHub concurrency group because GitHub retains only one pending run per group. Before promotion, each run discovers and waits for the immediately preceding `main` push workflow to complete. This forms a chain that preserves every run and deployment order even when several pushes arrive quickly. A rerun whose original run number is older than another known `main` run skips deployment so it cannot roll stage back to stale code. A host-level lock waits up to one hour and prevents overlapping SSM commands after manual workflow cancellation or infrastructure interruption.
 
 ## Trust and configuration boundaries
 

@@ -17,7 +17,11 @@ chmod +x "$test_root/bin/sleep"
 # shellcheck disable=SC2016
 printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' '
 if [[ "$*" == *"actions/workflows/test.yml/runs"* ]]; then
-  printf "%s\n" '\''[{"workflow_runs":[{"id":1000,"run_number":100,"status":"in_progress"},{"id":900,"run_number":99,"status":"in_progress"}]}]'\''
+  if [[ "${MOCK_NEWER_RUN:-false}" == true ]]; then
+    printf "%s\n" '\''[{"workflow_runs":[{"id":1100,"run_number":101,"status":"completed"},{"id":1000,"run_number":100,"status":"in_progress"},{"id":900,"run_number":99,"status":"completed"}]}]'\''
+  else
+    printf "%s\n" '\''[{"workflow_runs":[{"id":1000,"run_number":100,"status":"in_progress"},{"id":900,"run_number":99,"status":"in_progress"}]}]'\''
+  fi
   exit 0
 fi
 counter_file="$MOCK_STATE/prior-count"
@@ -29,7 +33,7 @@ if (( count == 1 )); then printf "in_progress\n"; else printf "completed\n"; fi'
   > "$test_root/bin/gh"
 chmod +x "$test_root/bin/gh"
 
-env \
+decision="$(env \
   PATH="$test_root/bin:$PATH" \
   MOCK_STATE="$test_root/state" \
   PALLADIN_GITHUB_REPOSITORY="Palladin-io/palladin-net-backend" \
@@ -37,9 +41,24 @@ env \
   PALLADIN_CURRENT_RUN_NUMBER=100 \
   PALLADIN_MAIN_WORKFLOW=test.yml \
   PALLADIN_GITHUB_POLL_INTERVAL_SECONDS=0 \
-  "$WAIT_SCRIPT" > "$test_root/output"
+  "$WAIT_SCRIPT")"
 
-grep -q 'Immediately preceding main workflow completed' "$test_root/output"
+[[ "$decision" == true ]]
 [[ "$(cat "$test_root/state/prior-count")" == 2 ]]
 
-printf 'Prior-main-run ordering scenario passed.\n'
+mkdir -p "$test_root/stale-state"
+stale_decision="$(env \
+  PATH="$test_root/bin:$PATH" \
+  MOCK_STATE="$test_root/stale-state" \
+  MOCK_NEWER_RUN=true \
+  PALLADIN_GITHUB_REPOSITORY="Palladin-io/palladin-net-backend" \
+  PALLADIN_CURRENT_RUN_ID=1000 \
+  PALLADIN_CURRENT_RUN_NUMBER=100 \
+  PALLADIN_MAIN_WORKFLOW=test.yml \
+  PALLADIN_GITHUB_POLL_INTERVAL_SECONDS=0 \
+  "$WAIT_SCRIPT")"
+
+[[ "$stale_decision" == false ]]
+[[ ! -e "$test_root/stale-state/prior-count" ]]
+
+printf 'Prior-main-run ordering and stale-rerun scenarios passed.\n'

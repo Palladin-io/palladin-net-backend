@@ -20,7 +20,9 @@ count=0
 [[ ! -f "$counter_file" ]] || count="$(cat "$counter_file")"
 count=$((count + 1))
 printf "%s" "$count" > "$counter_file"
-if (( count == 1 )); then
+if (( count <= 13 )); then
+  exit 1
+elif (( count == 14 )); then
   printf "%s\n" '\''{"Status":"InProgress","StandardOutputContent":"","StandardErrorContent":""}'\''
 else
   printf "%s\n" '\''{"Status":"Success","StandardOutputContent":"done","StandardErrorContent":""}'\''
@@ -37,6 +39,6 @@ invocation="$(env \
   "$WAIT_SCRIPT")"
 
 [[ "$(jq -r '.Status' <<< "$invocation")" == Success ]]
-[[ "$(cat "$test_root/state/ssm-count")" == 2 ]]
+[[ "$(cat "$test_root/state/ssm-count")" == 15 ]]
 
-printf 'SSM terminal-status polling scenario passed.\n'
+printf 'SSM transient-error recovery and terminal-status polling scenario passed.\n'

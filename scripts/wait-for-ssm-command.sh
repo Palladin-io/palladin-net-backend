@@ -20,22 +20,24 @@ for command_name in aws jq sleep; do
 done
 
 last_status=""
-consecutive_errors=0
+polling_unavailable=false
 while :; do
   if ! invocation="$(aws ssm get-command-invocation \
     --region "$AWS_REGION" \
     --command-id "$COMMAND_ID" \
     --instance-id "$INSTANCE_ID" \
     --output json 2>/dev/null)"; then
-    consecutive_errors=$((consecutive_errors + 1))
-    if (( consecutive_errors >= 12 )); then
-      echo "SSM invocation remained unavailable after repeated polling." >&2
-      exit 1
+    if [[ "$polling_unavailable" == false ]]; then
+      echo "SSM invocation is temporarily unavailable; polling will continue." >&2
+      polling_unavailable=true
     fi
     sleep "$POLL_INTERVAL_SECONDS"
     continue
   fi
-  consecutive_errors=0
+  if [[ "$polling_unavailable" == true ]]; then
+    echo "SSM invocation polling recovered." >&2
+    polling_unavailable=false
+  fi
 
   status="$(jq -er '.Status' <<< "$invocation")"
   if [[ "$status" != "$last_status" ]]; then

@@ -2,7 +2,7 @@
 
 Every push to `main` is deployed to `https://api.stage.palladin.io` only after the backend tests pass and the tested release artifact is built. Pull-request runs never deploy.
 
-Main workflow runs do not share a GitHub concurrency group because GitHub retains only one pending run per group. Before promotion, each run discovers and waits for the immediately preceding `main` push workflow to complete. This forms a chain that preserves every run and deployment order even when several pushes arrive quickly. A host-level lock waits up to one hour and prevents overlapping SSM commands after manual workflow cancellation or infrastructure interruption.
+Main workflow runs and their reusable release-artifact jobs do not share a GitHub concurrency group because GitHub retains only one pending run per group. Before promotion, each run discovers and waits for the immediately preceding `main` push workflow to complete. This forms a chain that preserves every run and deployment order even when several pushes arrive quickly. A host-level lock waits up to one hour and prevents overlapping SSM commands after manual workflow cancellation or infrastructure interruption.
 
 ## Trust and configuration boundaries
 
@@ -25,7 +25,7 @@ The workflow downloads the release archive produced from the successful test run
 
 The instance keeps two stable API slots, `palladin-api-blue` and `palladin-api-green`. Deployment starts the inactive slot with bounded local Docker logs, checks its health through the same Docker network as Caddy, and only then reloads Caddy with the candidate upstream. The previous slot stays running until public `/api/health` succeeds and the candidate survives a stability window. Any pre-completion failure restores the old Caddy configuration and removes the failed candidate.
 
-GitHub polls the SSM invocation until it reaches a terminal state. The SSM command has its own one-hour execution timeout, so a GitHub waiter timeout cannot leave an unbounded background deployment racing a later run.
+GitHub polls the SSM invocation until it reaches a terminal state, including through transient SSM API failures. The SSM command has its own one-hour execution timeout, so a GitHub waiter timeout cannot leave an unbounded background deployment racing a later run.
 
 The successful source SHA, image digest, active slot and timestamp are recorded root-only in `/opt/palladin/deployments/current`.
 

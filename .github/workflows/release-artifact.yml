@@ -6,10 +6,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: release-artifact-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   attest-backend-image:
     name: Build and attest backend image

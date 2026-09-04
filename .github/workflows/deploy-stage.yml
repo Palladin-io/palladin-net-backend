@@ -1,0 +1,205 @@
+name: Deploy stage
+
+on:
+  workflow_call:
+    secrets:
+      AWS_REGION:
+        required: true
+      AWS_ROLE_ARN:
+        required: true
+      ECR_REPOSITORY:
+        required: true
+      STAGE_EC2_INSTANCE_ID:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deployment_order:
+    name: Preserve main deployment order
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      contents: read
+
+    outputs:
+      should_deploy: ${{ steps.order.outputs.should_deploy }}
+
+    env:
+      SOURCE_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout the tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Wait for the immediately preceding main run
+        id: order
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PALLADIN_CURRENT_RUN_ID: ${{ github.run_id }}
+          PALLADIN_CURRENT_RUN_NUMBER: ${{ github.run_number }}
+          PALLADIN_GITHUB_REPOSITORY: ${{ github.repository }}
+          PALLADIN_MAIN_WORKFLOW: test.yml
+        run: |
+          should_deploy="$(./scripts/wait-for-prior-main-run.sh)"
+          echo "should_deploy=$should_deploy" >> "$GITHUB_OUTPUT"
+
+  deploy-stage:
+    name: Promote tested image to stage
+    needs: deployment_order
+    if: needs.deployment_order.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+      SOURCE_SHA: ${{ github.sha }}
+      STAGE_EC2_INSTANCE_ID: ${{ secrets.STAGE_EC2_INSTANCE_ID }}
+      STAGE_RUNTIME_ENV_PARAMETER: /palladin/stage/api/runtime-env
+      ENUMERATION_SECRET_PARAMETER: /palladin/stage/identity/password-auth/enumeration-secret
+
+    steps:
+      - name: Checkout the tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Download the tested backend artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-release-${{ env.SOURCE_SHA }}
+          path: ${{ runner.temp }}/backend-release
+
+      - name: Verify and load the tested image
+        run: |
+          set -euo pipefail
+          release="$RUNNER_TEMP/backend-release"
+          (cd "$release" && sha256sum --check SHA256SUMS-backend)
+
+          manifest_source_sha="$(jq -er '.sourceSha' "$release/release-manifest-backend.json")"
+          if [[ "$manifest_source_sha" != "$SOURCE_SHA" ]]; then
+            echo "Release manifest does not belong to the requested source revision." >&2
+            exit 1
+          fi
+
+          docker load --input "$release/palladin-api-$SOURCE_SHA.tar"
+          image_revision="$(docker image inspect "palladin-api:$SOURCE_SHA" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          if [[ "$image_revision" != "$SOURCE_SHA" ]]; then
+            echo "Loaded image revision label does not match the tested source revision." >&2
+            exit 1
+          fi
+
+      - name: Configure AWS credentials through GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@aded0d722166a37980e030aa969dda0bfe6b6947 # v2.1.7
+
+      - name: Publish or reuse the immutable source image
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          set -euo pipefail
+          repository_image="$ECR_REGISTRY/$ECR_REPOSITORY"
+          tested_image_id="$(docker image inspect "palladin-api:$SOURCE_SHA" --format '{{.Id}}')"
+
+          if aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$SOURCE_SHA" >/dev/null 2>&1; then
+            docker pull "$repository_image:$SOURCE_SHA"
+            remote_revision="$(docker image inspect "$repository_image:$SOURCE_SHA" \
+              --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            remote_image_id="$(docker image inspect "$repository_image:$SOURCE_SHA" --format '{{.Id}}')"
+            if [[ "$remote_revision" != "$SOURCE_SHA" || "$remote_image_id" != "$tested_image_id" ]]; then
+              echo "Existing ECR tag is not identical to the tested source image." >&2
+              exit 1
+            fi
+          else
+            docker tag "palladin-api:$SOURCE_SHA" "$repository_image:$SOURCE_SHA"
+            docker push "$repository_image:$SOURCE_SHA"
+          fi
+
+          image_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$SOURCE_SHA" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ECR did not return a valid image digest." >&2
+            exit 1
+          fi
+
+          echo "image-uri=$repository_image@$image_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the candidate through SSM
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.image-uri }}
+        run: |
+          set -euo pipefail
+
+          script_base64="$(base64 -w 0 scripts/deploy-stage-remote.sh)"
+          keys_base64="$(base64 -w 0 scripts/stage-required-env-keys.txt)"
+          remote_command="$(jq -nr \
+            --arg script "$script_base64" \
+            --arg keys "$keys_base64" \
+            --arg image "$IMAGE_URI" \
+            --arg source "$SOURCE_SHA" \
+            --arg region "$AWS_REGION" \
+            --arg runtime_parameter "$STAGE_RUNTIME_ENV_PARAMETER" \
+            --arg enumeration_parameter "$ENUMERATION_SECRET_PARAMETER" \
+            '[
+              "set -euo pipefail",
+              "workdir=$(mktemp -d)",
+              "trap \u0027rm -rf -- \"$workdir\"\u0027 EXIT",
+              ("printf %s " + ($script | @sh) + " | base64 --decode > \"$workdir/deploy-stage-remote.sh\""),
+              ("printf %s " + ($keys | @sh) + " | base64 --decode > \"$workdir/stage-required-env-keys.txt\""),
+              "chmod 700 \"$workdir/deploy-stage-remote.sh\"",
+              ("sudo env "
+                + "PALLADIN_STAGE_IMAGE_URI=" + ($image | @sh) + " "
+                + "PALLADIN_STAGE_SOURCE_SHA=" + ($source | @sh) + " "
+                + "PALLADIN_STAGE_AWS_REGION=" + ($region | @sh) + " "
+                + "PALLADIN_STAGE_RUNTIME_ENV_PARAMETER=" + ($runtime_parameter | @sh) + " "
+                + "PALLADIN_STAGE_ENUMERATION_SECRET_PARAMETER=" + ($enumeration_parameter | @sh) + " "
+                + "PALLADIN_STAGE_REQUIRED_ENV_KEYS_FILE=\"$workdir/stage-required-env-keys.txt\" "
+                + "\"$workdir/deploy-stage-remote.sh\"")
+            ]')"
+
+          command_id="$(aws ssm send-command \
+            --instance-ids "$STAGE_EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy tested Palladin backend revision" \
+            --timeout-seconds 3600 \
+            --parameters "$(jq -nc --argjson commands "$remote_command" '{commands: $commands}')" \
+            --query 'Command.CommandId' \
+            --output text)"
+
+          invocation="$(PALLADIN_SSM_COMMAND_ID="$command_id" \
+            PALLADIN_SSM_INSTANCE_ID="$STAGE_EC2_INSTANCE_ID" \
+            PALLADIN_SSM_AWS_REGION="$AWS_REGION" \
+            ./scripts/wait-for-ssm-command.sh)"
+          status="$(jq -r '.Status' <<< "$invocation")"
+          stdout="$(jq -r '.StandardOutputContent' <<< "$invocation")"
+          stderr="$(jq -r '.StandardErrorContent' <<< "$invocation")"
+
+          [[ -z "$stdout" ]] || printf '%s\n' "$stdout"
+          [[ -z "$stderr" ]] || printf '%s\n' "$stderr" >&2
+          if [[ "$status" != "Success" ]]; then
+            echo "Stage deployment failed with SSM status: $status" >&2
+            exit 1
+          fi

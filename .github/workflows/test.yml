@@ -12,8 +12,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # GitHub retains only one pending member of a concurrency group. Main runs use
+  # a unique group so none are discarded; the deploy workflow orders them.
+  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -61,6 +63,12 @@ jobs:
       - name: Build
         run: dotnet build Palladin.sln --no-restore
 
+      - name: Test the stage deployment orchestration
+        run: |
+          ./scripts/test-wait-for-prior-main-run.sh
+          ./scripts/test-wait-for-ssm-command.sh
+          ./scripts/test-deploy-stage-remote.sh
+
       - name: Test
         run: dotnet test Palladin.sln --no-build --verbosity normal
 
@@ -73,3 +81,20 @@ jobs:
       contents: read # Required to check out the tested source revision.
       id-token: write # Required for Sigstore-backed artifact attestations.
       attestations: write # Required to publish attestations for the repository.
+
+  deploy-stage:
+    name: Deploy backend to stage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - test
+      - release-backend-artifact
+    uses: ./.github/workflows/deploy-stage.yml
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    secrets:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+      STAGE_EC2_INSTANCE_ID: ${{ secrets.STAGE_EC2_INSTANCE_ID }}

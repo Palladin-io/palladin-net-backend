@@ -6,8 +6,11 @@ using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Npgsql;
+using Palladin.Module.Agents.Infrastructure.Persistence.Configurations;
 
 namespace Palladin.Module.Agents.Features;
 
@@ -26,8 +29,8 @@ internal sealed class ApproveAgentValidator : Validator<ApproveAgentRequest>
 {
     public ApproveAgentValidator()
     {
-        RuleFor(x => x.Name).Must(x => !string.IsNullOrWhiteSpace(x)).MaximumLength(200).When(x => x.Name is not null);
-        RuleFor(x => x.Type).Must(x => !string.IsNullOrWhiteSpace(x)).MaximumLength(50).When(x => x.Type is not null);
+        RuleFor(x => x.Name).Must(x => AgentMetadata.TryNormalizeRequiredDisplayName(x, out _)).When(x => x.Name is not null);
+        RuleFor(x => x.Type).Must(x => AgentMetadata.TryNormalizeType(x, out _)).When(x => x.Type is not null);
         RuleFor(x => x.IconKey).Must(x => !string.IsNullOrWhiteSpace(x)).MaximumLength(500).When(x => x.IconKey is not null);
         RuleFor(x => x.IconColor).Must(x => !string.IsNullOrWhiteSpace(x)).MaximumLength(20).When(x => x.IconColor is not null);
     }
@@ -36,6 +39,7 @@ internal sealed class ApproveAgentValidator : Validator<ApproveAgentRequest>
 [PublicAPI]
 internal sealed class ApproveAgentEndpoint(
     AgentsDomainWriteContext domainWriteContext,
+    AgentDisplayNameCoordinator displayNameCoordinator,
     IClock clock) : Endpoint<ApproveAgentRequest>
 {
     public override void Configure()
@@ -78,8 +82,41 @@ internal sealed class ApproveAgentEndpoint(
             return;
         }
 
-        agent.Activate(userId.Value, clock.GetCurrentInstant(), req.Name, req.Type, req.IconKey, req.IconColor);
-        await domainWriteContext.CommitAsync(ct);
+        _ = AgentMetadata.TryNormalizeDisplayName(req.Name, out var name);
+        _ = AgentMetadata.TryNormalizeType(req.Type, out var type);
+        var now = clock.GetCurrentInstant();
+        if (name is not null)
+        {
+            await displayNameCoordinator.FenceAsync(organizationId.Value, ct);
+            if (!await displayNameCoordinator.IsAvailableAsync(
+                    organizationId.Value, name, now, agent.Id, null, ct))
+            {
+                await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
+                return;
+            }
+        }
+
+        agent.Activate(userId.Value, now, name, type, req.IconKey, req.IconColor);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            domainWriteContext.Clear();
+            await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
+            return;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: AgentDisplayNameFenceConfiguration.PrimaryKey,
+        })
+        {
+            domainWriteContext.Clear();
+            await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
+            return;
+        }
 
         await Send.NoContentAsync(ct);
     }

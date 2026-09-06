@@ -57,7 +57,16 @@ internal sealed class ActivateApiKeyEndpoint(
 
         var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
         apiKey.Activate(userId.Value, actorName, clock.GetCurrentInstant());
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            domainWriteContext.Clear();
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
 
         await Send.NoContentAsync(ct);
     }

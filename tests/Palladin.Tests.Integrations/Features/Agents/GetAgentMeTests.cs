@@ -240,7 +240,7 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_EnrollsWithoutAgentTypeHeader_Then_DefaultsToUnknown()
+    public async Task When_EnrollsWithoutAgentTypeHeader_Then_PersistsNoType()
     {
         // Given
         var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -259,11 +259,11 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         var type = await ReadAgentTypeAsync(organization.Id, publicKey);
-        type.ShouldBe("Unknown");
+        type.ShouldBeNull();
     }
 
     [Fact]
-    public async Task When_ReconnectsWithDifferentType_Then_OverwritesType()
+    public async Task When_ActiveAgentReconnectsWithDifferentType_Then_PreservesApprovedType()
     {
         // Given
         var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -288,7 +288,7 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var type = await ReadAgentTypeAsync(organization.Id, publicKey);
-        type.ShouldBe("archiver");
+        type.ShouldBe("scraper");
     }
 
     [Fact]

@@ -1,17 +1,21 @@
 using Palladin.Core.Security;
 using Palladin.Core.Types;
+using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Agents.Infrastructure.Persistence;
 using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using NodaTime;
 
 namespace Palladin.Module.Agents.Features;
 
 [PublicAPI]
 internal sealed class DeleteAgentEndpoint(
+    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
+    IMemoryCache cache,
     IClock clock) : EndpointWithoutRequest
 {
     public override void Configure()
@@ -55,9 +59,19 @@ internal sealed class DeleteAgentEndpoint(
             return;
         }
 
+        var credentialHashes = await domainReadContext.ApiKeyCredentials
+            .Where(x => x.AgentId == agent.Id)
+            .Select(x => x.KeyHash)
+            .ToListAsync(ct);
+
         agent.Delete(userId.Value, User.GetDisplayName(), clock.GetCurrentInstant());
         domainWriteContext.Remove(agent);
         await domainWriteContext.CommitAsync(ct);
+
+        foreach (var credentialHash in credentialHashes)
+        {
+            AgentAuthenticationHandler.InvalidateApiKeyCache(cache, credentialHash);
+        }
 
         await Send.NoContentAsync(ct);
     }

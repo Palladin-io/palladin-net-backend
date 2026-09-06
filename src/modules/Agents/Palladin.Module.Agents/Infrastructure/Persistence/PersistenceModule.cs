@@ -30,6 +30,7 @@ internal static class PersistenceModule
 
         services.AddScoped<AgentsDomainReadContext>();
         services.AddScoped<AgentsDomainWriteContext>();
+        services.AddScoped<AgentDisplayNameCoordinator>();
         services.AddDbMigrationHook<AgentsDbWriteContext, AgentsPersistenceOptions>();
 
         return services;

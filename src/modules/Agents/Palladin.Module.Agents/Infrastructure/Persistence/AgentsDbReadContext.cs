@@ -8,6 +8,9 @@ internal sealed class AgentsDbReadContext(DbContextOptions<AgentsDbReadContext> 
 {
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<ApiKeyCredential> ApiKeyCredentials => Set<ApiKeyCredential>();
+    public DbSet<AgentPairingRequest> AgentPairingRequests => Set<AgentPairingRequest>();
+    public DbSet<AgentDisplayNameFence> AgentDisplayNameFences => Set<AgentDisplayNameFence>();
     public DbSet<User> Users => Set<User>();
     public DbSet<FormDiscoveryMap> FormDiscoveryMaps => Set<FormDiscoveryMap>();
 

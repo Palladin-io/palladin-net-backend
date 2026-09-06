@@ -25,6 +25,7 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
             .HasColumnName("access_epoch")
             .HasDefaultValue(0u);
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(200);
+        builder.Property(x => x.NameKey).HasColumnName("name_key").HasMaxLength(64);
         builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(2000);
         builder.Property(x => x.Type).HasColumnName("type").HasMaxLength(100);
         builder.Property(x => x.IconKey).HasColumnName("icon_key").HasMaxLength(500);
@@ -48,6 +49,7 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
         // so it must be unique across the whole table, not merely per organization — a shared key would
         // let a credential be deliverable to the wrong agent identity.
         builder.HasIndex(x => x.PublicKey).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.NameKey });
 
         builder.HasOne(x => x.EnrolledByUser)
             .WithMany()

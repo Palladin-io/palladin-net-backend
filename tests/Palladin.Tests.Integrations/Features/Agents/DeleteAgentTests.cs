@@ -2,6 +2,7 @@ using System.Net;
 using Palladin.Core.Security;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Domain;
+using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Agents.Infrastructure.Persistence;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
@@ -9,6 +10,7 @@ using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Memory;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Agents;
@@ -36,6 +38,43 @@ public sealed class DeleteAgentTests(ApiFactory apiFactory) : TestBase
         var readContext = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
         var persisted = await readContext.Agents.FirstOrDefaultAsync(x => x.Id == agent.Id);
         persisted.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_DeletedAgentHasHiddenCredential_Then_EvictsItsAuthenticationCache()
+    {
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (apiKey, _) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        var agent = await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(organizationId: organization.Id)
+                .RuleFor(x => x.Status, AgentStatus.Deactivated));
+        var credential = ApiKeyCredential.FromPlaintext(
+            Guid.NewGuid(),
+            apiKey.Id,
+            agent.Id,
+            "pl_test-hidden-credential"u8,
+            apiFactory.FakeClock.GetCurrentInstant());
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = seedScope.ServiceProvider.GetRequiredService<AgentsDbWriteContext>();
+            writeContext.ApiKeyCredentials.Add(credential);
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var cache = apiFactory.Services.GetRequiredService<IMemoryCache>();
+        cache.Set(
+            AgentAuthenticationHandler.ApiKeyCacheKey(credential.KeyHash),
+            new ResolvedApiKey(apiKey.Id, organization.Id, agent.Id));
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.AgentManage);
+
+        var response = await client.DeleteAsync(
+            $"api/agents/{agent.Id}",
+            TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        cache.TryGetValue(
+            AgentAuthenticationHandler.ApiKeyCacheKey(credential.KeyHash),
+            out ResolvedApiKey? _).ShouldBeFalse();
     }
 
     [Fact]

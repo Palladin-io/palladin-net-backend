@@ -98,6 +98,11 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
 
+                    b.Property<string>("NameKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("name_key");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid")
                         .HasColumnName("organization_id");
@@ -133,7 +138,6 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnName("status");
 
                     b.Property<string>("Type")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("type");
@@ -153,7 +157,149 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ReactivatedBy");
 
+                    b.HasIndex("OrganizationId", "NameKey");
+
                     b.ToTable("agents", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Agents.Domain.AgentDisplayNameFence", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("revision");
+
+                    b.HasKey("OrganizationId")
+                        .HasName("PK_agent_display_name_fences");
+
+                    b.ToTable("agent_display_name_fences", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Agents.Domain.AgentPairingRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<Guid?>("ApiKeyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("api_key_id");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CredentialCiphertext")
+                        .HasColumnType("text")
+                        .HasColumnName("credential_ciphertext");
+
+                    b.Property<string>("CredentialEphemeralPublicKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("credential_ephemeral_public_key");
+
+                    b.Property<string>("CredentialNonce")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)")
+                        .HasColumnName("credential_nonce");
+
+                    b.Property<string>("CredentialSuite")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("credential_suite");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("display_name");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("public_key");
+
+                    b.Property<string>("RequestedDisplayName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("requested_display_name");
+
+                    b.Property<string>("RequestedType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("requested_type");
+
+                    b.Property<string>("ReservedDisplayName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reserved_display_name");
+
+                    b.Property<string>("ReservedDisplayNameKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reserved_display_name_key");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("revision");
+
+                    b.Property<string>("SigningPublicKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("signing_public_key");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("type");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("PK_agent_pairing_requests");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("PublicKey");
+
+                    b.HasIndex("OrganizationId", "ReservedDisplayNameKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_agent_pairing_requests_reserved_name")
+                        .HasFilter("status = 1 AND reserved_display_name_key IS NOT NULL");
+
+                    b.HasIndex("Status", "UpdatedAt", "Id");
+
+                    b.ToTable("agent_pairing_requests", (string)null);
                 });
 
             modelBuilder.Entity("Palladin.Module.Agents.Domain.ApiKey", b =>
@@ -191,6 +337,13 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("organization_id");
 
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("revision");
+
                     b.Property<Instant?>("RevokedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revoked_at");
@@ -211,6 +364,48 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganizationId");
 
                     b.ToTable("api_keys", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Agents.Domain.ApiKeyCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<Guid>("ApiKeyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("api_key_id");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("key_hash");
+
+                    b.Property<string>("KeySuffix")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("key_suffix");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId")
+                        .IsUnique();
+
+                    b.HasIndex("ApiKeyId");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique();
+
+                    b.ToTable("api_key_credentials", (string)null);
                 });
 
             modelBuilder.Entity("Palladin.Module.Agents.Domain.FormDiscoveryMap", b =>
@@ -249,8 +444,8 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     b.Property<int>("MapVersion")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
-                        .HasDefaultValueSql("nextval('form_discovery_map_revision_seq')")
-                        .HasColumnName("map_version");
+                        .HasColumnName("map_version")
+                        .HasDefaultValueSql("nextval('form_discovery_map_revision_seq')");
 
                     b.Property<string>("Provider")
                         .IsRequired()
@@ -271,13 +466,13 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("MapVersion")
+                        .IsUnique();
+
                     b.HasIndex("Domain", "Provider", "Fingerprint")
                         .IsUnique();
 
                     b.HasIndex("Domain", "Provider", "Status", "MapVersion");
-
-                    b.HasIndex("MapVersion")
-                        .IsUnique();
 
                     b.ToTable("form_discovery_maps", (string)null);
                 });
@@ -333,6 +528,23 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     b.Navigation("EnrolledByUser");
 
                     b.Navigation("ReactivatedByUser");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Agents.Domain.ApiKeyCredential", b =>
+                {
+                    b.HasOne("Palladin.Module.Agents.Domain.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_api_key_credentials_agent");
+
+                    b.HasOne("Palladin.Module.Agents.Domain.ApiKey", null)
+                        .WithMany()
+                        .HasForeignKey("ApiKeyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_api_key_credentials_api_key");
                 });
 #pragma warning restore 612, 618
         }

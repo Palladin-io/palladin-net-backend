@@ -65,9 +65,18 @@ internal sealed class RevokeApiKeyEndpoint(
 
         var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
         apiKey.Revoke(userId.Value, actorName, clock.GetCurrentInstant());
-        await domainWriteContext.CommitAsync(ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            domainWriteContext.Clear();
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
 
-        cache.Remove(AgentAuthenticationHandler.ApiKeyCacheKey(apiKey.KeyHash));
+        AgentAuthenticationHandler.InvalidateApiKeyCache(cache, apiKey.KeyHash);
 
         await Send.NoContentAsync(ct);
     }

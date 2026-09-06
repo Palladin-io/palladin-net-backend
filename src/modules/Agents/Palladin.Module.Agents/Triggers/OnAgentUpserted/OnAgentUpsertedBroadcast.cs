@@ -34,10 +34,13 @@ internal sealed class OnAgentUpsertedBroadcast(
         var metadata = new Dictionary<string, string>
         {
             ["agentId"] = msg.AgentId.ToString(),
-            ["agentType"] = msg.Type,
             ["actionType"] = "approve_agent",
             ["actionDeepLink"] = $"/agents/{msg.AgentId}",
         };
+        if (msg.Type is not null)
+        {
+            metadata["agentType"] = msg.Type;
+        }
         if (msg.Name is not null)
         {
             metadata["agentName"] = msg.Name;

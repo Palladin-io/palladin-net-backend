@@ -14,7 +14,7 @@ public sealed record AgentUpsertedEvent(
     uint RecipientKeyVersion,
     string SigningPublicKey,
     string? Name,
-    string Type,
+    string? Type,
     string? IconKey,
     string? IconColor,
     uint AccessEpoch,

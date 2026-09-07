@@ -25,6 +25,7 @@ public sealed record StartAgentPairingRequest
     public string SigningPublicKey { get; init; } = string.Empty;
     public string? DisplayName { get; init; }
     public string? Type { get; init; }
+    public string? Hostname { get; init; }
 }
 
 [PublicAPI]
@@ -47,6 +48,8 @@ internal sealed class StartAgentPairingValidator : Validator<StartAgentPairingRe
             .Must(value => AgentMetadata.TryNormalizeDisplayName(value, out _));
         RuleFor(x => x.Type)
             .Must(value => AgentMetadata.TryNormalizeType(value, out _));
+        RuleFor(x => x.Hostname).Must(value => value is null
+            || (value.Trim().Length <= 253 && value.Trim().All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_')));
     }
 }
 
@@ -124,7 +127,10 @@ internal sealed class StartAgentPairingEndpoint(
         }
 
         var now = clock.GetCurrentInstant();
-        var expiresAt = now + Duration.FromTimeSpan(options.Value.Lifetime);
+        // PostgreSQL persists timestamps at microsecond precision. Return the same
+        // deadline on the first response and every idempotent database replay.
+        var deadline = now + Duration.FromTimeSpan(options.Value.Lifetime);
+        var expiresAt = Instant.FromUnixTimeTicks(deadline.ToUnixTimeTicks() / 10 * 10);
         domainWriteContext.Add(AgentPairingRequest.Create(
             req.PairingId,
             req.PublicKey,
@@ -132,7 +138,9 @@ internal sealed class StartAgentPairingEndpoint(
             displayName,
             type,
             now,
-            expiresAt));
+            expiresAt,
+            string.IsNullOrWhiteSpace(req.Hostname) ? null : req.Hostname.Trim(),
+            AgentConnectionInfo.NormalizeIp(HttpContext.Connection.RemoteIpAddress)));
         try
         {
             await domainWriteContext.CommitAsync(ct);

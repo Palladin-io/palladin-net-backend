@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Palladin.Core.Guid;
@@ -73,7 +72,7 @@ internal sealed class AgentAuthenticationHandler(
         }
 
         var now = clock.GetCurrentInstant();
-        var ip = NormalizeIp(Request.HttpContext.Connection.RemoteIpAddress);
+        var ip = AgentConnectionInfo.NormalizeIp(Request.HttpContext.Connection.RemoteIpAddress);
         var hostname = ReadOptionalHeader(AgentAuthenticationOptions.AgentHostnameHeader);
         if (!TryReadAgentMetadata(out var name, out var type))
         {
@@ -244,24 +243,6 @@ internal sealed class AgentAuthenticationHandler(
     private async Task<Agent?> FindAgentByPublicKeyAsync(string publicKey, CancellationToken ct) =>
         await writeContext.Agents
             .FirstOrDefaultAsync(x => x.PublicKey == publicKey, ct);
-
-    // Loopback shows as IPv6 "::1" on a local host — store the friendlier 127.0.0.1.
-    // IPv4-mapped IPv6 (::ffff:a.b.c.d) is unwrapped to its plain IPv4 form.
-    private static string? NormalizeIp(IPAddress? address)
-    {
-        if (address is null)
-        {
-            return null;
-        }
-
-        if (IPAddress.IsLoopback(address))
-        {
-            return IPAddress.Loopback.ToString();
-        }
-
-        return address.IsIPv4MappedToIPv6 ? address.MapToIPv4().ToString() : address.ToString();
-    }
-
     private async Task<AuthenticateResult> EnrollPendingAgentAsync(
         Guid organizationId,
         string publicKey,

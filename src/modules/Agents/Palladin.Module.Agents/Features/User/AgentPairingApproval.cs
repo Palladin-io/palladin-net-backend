@@ -69,6 +69,7 @@ internal sealed class AgentPairingApproval(
             now,
             displayName,
             apiKey.Id);
+        agent.SetConnectionInfo(pairing.Ip, pairing.Hostname);
         agent.Activate(userId, now, displayName, normalizedType, iconKey, null);
         agent.RecordBrowserPairingEnrollment();
         if (!pairing.TryApprove(organizationId, agentId, apiKey.Id, displayName, normalizedType, envelope, now))

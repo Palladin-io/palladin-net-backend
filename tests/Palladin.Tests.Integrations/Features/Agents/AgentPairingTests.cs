@@ -5,6 +5,8 @@ using System.Text;
 using FastEndpoints;
 using FastEndpoints.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using NSec.Cryptography;
 using NSubstitute;
@@ -97,7 +99,7 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         var signing = AgentRequestSigning.Generate();
         using var encryptionKey = CreateEncryptionKey();
         var publicKey = ExportPublicKey(encryptionKey);
-        var pairingClient = CreatePairingClient(pairingId, signing);
+        var pairingClient = CreatePairingClient(pairingId, signing, "192.0.2.10");
         var startRequest = new StartAgentPairingRequest
         {
             PairingId = pairingId,
@@ -105,6 +107,7 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
             SigningPublicKey = signing.PublicKeyBase64,
             DisplayName = "  Cafe\u0301 Helper  ",
             Type = "  custom-runtime  ",
+            Hostname = "  pairing-workstation  ",
         };
 
         // When — runtime starts an anonymous, signed request with untrusted metadata.
@@ -130,6 +133,8 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         claimResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
         claim.DisplayName.ShouldBe("Café Helper");
         claim.Type.ShouldBe("custom-runtime");
+        claim.Hostname.ShouldBe("pairing-workstation");
+        claim.Ip.ShouldBe("192.0.2.10");
         claim.ApiKeys.Select(x => x.ApiKeyId).ShouldContain(logicalApiKey.Id);
         claim.ApiKeys.ShouldAllBe(x => x.KeyHint.StartsWith("pl_••••", StringComparison.Ordinal));
 
@@ -169,6 +174,8 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         pairedAgent.Name.ShouldBe("Bursztynowy Lis");
         pairedAgent.IconKey.ShouldBe("smart_toy");
         pairedAgent.Type.ShouldBe("custom-runtime");
+        pairedAgent.LastHostname.ShouldBe("pairing-workstation");
+        pairedAgent.LastIp.ShouldBe("192.0.2.10");
 
         // And — only the logical API key is user-visible; its technical child is internal.
         var (_, listedApiKeys) = await userClient.GETAsync<ListApiKeysEndpoint, ListApiKeysResponse>();
@@ -228,13 +235,20 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
                 approved.AgentId,
                 technicalPlaintext,
                 publicKey,
-                signing);
+                signing,
+                ((TestServer)apiFactory.Services.GetRequiredService<IServer>()).CreateHandler(
+                    context => context.Connection.RemoteIpAddress = IPAddress.Parse("192.0.2.20")));
+            agentClient.DefaultRequestHeaders.Add(AgentAuthenticationOptions.AgentHostnameHeader, "current-workstation");
             var (profileResponse, profile) = await agentClient
                 .GETAsync<GetAgentMeEndpoint, GetAgentMeResponse>();
             profileResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
             profile.AgentId.ShouldBe(approved.AgentId);
             profile.OrganizationId.ShouldBe(organization.Id);
             profile.Status.ShouldBe(AgentStatus.Active);
+            var (_, updatedAgents) = await userClient.GETAsync<ListAgentsEndpoint, ListAgentsResponse>();
+            var updatedAgent = updatedAgents.Items.Single(x => x.AgentId == approved.AgentId);
+            updatedAgent.LastHostname.ShouldBe("current-workstation");
+            updatedAgent.LastIp.ShouldBe("192.0.2.20");
 
             // A technical credential is bound to exactly one Agent identity.
             using var foreignEncryptionKey = CreateEncryptionKey();
@@ -273,6 +287,8 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
                 x => x.Id == approved.AgentId,
                 TestContext.Current.CancellationToken);
             persistedAgent.LastUsedApiKeyId.ShouldBe(logicalApiKey.Id);
+            persistedAgent.LastHostname.ShouldBe("current-workstation");
+            persistedAgent.LastIp.ShouldBe("192.0.2.20");
         }
     }
 
@@ -448,36 +464,49 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         }
     }
 
-    [Fact]
-    public async Task When_RuntimeRetriesSameSignedPayload_Then_StartIsIdempotentButChangedMetadataConflicts()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(9)]
+    public async Task When_RuntimeRetriesSameSignedPayload_Then_StartIsIdempotentButChangedMetadataConflicts(int fractionalTicks)
     {
-        // Given
-        var pairingId = Guid.NewGuid();
-        var signing = AgentRequestSigning.Generate();
-        using var encryptionKey = CreateEncryptionKey();
-        var client = CreatePairingClient(pairingId, signing);
-        var request = new StartAgentPairingRequest
+        var originalNow = apiFactory.FakeClock.GetCurrentInstant();
+        apiFactory.FakeClock.Reset(NodaTime.Instant.FromUnixTimeTicks(
+            originalNow.ToUnixTimeTicks() / 10 * 10 + fractionalTicks));
+        try
         {
-            PairingId = pairingId,
-            PublicKey = ExportPublicKey(encryptionKey),
-            SigningPublicKey = signing.PublicKeyBase64,
-            Type = "custom/runtime",
-        };
+            // Given
+            var pairingId = Guid.NewGuid();
+            var signing = AgentRequestSigning.Generate();
+            using var encryptionKey = CreateEncryptionKey();
+            var client = CreatePairingClient(pairingId, signing);
+            var request = new StartAgentPairingRequest
+            {
+                PairingId = pairingId,
+                PublicKey = ExportPublicKey(encryptionKey),
+                SigningPublicKey = signing.PublicKeyBase64,
+                Type = "custom/runtime",
+            };
 
-        // When
-        var (firstResponse, first) = await client
-            .POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(request);
-        var (retryResponse, retry) = await client
-            .POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(request);
-        var (conflictResponse, _) = await client
-            .POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(
-                request with { Type = "changed" });
+            // When
+            var (firstResponse, first) = await client
+                .POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(request);
+            var (retryResponse, retry) = await client
+                .POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(request);
+            var (conflictResponse, _) = await client
+                .POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(
+                    request with { Type = "changed" });
 
-        // Then
-        firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        retryResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        retry.ShouldBe(first);
-        conflictResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            // Then
+            firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            retryResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            retry.ShouldBe(first);
+            conflictResponse.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalNow);
+        }
     }
 
     [Fact]
@@ -749,8 +778,10 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         status.Credential.ShouldBeNull();
     }
 
-    private HttpClient CreatePairingClient(Guid pairingId, AgentRequestSigning signing) =>
-        new(signing.CreateSigningHandler(pairingId, apiFactory.CreateHandler()))
+    private HttpClient CreatePairingClient(Guid pairingId, AgentRequestSigning signing, string? ip = null) =>
+        new(signing.CreateSigningHandler(pairingId, ip is null ? apiFactory.CreateHandler()
+            : ((TestServer)apiFactory.Services.GetRequiredService<IServer>()).CreateHandler(
+                context => context.Connection.RemoteIpAddress = IPAddress.Parse(ip))))
         {
             BaseAddress = apiFactory.Client.BaseAddress,
         };

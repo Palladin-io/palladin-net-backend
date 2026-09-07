@@ -28,7 +28,9 @@ public sealed record ClaimAgentPairingResponse(
     string PublicKeyHint,
     Instant ExpiresAt,
     bool CanCreateApiKey,
-    IReadOnlyList<PairingApiKeyOption> ApiKeys);
+    IReadOnlyList<PairingApiKeyOption> ApiKeys,
+    string? Hostname = null,
+    string? Ip = null);
 
 [PublicAPI]
 internal sealed class ClaimAgentPairingEndpoint(
@@ -78,6 +80,8 @@ internal sealed class ClaimAgentPairingEndpoint(
             AgentPublicKey.Hint(pairing.PublicKey),
             pairing.ExpiresAt,
             canCreate,
-            apiKeys), ct);
+            apiKeys,
+            pairing.Hostname,
+            pairing.Ip), ct);
     }
 }

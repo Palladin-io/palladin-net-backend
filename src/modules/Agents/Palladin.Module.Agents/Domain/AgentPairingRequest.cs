@@ -10,6 +10,8 @@ internal sealed class AgentPairingRequest
     public string SigningPublicKey { get; private set; } = string.Empty;
     public string? RequestedDisplayName { get; private set; }
     public string? RequestedType { get; private set; }
+    public string? Hostname { get; private set; }
+    public string? Ip { get; private set; }
     public string? DisplayName { get; private set; }
     public string? Type { get; private set; }
     public string? ReservedDisplayName { get; private set; }
@@ -35,7 +37,9 @@ internal sealed class AgentPairingRequest
         string? displayName,
         string? type,
         Instant now,
-        Instant expiresAt) =>
+        Instant expiresAt,
+        string? hostname = null,
+        string? ip = null) =>
         new()
         {
             Id = id,
@@ -43,6 +47,8 @@ internal sealed class AgentPairingRequest
             SigningPublicKey = signingPublicKey,
             RequestedDisplayName = displayName,
             RequestedType = type,
+            Hostname = hostname,
+            Ip = ip,
             DisplayName = displayName,
             Type = type,
             Status = AgentPairingStatus.Pending,

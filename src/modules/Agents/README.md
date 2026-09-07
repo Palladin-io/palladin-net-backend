@@ -58,6 +58,13 @@ increase schema and retry complexity without reducing the invariant.
 - Persistence contexts: `AgentsDbWriteContext`, `AgentsDbReadContext`, `AgentsDomainWriteContext`, `AgentsDomainReadContext`.
 
 ## Critical points / invariants
+- Pairing start accepts an optional bounded runtime-declared hostname in the signed body and stores
+  the IP observed on that runtime connection through the existing trusted-proxy pipeline. Approval
+  shows this start snapshot and initializes the standard Agent connection fields from it, never from
+  the approving browser. Normal authenticated Agent requests continue updating `LastIp` and
+  `LastHostname`; these fields describe the latest known connection, not a separate history.
+  Replaying a pairing start does not replace its original snapshot. Hostname is informational,
+  not a permission or verified machine identity; hostname/IP never enter pairing URLs or analytics.
 - Never return a full API key — only the masked `pl_••••{suffix}` form. The raw key is never persisted, only its hash.
 - Browser pairing never accepts an API key. `POST /api/agent-pairings` and signed status polling are
   anonymous by design and authenticate the exact HTTP request with the declared Ed25519 identity.

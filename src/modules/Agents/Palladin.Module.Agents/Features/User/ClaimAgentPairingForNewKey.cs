@@ -47,6 +47,8 @@ internal sealed class ClaimAgentPairingForNewKeyEndpoint(
             AgentPublicKey.Hint(pairing.PublicKey),
             pairing.ExpiresAt,
             true,
-            []), ct);
+            [],
+            pairing.Hostname,
+            pairing.Ip), ct);
     }
 }

@@ -21,6 +21,8 @@ internal sealed class AgentPairingRequestConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.SigningPublicKey).HasColumnName("signing_public_key").HasMaxLength(64);
         builder.Property(x => x.RequestedDisplayName).HasColumnName("requested_display_name").HasMaxLength(64);
         builder.Property(x => x.RequestedType).HasColumnName("requested_type").HasMaxLength(100);
+        builder.Property(x => x.Hostname).HasColumnName("hostname").HasMaxLength(253);
+        builder.Property(x => x.Ip).HasColumnName("ip").HasMaxLength(45);
         builder.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(64);
         builder.Property(x => x.Type).HasColumnName("type").HasMaxLength(100);
         builder.Property(x => x.ReservedDisplayName).HasColumnName("reserved_display_name").HasMaxLength(64);

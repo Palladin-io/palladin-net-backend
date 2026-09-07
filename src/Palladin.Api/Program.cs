@@ -199,6 +199,7 @@ builder.Services.AddCors(options =>
                 "http://127.0.0.1:5173",
                 "http://localhost:5174",
                 "http://127.0.0.1:5174",
+                "https://stage.palladin.io",
                 "https://palladin.io")
             .AllowAnyHeader()
             .AllowAnyMethod()

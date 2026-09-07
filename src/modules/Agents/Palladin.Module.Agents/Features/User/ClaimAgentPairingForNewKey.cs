@@ -1,45 +1,20 @@
 using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
-using NodaTime;
 using Palladin.Core.Security;
-using Palladin.Module.Agents.Domain;
-using Palladin.Module.Agents.Infrastructure.Persistence;
 using Palladin.Module.Agents.Shared;
 
 namespace Palladin.Module.Agents.Features;
 
 [PublicAPI]
-public sealed record ClaimAgentPairingRequest
-{
-    public Guid PairingId { get; init; }
-}
-
-[PublicAPI]
-public sealed record PairingApiKeyOption(Guid ApiKeyId, string Name, string KeyHint);
-
-[PublicAPI]
-public sealed record ClaimAgentPairingResponse(
-    Guid PairingId,
-    string? DisplayName,
-    string? ReservedDisplayName,
-    string? Type,
-    string PublicKeyHint,
-    Instant ExpiresAt,
-    bool CanCreateApiKey,
-    IReadOnlyList<PairingApiKeyOption> ApiKeys);
-
-[PublicAPI]
-internal sealed class ClaimAgentPairingEndpoint(
-    AgentsDomainReadContext domainReadContext,
+internal sealed class ClaimAgentPairingForNewKeyEndpoint(
     AgentPairingClaims claims) : Endpoint<ClaimAgentPairingRequest, ClaimAgentPairingResponse>
 {
     public override void Configure()
     {
-        Post("api/agent-pairings/{PairingId}/claim");
+        Post("api/agent-pairings/{PairingId}/claim-for-new-key");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
-        this.RequirePermission(Permission.AgentManage | Permission.ReadApiKey);
+        this.RequirePermission(Permission.AgentManage | Permission.WriteApiKey);
         this.RequireEmailVerified();
         Tags("Agents/Pairing");
         Summary(summary =>
@@ -64,12 +39,6 @@ internal sealed class ClaimAgentPairingEndpoint(
             await Send.NotFoundAsync(ct);
             return;
         }
-        var apiKeys = await domainReadContext.ApiKeys
-            .Where(x => x.OrganizationId == organizationId && x.Status == ApiKeyStatus.Active)
-            .OrderBy(x => x.Name)
-            .Select(x => new PairingApiKeyOption(x.Id, x.Name, $"pl_••••{x.KeySuffix}"))
-            .ToListAsync(ct);
-        var canCreate = (User.GetPermissions() & Permission.WriteApiKey) == Permission.WriteApiKey;
         await Send.OkAsync(new ClaimAgentPairingResponse(
             pairing.Id,
             pairing.DisplayName,
@@ -77,7 +46,7 @@ internal sealed class ClaimAgentPairingEndpoint(
             pairing.Type,
             AgentPublicKey.Hint(pairing.PublicKey),
             pairing.ExpiresAt,
-            canCreate,
-            apiKeys), ct);
+            true,
+            []), ct);
     }
 }

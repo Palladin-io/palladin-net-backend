@@ -2,8 +2,8 @@ using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
+using NodaTime;
+using Palladin.Core.Guid;
 using Palladin.Core.Security;
 using Palladin.Module.Agents.Domain;
 using Palladin.Module.Agents.Infrastructure.Persistence;
@@ -11,45 +11,45 @@ using Palladin.Module.Agents.Infrastructure.Persistence;
 namespace Palladin.Module.Agents.Features;
 
 [PublicAPI]
-public sealed record ApproveAgentPairingRequest
+public sealed record ApproveAgentPairingWithNewKeyRequest
 {
     public Guid PairingId { get; init; }
     public string DisplayName { get; init; } = string.Empty;
-    public Guid ApiKeyId { get; init; }
+    public string NewApiKeyName { get; init; } = string.Empty;
     public string? IconKey { get; init; }
 }
 
-[PublicAPI]
-public sealed record ApproveAgentPairingResponse(Guid AgentId);
-
 [UsedImplicitly]
-internal sealed class ApproveAgentPairingValidator : Validator<ApproveAgentPairingRequest>
+internal sealed class ApproveAgentPairingWithNewKeyValidator : Validator<ApproveAgentPairingWithNewKeyRequest>
 {
-    public ApproveAgentPairingValidator()
+    public ApproveAgentPairingWithNewKeyValidator()
     {
         RuleFor(x => x.IconKey).Must(x => !string.IsNullOrWhiteSpace(x)).MaximumLength(500).When(x => x.IconKey is not null);
         RuleFor(x => x.DisplayName)
             .Must(value => AgentMetadata.TryNormalizeRequiredDisplayName(value, out _));
-        RuleFor(x => x.ApiKeyId).NotEmpty();
+        RuleFor(x => x.NewApiKeyName).NotEmpty().MaximumLength(200);
     }
 }
 
 [PublicAPI]
-internal sealed class ApproveAgentPairingEndpoint(
+internal sealed class ApproveAgentPairingWithNewKeyEndpoint(
+    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
-    AgentPairingApproval approval) : Endpoint<ApproveAgentPairingRequest, ApproveAgentPairingResponse>
+    IGuidProvider guidProvider,
+    IClock clock,
+    AgentPairingApproval approval) : Endpoint<ApproveAgentPairingWithNewKeyRequest, ApproveAgentPairingResponse>
 {
     public override void Configure()
     {
-        Post("api/agent-pairings/{PairingId}/approve");
+        Post("api/agent-pairings/{PairingId}/approve-with-new-key");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
-        this.RequirePermission(Permission.AgentManage | Permission.ReadApiKey);
+        this.RequirePermission(Permission.AgentManage | Permission.WriteApiKey);
         this.RequireEmailVerified();
         Tags("Agents/Pairing");
-        Summary(s => { s.Summary = "Approve Agent pairing with an existing API key"; });
+        Summary(s => { s.Summary = "Approve Agent pairing with a new API key"; });
     }
 
-    public override async Task HandleAsync(ApproveAgentPairingRequest req, CancellationToken ct)
+    public override async Task HandleAsync(ApproveAgentPairingWithNewKeyRequest req, CancellationToken ct)
     {
         var organizationId = User.GetOrganizationId();
         var userId = User.GetUserId();
@@ -58,18 +58,10 @@ internal sealed class ApproveAgentPairingEndpoint(
             await Send.UnauthorizedAsync(ct);
             return;
         }
-        var apiKey = await domainWriteContext.ApiKeys.FirstOrDefaultAsync(
-            x => x.Id == req.ApiKeyId && x.OrganizationId == organizationId && x.Status == ApiKeyStatus.Active, ct);
-        if (apiKey is null)
-        {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-        if (!apiKey.TryFenceAgentPairingApproval())
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
-            return;
-        }
+        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
+        var apiKey = ApiKey.GenerateHidden(guidProvider.Generate(), organizationId.Value,
+            req.NewApiKeyName.Trim(), userId.Value, actorName, clock.GetCurrentInstant());
+        domainWriteContext.Add(apiKey);
         var result = await approval.ApproveAsync(req.PairingId, req.DisplayName, req.IconKey,
             organizationId.Value, userId.Value, apiKey, ct);
         if (result.AgentId is { } agentId)

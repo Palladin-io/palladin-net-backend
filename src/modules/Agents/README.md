@@ -63,6 +63,12 @@ increase schema and retry complexity without reducing the invariant.
   anonymous by design and authenticate the exact HTTP request with the declared Ed25519 identity.
   Only opaque pairing IDs appear in approval URLs. Claim/reserve/approve/reject require the normal
   authenticated organization permissions and verified e-mail boundary.
+- Pairing has separate key-selection and key-creation slices. `/claim` and `/approve` require
+  `AgentManage + ReadApiKey` and approval accepts only an existing `ApiKeyId`.
+  `/claim-for-new-key` and `/approve-with-new-key` require `AgentManage + WriteApiKey`, not
+  `ReadApiKey`. The creation claim never queries or returns existing key metadata and approval
+  accepts only `NewApiKeyName`. Both use the same organization-bound claim, reservation and atomic
+  standard Agent activation mechanics; no new permission flag or grant is introduced.
 - Pairing approval creates the same standard `Active` Agent aggregate and `AgentUpsertedEvent` as the
   normal lifecycle. The optional Agent `Type` remains a normalized, bounded free-form string; it is
   presentation metadata and grants no permission. The final display name is user-approved and may

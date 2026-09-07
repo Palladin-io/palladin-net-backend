@@ -28,6 +28,8 @@ internal static class InfrastructureModule
                 "Agent pairing options must use an absolute approval URL and bounded timing values.")
             .ValidateOnStart();
         services.AddSingleton<AgentPairingCredentialProtector>();
+        services.AddScoped<AgentPairingClaims>();
+        services.AddScoped<AgentPairingApproval>();
         var pairingCleanupSection = configuration.GetSection(CleanupAgentPairingsJobOptions.Position);
         services.AddScopedCronJob<CleanupAgentPairingsJob, CleanupAgentPairingsJobOptions>(pairingCleanupSection);
         services.AddOptions<CleanupAgentPairingsJobOptions>()

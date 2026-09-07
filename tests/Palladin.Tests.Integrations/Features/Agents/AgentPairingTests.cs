@@ -26,6 +26,28 @@ namespace Palladin.Tests.Integrations.Features.Agents;
 [Collection<ApiFactoryCollection>]
 public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
 {
+    [Theory]
+    [InlineData(Permission.AgentManage)]
+    [InlineData(Permission.AgentManage | Permission.ReadApiKey)]
+    [InlineData(Permission.WriteApiKey)]
+    public async Task When_CreateOnlyPairingPermissionsAreIncomplete_Then_BothEndpointsAreForbidden(Permission permissions)
+    {
+        // Given
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var client = apiFactory.CreateAuthenticatedClient(user, permissions);
+        var pairingId = Guid.NewGuid();
+
+        // When
+        var claim = await client.POSTAsync<ClaimAgentPairingForNewKeyEndpoint, ClaimAgentPairingRequest>(
+            new ClaimAgentPairingRequest { PairingId = pairingId });
+        var approve = await client.POSTAsync<ApproveAgentPairingWithNewKeyEndpoint, ApproveAgentPairingWithNewKeyRequest>(
+            new ApproveAgentPairingWithNewKeyRequest { PairingId = pairingId, DisplayName = "Friendly Fox", NewApiKeyName = "Automation" });
+
+        // Then
+        claim.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        approve.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     [Fact]
     public async Task When_PersistedAgentNameHasProviderSpecificUnicodeCasing_Then_IdenticalNameIsUnavailable()
     {
@@ -254,13 +276,16 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         }
     }
 
-    [Fact]
-    public async Task When_UserChoosesCreateApiKey_Then_CreatesLogicalKeyAndKeepsTechnicalCredentialHidden()
+    [Theory]
+    [InlineData(Permission.AgentManage | Permission.WriteApiKey)]
+    [InlineData(Permission.AgentManage | Permission.WriteApiKey | Permission.ReadApiKey)]
+    public async Task When_UserChoosesCreateApiKey_Then_CreatesLogicalKeyAndKeepsTechnicalCredentialHidden(Permission permissions)
     {
         // Given
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         await apiFactory.Services.SeedAgentsUserAsync(user.Id);
+        var (existingKey, _) = await apiFactory.Services.SeedApiKeyAsync(organization.Id, createdBy: user.Id);
         var pairingId = Guid.NewGuid();
         var signing = AgentRequestSigning.Generate();
         using var encryptionKey = CreateEncryptionKey();
@@ -274,10 +299,19 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
         await pairingClient.POSTAsync<StartAgentPairingEndpoint, StartAgentPairingRequest, StartAgentPairingResponse>(request);
         var userClient = apiFactory.CreateAuthenticatedClient(
             user,
-            Permission.AgentManage | Permission.ReadApiKey | Permission.WriteApiKey);
+            permissions);
         var (_, claim) = await userClient
-            .POSTAsync<ClaimAgentPairingEndpoint, ClaimAgentPairingRequest, ClaimAgentPairingResponse>(
+            .POSTAsync<ClaimAgentPairingForNewKeyEndpoint, ClaimAgentPairingRequest, ClaimAgentPairingResponse>(
                 new ClaimAgentPairingRequest { PairingId = pairingId });
+        if ((permissions & Permission.ReadApiKey) == 0)
+        {
+            var deniedClaim = await userClient.POSTAsync<ClaimAgentPairingEndpoint, ClaimAgentPairingRequest>(
+                new ClaimAgentPairingRequest { PairingId = pairingId });
+            deniedClaim.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            var deniedApprove = await userClient.POSTAsync<ApproveAgentPairingEndpoint, ApproveAgentPairingRequest>(
+                new ApproveAgentPairingRequest { PairingId = pairingId, DisplayName = "No selection", ApiKeyId = existingKey.Id });
+            deniedApprove.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
         claim.DisplayName.ShouldBeNull();
         claim.Type.ShouldBeNull();
         claim.ApiKeys.ShouldBeEmpty();
@@ -287,8 +321,8 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
 
         // When
         var (response, approved) = await userClient
-            .POSTAsync<ApproveAgentPairingEndpoint, ApproveAgentPairingRequest, ApproveAgentPairingResponse>(
-                new ApproveAgentPairingRequest
+            .POSTAsync<ApproveAgentPairingWithNewKeyEndpoint, ApproveAgentPairingWithNewKeyRequest, ApproveAgentPairingResponse>(
+                new ApproveAgentPairingWithNewKeyRequest
                 {
                     PairingId = pairingId,
                     DisplayName = "Spokojna Wydra",
@@ -310,6 +344,8 @@ public sealed class AgentPairingTests(ApiFactory apiFactory) : TestBase
             TestContext.Current.CancellationToken);
         apiKey.Name.ShouldBe("Local Codex");
         apiKey.OrganizationId.ShouldBe(organization.Id);
+        apiKey.Id.ShouldNotBe(existingKey.Id);
+        agent.Status.ShouldBe(AgentStatus.Active);
         technicalCredential.KeyHash.ShouldNotBe(apiKey.KeyHash);
         (await readContext.ApiKeyCredentials.CountAsync(
             x => x.ApiKeyId == apiKey.Id,

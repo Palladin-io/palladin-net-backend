@@ -90,6 +90,9 @@ increase schema and retry complexity without reducing the invariant.
   attribute usage to the logical key.
 - Canonical 32-byte Base64 is required for both X25519 and Ed25519 public keys. Whitespace or another
   textual representation of the same bytes is rejected before identity lookup or persistence.
+- Pairing approval lasts exactly 30 minutes; startup rejects shorter or longer configured lifetimes.
+  Standard enrollment retries organization name-fence conflicts at most twice, rechecking the
+  requested name rather than silently dropping it. Exhausted contention fails without creating an unnamed Agent.
 - `agents.cleanup-agent-pairings` runs in bounded batches. It persists expiry (releasing display-name
   reservations) and removes all terminal request material after the configured 15-minute retrieval
   grace. An approved envelope remains retrievable after the original 30-minute approval deadline

@@ -22,10 +22,9 @@ internal static class InfrastructureModule
             .Bind(configuration.GetSection(AgentPairingOptions.Position))
             .Validate(options =>
                 AgentPairingOptions.IsValidApprovalUrlBase(options.ApprovalUrlBase)
-                && options.Lifetime >= TimeSpan.FromMinutes(1)
-                && options.Lifetime <= TimeSpan.FromMinutes(30)
+                && options.HasSupportedLifetime
                 && options.PollIntervalMilliseconds is >= 500 and <= 10_000,
-                "Agent pairing options must use an absolute approval URL and bounded timing values.")
+                "Agent pairing requires an allowed approval URL, exactly 30 minutes of lifetime and a bounded poll interval.")
             .ValidateOnStart();
         services.AddSingleton<AgentPairingCredentialProtector>();
         services.AddScoped<AgentPairingClaims>();

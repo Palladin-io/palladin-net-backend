@@ -5,6 +5,15 @@ namespace Palladin.Tests.Unit.Modules.Agents;
 public sealed class AgentPairingOptionsTests
 {
     [Theory]
+    [InlineData(1, false)]
+    [InlineData(5, false)]
+    [InlineData(29, false)]
+    [InlineData(30, true)]
+    [InlineData(31, false)]
+    public void PairingLifetimeMustMatchTheThirtyMinuteApprovalContract(int minutes, bool accepted) =>
+        Assert.Equal(accepted, new AgentPairingOptions { Lifetime = TimeSpan.FromMinutes(minutes) }.HasSupportedLifetime);
+
+    [Theory]
     [InlineData("https://palladin.io")]
     [InlineData("https://palladin.io/")]
     [InlineData("https://stage.palladin.io")]

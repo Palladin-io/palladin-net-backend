@@ -10,6 +10,7 @@ internal sealed class AgentPairingOptions
     // Must remain below the native runtime's pairing-only 31-minute authorization lease so an
     // approvable server request cannot outlive the local operation that can consume it.
     public TimeSpan Lifetime { get; init; } = TimeSpan.FromMinutes(30);
+    internal bool HasSupportedLifetime => Lifetime == TimeSpan.FromMinutes(30);
     public int PollIntervalMilliseconds { get; init; } = 2_000;
 
     internal static bool IsValidApprovalUrlBase(string value)

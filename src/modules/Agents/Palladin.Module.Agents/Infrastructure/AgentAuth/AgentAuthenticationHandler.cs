@@ -253,7 +253,8 @@ internal sealed class AgentAuthenticationHandler(
         string? ip,
         string? hostname,
         Guid apiKeyId,
-        CancellationToken ct)
+        CancellationToken ct,
+        int remainingFenceRetries = 2)
     {
         if (name is not null)
         {
@@ -274,19 +275,22 @@ internal sealed class AgentAuthenticationHandler(
             await domainWriteContext.CommitAsync(ct);
             return PendingEnrollment(agent.Id);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException) when (remainingFenceRetries > 0)
         {
             domainWriteContext.Clear();
             return await EnrollPendingAgentAsync(
-                organizationId, publicKey, now, null, signingPublicKey, type, ip, hostname, apiKeyId, ct);
+                organizationId, publicKey, now, name, signingPublicKey, type, ip, hostname, apiKeyId, ct,
+                remainingFenceRetries - 1);
         }
-        catch (DbUpdateException ex) when (IsDisplayNameFenceCreationConflict(ex))
+        catch (DbUpdateException ex) when (IsDisplayNameFenceCreationConflict(ex) && remainingFenceRetries > 0)
         {
             domainWriteContext.Clear();
             return await EnrollPendingAgentAsync(
-                organizationId, publicKey, now, null, signingPublicKey, type, ip, hostname, apiKeyId, ct);
+                organizationId, publicKey, now, name, signingPublicKey, type, ip, hostname, apiKeyId, ct,
+                remainingFenceRetries - 1);
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: "23505" })
+        catch (DbUpdateException ex) when (!IsDisplayNameFenceCreationConflict(ex)
+            && ex.InnerException is PostgresException { SqlState: "23505" })
         {
             domainWriteContext.Clear();
             return await ResolveConcurrentEnrollmentAsync(organizationId, publicKey, ct);

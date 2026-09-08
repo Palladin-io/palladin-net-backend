@@ -22,6 +22,10 @@ internal sealed class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey>
         builder.Property(x => x.RevokedBy).HasColumnName("revoked_by");
         builder.Property(x => x.RevokedAt).HasColumnName("revoked_at");
         builder.Property(x => x.Status).HasColumnName("status");
+        builder.Property(x => x.Revision)
+            .HasColumnName("revision")
+            .HasDefaultValue(1L)
+            .IsConcurrencyToken();
 
         builder.Property(x => x.KeyHash)
             .HasColumnName("key_hash")

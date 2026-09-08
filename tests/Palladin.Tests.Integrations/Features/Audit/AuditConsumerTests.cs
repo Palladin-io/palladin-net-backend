@@ -267,6 +267,26 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_BrowserPairingAgentEnrolled_Then_WritesEnrollmentAuditEntry()
+    {
+        var organizationId = Guid.NewGuid();
+        var agentId = Guid.NewGuid();
+        var evt = new AgentBrowserPairingEnrolledEvent(
+            agentId,
+            organizationId,
+            "Bursztynowy Lis",
+            apiFactory.FakeClock.GetCurrentInstant());
+
+        await RunAsync(p => new OnAgentBrowserPairingEnrolledAudit(p), evt);
+
+        var entry = await FindAsync(AuditEventType.AgentEnrolled, organizationId);
+        entry.ShouldNotBeNull();
+        entry.AgentId.ShouldBe(agentId);
+        entry.AgentName.ShouldBe("Bursztynowy Lis");
+        entry.Metadata["status"].ShouldBe("Active");
+    }
+
+    [Fact]
     public async Task When_AgentReactivatedConsumed_Then_WritesUserActorEntryAttributedToOperator()
     {
         // Given

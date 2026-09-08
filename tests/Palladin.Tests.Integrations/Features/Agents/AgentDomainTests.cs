@@ -37,6 +37,20 @@ public sealed class AgentDomainTests
     }
 
     [Fact]
+    public void BrowserPairingEnrollment_PreservesDedicatedAuditEventBesideActiveUpsert()
+    {
+        var agent = Agent.Create(Guid.NewGuid(), Guid.NewGuid(), "pubkey", "signpub", "custom", Now);
+        agent.Activate(Guid.NewGuid(), Now, "Spokojna Wydra", "custom", null, null);
+        agent.RecordBrowserPairingEnrollment();
+
+        var events = agent.FetchEvents();
+        events.OfType<AgentUpsertedEvent>().ShouldHaveSingleItem().Status.ShouldBe(AgentStatus.Active);
+        events.OfType<AgentBrowserPairingEnrolledEvent>()
+            .ShouldHaveSingleItem()
+            .AgentName.ShouldBe("Spokojna Wydra");
+    }
+
+    [Fact]
     public void Deactivate_EmitsUpsertedAndDeactivatedEvents()
     {
         var agent = Agent.Create(Guid.NewGuid(), Guid.NewGuid(), "pubkey", "signpub", "assistant", Now);
@@ -106,6 +120,7 @@ public sealed class AgentDomainTests
         agent.FetchEvents();
 
         agent.Update(Now + Duration.FromMinutes(1), "Renamed", null, null, null, null);
+        agent.NameKey.ShouldBe(AgentMetadata.DisplayNameReservationKey("Renamed"));
 
         var replicated = agent.FetchEvents().ShouldHaveSingleItem().ShouldBeOfType<AgentUpsertedEvent>();
         replicated.UpdatedAt.ShouldBe(Now + Duration.FromMinutes(1));

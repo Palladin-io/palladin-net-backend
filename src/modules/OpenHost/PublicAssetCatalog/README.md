@@ -35,6 +35,12 @@ hostnames do not consume that acquisition quota and are not subject to a separat
 sets `PublicBaseUrl` to `https://assets.palladin.io`; non-production environments configure the direct
 bucket endpoint. Upload endpoints use the dedicated service-to-service authentication scheme.
 
+For isolated container development, `Storage:UploadEndpoint` may select a browser-reachable
+S3 endpoint for signing PUT URLs while `Storage:Endpoint` remains the internal server endpoint.
+The signer uses the same bucket, region and credentials; the URL is signed for the public
+upload host directly, never rewritten after signing. When unset, existing endpoint behavior
+is unchanged. Real local endpoint values belong only in ignored local configuration.
+
 Missing website icons are first reserved under a unique hostname alias, then emitted as
 `AcquireWebsiteIconV2Command(assetId, hostname)` integration commands to the durable
 `public-asset-catalog.commands.website-icons` RabbitMQ endpoint. The previous

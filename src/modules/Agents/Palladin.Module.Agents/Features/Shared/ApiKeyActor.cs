@@ -8,10 +8,10 @@ namespace Palladin.Module.Agents.Features;
 internal static class ApiKeyActor
 {
     internal static async Task<string> ResolveActorNameAsync(
-        AgentsDomainReadContext domainReadContext,
+        AgentsDomainWriteContext domainWriteContext,
         Guid userId,
         CancellationToken ct) =>
-        await domainReadContext.Users
+        await domainWriteContext.Users
             .Where(u => u.Id == userId)
             .Select(u => u.DisplayName)
             .FirstOrDefaultAsync(ct) ?? string.Empty;

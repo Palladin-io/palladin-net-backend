@@ -47,6 +47,7 @@ Fail the review setup if any command above fails; never continue with missing or
 2. Load [criteria.md](criteria.md) — it contains the detailed review checklist. Read it fully before starting.
 3. Build a checklist from every requirement and acceptance criterion available in the PR body. Load the complete README of each changed module and map the checklist to implementation paths and tests. If necessary business context is unavailable, state that limitation; never invent it.
 4. If the PR changes a query, index, persistence path, transaction, lock, raw SQL, EF configuration or migration, read `docs/architecture/database-guidelines.md` in full and inspect the relevant unchanged query/configuration/migration context before commenting.
+   Check one domain context per operation: mutations use `DomainWriteContext` for reads and writes; query-only operations use `DomainReadContext`. Do not recommend a second context for projections, existence checks or audit labels, and inspect helpers for indirect duplication.
 5. For each changed file: use `Read`, `Grep`, `Glob` to explore beyond the diff when context is needed. Cross-reference with unchanged files that are touched by the change (e.g. module registrations, consumers, domain entities).
 6. Cite **file path and line number** for every issue you raise.
 7. Be concrete — one clear sentence per finding beats a paragraph.

@@ -16,6 +16,7 @@ internal sealed class PublicAssetStorageOptions
     public string Region { get; init; } = "eu-central-1";
     public string? PublicBaseUrl { get; init; }
     public string? Endpoint { get; init; }
+    public string? UploadEndpoint { get; init; }
     public string? AccessKey { get; init; }
     public string? SecretKey { get; init; }
     public bool ForcePathStyle { get; init; }
@@ -38,8 +39,16 @@ internal sealed class S3PublicAssetStorage(IOptions<PublicAssetStorageOptions> c
 {
     private readonly PublicAssetStorageOptions options = configured.Value;
     private readonly IAmazonS3 s3 = Build(configured.Value);
-    public async Task<string> CreateUploadUrlAsync(string key, string mediaType, Instant expiresAt, CancellationToken ct) =>
-        await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest { BucketName = options.BucketName, Key = key, Verb = HttpVerb.PUT, Expires = expiresAt.ToDateTimeUtc(), ContentType = mediaType, Protocol = options.Endpoint?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) == true ? Protocol.HTTP : Protocol.HTTPS });
+    public async Task<string> CreateUploadUrlAsync(string key, string mediaType, Instant expiresAt, CancellationToken ct)
+    {
+        var request = new GetPreSignedUrlRequest { BucketName = options.BucketName, Key = key, Verb = HttpVerb.PUT, Expires = expiresAt.ToDateTimeUtc(), ContentType = mediaType, Protocol = (options.UploadEndpoint ?? options.Endpoint)?.StartsWith("http://", StringComparison.OrdinalIgnoreCase) == true ? Protocol.HTTP : Protocol.HTTPS };
+        if (options.UploadEndpoint is null)
+        {
+            return await s3.GetPreSignedURLAsync(request);
+        }
+        using var uploadSigner = Build(options, options.UploadEndpoint);
+        return await uploadSigner.GetPreSignedURLAsync(request);
+    }
     public async Task<StagedObject?> OpenStagedAsync(string key, CancellationToken ct)
     {
         try { var response = await s3.GetObjectAsync(options.BucketName, key, ct); return new(response.ResponseStream, response.ContentLength, response.Headers.ContentType); }
@@ -104,10 +113,10 @@ internal sealed class S3PublicAssetStorage(IOptions<PublicAssetStorageOptions> c
         if (!string.IsNullOrWhiteSpace(options.Endpoint)) return options.ForcePathStyle ? $"{options.Endpoint.TrimEnd('/')}/{options.BucketName}/{key}" : $"{options.Endpoint.TrimEnd('/')}/{key}";
         return $"https://{options.BucketName}.s3.{options.Region}.amazonaws.com/{key}";
     }
-    private static IAmazonS3 Build(PublicAssetStorageOptions o)
+    private static IAmazonS3 Build(PublicAssetStorageOptions o, string? endpoint = null)
     {
         var c = new AmazonS3Config { ForcePathStyle = o.ForcePathStyle };
-        if (o.Endpoint is not null) { c.ServiceURL = o.Endpoint; c.AuthenticationRegion = o.Region; } else c.RegionEndpoint = RegionEndpoint.GetBySystemName(o.Region);
+        if ((endpoint ?? o.Endpoint) is { } serviceUrl) { c.ServiceURL = serviceUrl; c.AuthenticationRegion = o.Region; } else c.RegionEndpoint = RegionEndpoint.GetBySystemName(o.Region);
         return o.AccessKey is not null && o.SecretKey is not null ? new AmazonS3Client(new BasicAWSCredentials(o.AccessKey, o.SecretKey), c) : new AmazonS3Client(c);
     }
 }

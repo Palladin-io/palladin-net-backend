@@ -49,6 +49,23 @@ internal static class RateLimitingExtensions
                     return FixedWindow($"identity-security-write:{userId}", permitLimit: 5);
                 }
 
+                // Starting a pairing is anonymous by design, but each accepted request persists
+                // bounded public metadata. Keep that write surface small per source address.
+                if (HttpMethods.IsPost(context.Request.Method)
+                    && AgentPairingRoute.IsStart(path))
+                {
+                    return FixedWindow($"agent-pairing-start:{ip}", permitLimit: 10);
+                }
+
+
+                // Status is anonymous until proof-of-possession can be checked against the
+                // stored pairing key. Bound arbitrary-ID database reads before that lookup.
+                if (HttpMethods.IsGet(context.Request.Method)
+                    && AgentPairingRoute.IsStatus(path))
+                {
+                    return FixedWindow($"agent-pairing-status:{ip}", permitLimit: 120);
+                }
+
                 // Agent surfaces are partitioned by the org API key (SHA-256-hashed so the secret never lingers
                 // in limiter state), falling back to IP when absent — fairer than per-IP behind a shared NAT.
                 var apiKey = context.Request.Headers[AgentAuthenticationOptions.ApiKeyHeader].ToString();

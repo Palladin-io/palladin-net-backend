@@ -9,9 +9,10 @@ internal static class AgentExtensions
         Guid agentId,
         string apiKeyPlaintext,
         string boxPublicKey,
-        AgentRequestSigning signing)
+        AgentRequestSigning signing,
+        HttpMessageHandler? handler = null)
     {
-        var inner = apiFactory.CreateHandler();
+        var inner = handler ?? apiFactory.CreateHandler();
         var client = new HttpClient(signing.CreateSigningHandler(agentId, inner))
         {
             BaseAddress = apiFactory.Client.BaseAddress,

@@ -36,7 +36,9 @@ public sealed class UpdateAgentTests(ApiFactory apiFactory) : TestBase
 
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
-        var persisted = await readContext.Agents.FirstOrDefaultAsync(x => x.Id == agent.Id);
+        var persisted = await readContext.Agents.FirstOrDefaultAsync(
+            x => x.Id == agent.Id,
+            TestContext.Current.CancellationToken);
         persisted.ShouldNotBeNull();
         persisted.Name.ShouldBe("New Name");
         persisted.Description.ShouldBe("Build pipeline agent");
@@ -61,10 +63,49 @@ public sealed class UpdateAgentTests(ApiFactory apiFactory) : TestBase
 
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var readContext = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
-        var persisted = await readContext.Agents.FirstOrDefaultAsync(x => x.Id == agent.Id);
+        var persisted = await readContext.Agents.FirstOrDefaultAsync(
+            x => x.Id == agent.Id,
+            TestContext.Current.CancellationToken);
         persisted.ShouldNotBeNull();
         persisted.Name.ShouldBe("Keep Me");
         persisted.Description.ShouldBe("Only description");
+    }
+
+    [Fact]
+    public async Task When_CustomTypeProvidedOrCleared_Then_PreservesFreeFormContract()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var agent = await apiFactory.Services.SeedAgentAsync(organization.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.AgentManage);
+
+        // When — a custom value is normalized and stored without catalog mapping.
+        var customResponse = await client.PATCHAsync<UpdateAgentEndpoint, UpdateAgentRequest>(
+            new UpdateAgentRequest { AgentId = agent.Id, Type = "  custom-runtime  " });
+
+        // Then
+        customResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var readContext = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
+            var persisted = await readContext.Agents.SingleAsync(
+                x => x.Id == agent.Id,
+                TestContext.Current.CancellationToken);
+            persisted.Type.ShouldBe("custom-runtime");
+        }
+
+        // And — an explicitly blank value clears the optional metadata.
+        var clearResponse = await client.PATCHAsync<UpdateAgentEndpoint, UpdateAgentRequest>(
+            new UpdateAgentRequest { AgentId = agent.Id, Type = "   " });
+        clearResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var readContext = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
+            var persisted = await readContext.Agents.SingleAsync(
+                x => x.Id == agent.Id,
+                TestContext.Current.CancellationToken);
+            persisted.Type.ShouldBeNull();
+        }
     }
 
     [Fact]

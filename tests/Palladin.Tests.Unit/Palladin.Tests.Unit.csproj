@@ -30,6 +30,7 @@
 
     <ItemGroup>
         <Content Include="..\Fixtures\**\*.json" Link="Fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\..\src\Palladin.Api\appsettings*.json" Link="ApiConfiguration\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

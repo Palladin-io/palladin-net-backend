@@ -240,7 +240,7 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_EnrollsWithoutAgentTypeHeader_Then_DefaultsToUnknown()
+    public async Task When_EnrollsWithoutAgentTypeHeader_Then_PersistsNoType()
     {
         // Given
         var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -259,11 +259,11 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         var type = await ReadAgentTypeAsync(organization.Id, publicKey);
-        type.ShouldBe("Unknown");
+        type.ShouldBeNull();
     }
 
     [Fact]
-    public async Task When_ReconnectsWithDifferentType_Then_OverwritesType()
+    public async Task When_ActiveAgentReconnectsWithDifferentType_Then_PreservesApprovedType()
     {
         // Given
         var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -288,7 +288,7 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var type = await ReadAgentTypeAsync(organization.Id, publicKey);
-        type.ShouldBe("archiver");
+        type.ShouldBe("scraper");
     }
 
     [Fact]
@@ -398,6 +398,28 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
         var inB = await CountAgentsAsync(organizationB.Id, publicKey);
         (inA + inB).ShouldBe(1);
         (inA == 0 || inB == 0).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_DistinctNamesEnrollConcurrently_Then_BothNamesArePreserved()
+    {
+        var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (_, plaintext) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        using var first = EnrollmentClient(plaintext, AgentFaker.GeneratePublicKey());
+        using var second = EnrollmentClient(plaintext, AgentFaker.GeneratePublicKey());
+        first.DefaultRequestHeaders.Add(AgentAuthenticationOptions.AgentNameHeader, "Amber Fox");
+        second.DefaultRequestHeaders.Add(AgentAuthenticationOptions.AgentNameHeader, "Quiet Otter");
+
+        var responses = await Task.WhenAll(
+            first.GetAsync("api/agent/me", TestContext.Current.CancellationToken),
+            second.GetAsync("api/agent/me", TestContext.Current.CancellationToken));
+
+        responses.ShouldAllBe(response => response.StatusCode == HttpStatusCode.Unauthorized);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
+        var names = await context.Agents.Where(agent => agent.OrganizationId == organization.Id)
+            .Select(agent => agent.Name).ToListAsync(TestContext.Current.CancellationToken);
+        names.Order().ShouldBe(new[] { "Amber Fox", "Quiet Otter" });
     }
 
     private HttpClient EnrollmentClient(string apiKey, string publicKey)

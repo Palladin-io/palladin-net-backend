@@ -1,11 +1,12 @@
 using System.Globalization;
-using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Palladin.Core.Guid;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Domain;
 using Palladin.Module.Agents.Infrastructure.Persistence;
+using Palladin.Module.Agents.Infrastructure.Persistence.Configurations;
+using Palladin.Module.Agents.Shared;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -27,20 +28,19 @@ internal sealed class AgentAuthenticationHandler(
     AgentsDbReadContext readContext,
     AgentsDbWriteContext writeContext,
     AgentsDomainWriteContext domainWriteContext,
+    AgentDisplayNameCoordinator displayNameCoordinator,
     IMemoryCache cache,
     IOptions<ApiKeyCacheOptions> cacheOptions,
     IGuidProvider guidProvider,
     AgentSignatureVerifier signatureVerifier,
     IClock clock) : AuthenticationHandler<AgentAuthenticationOptions>(options, logger, encoder)
 {
-    private const int X25519PublicKeyBytes = 32;
-    private const int Ed25519PublicKeyBytes = 32;
-    private const int MaxAgentNameLength = 200;
-    private const int MaxAgentTypeLength = 100;
-    private const string DefaultAgentType = "Unknown";
     private const string CrossOrganizationKeyFailure = "Agent key registered to another organization";
 
     internal static string ApiKeyCacheKey(string keyHash) => $"apikey:{keyHash}";
+
+    internal static void InvalidateApiKeyCache(IMemoryCache cache, string keyHash) =>
+        cache.Remove(ApiKeyCacheKey(keyHash));
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -66,19 +66,25 @@ internal sealed class AgentAuthenticationHandler(
             return AuthenticateResult.Fail("Missing agent key");
         }
 
-        var agentPublicKey = agentKeyValues.ToString();
-        if (!IsValidPublicKey(agentPublicKey))
+        if (!AgentPublicKey.TryNormalize(agentKeyValues.ToString(), out var agentPublicKey))
         {
             return AuthenticateResult.Fail("Invalid agent key format");
         }
 
         var now = clock.GetCurrentInstant();
-        var ip = NormalizeIp(Request.HttpContext.Connection.RemoteIpAddress);
+        var ip = AgentConnectionInfo.NormalizeIp(Request.HttpContext.Connection.RemoteIpAddress);
         var hostname = ReadOptionalHeader(AgentAuthenticationOptions.AgentHostnameHeader);
-        var name = ReadOptionalAgentName();
-        var type = ReadAgentType();
+        if (!TryReadAgentMetadata(out var name, out var type))
+        {
+            return AuthenticateResult.Fail("Invalid agent metadata");
+        }
         var signingPublicKey = ReadSigningPublicKey();
         var agent = await FindAgentByPublicKeyAsync(agentPublicKey, Context.RequestAborted);
+
+        if (apiKey.AgentId is not null && agent?.Id != apiKey.AgentId)
+        {
+            return AuthenticateResult.Fail("API key credential is bound to another Agent");
+        }
 
         // The public key is a globally unique identity: reject one already enrolled under another organization.
         if (agent is not null && agent.OrganizationId != apiKey.OrganizationId)
@@ -99,7 +105,7 @@ internal sealed class AgentAuthenticationHandler(
                 now,
                 name,
                 signingPublicKey,
-                type ?? DefaultAgentType,
+                type,
                 ip,
                 hostname,
                 apiKey.ApiKeyId,
@@ -110,8 +116,31 @@ internal sealed class AgentAuthenticationHandler(
             && (agent.Status != AgentStatus.Deactivating || agent.AccessEpoch == 0))
         {
             var pendingName = agent.Name is null && agent.Status == AgentStatus.Pending ? name : null;
+            if (pendingName is not null)
+            {
+                await displayNameCoordinator.FenceAsync(agent.OrganizationId, Context.RequestAborted);
+                if (!await displayNameCoordinator.IsAvailableAsync(
+                        agent.OrganizationId, pendingName, now, agent.Id, null, Context.RequestAborted))
+                {
+                    pendingName = null;
+                }
+            }
+
             ApplyConnectMetadata(agent, now, pendingName, type);
-            await domainWriteContext.CommitAsync(Context.RequestAborted);
+            try
+            {
+                await domainWriteContext.CommitAsync(Context.RequestAborted);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                domainWriteContext.Clear();
+                return AuthenticateResult.Fail("Concurrent Agent metadata update; retry the request");
+            }
+            catch (DbUpdateException ex) when (IsDisplayNameFenceCreationConflict(ex))
+            {
+                domainWriteContext.Clear();
+                return AuthenticateResult.Fail("Concurrent Agent metadata update; retry the request");
+            }
 
             Response.Headers[AgentAuthenticationOptions.AgentIdHeader] = agent.Id.ToString();
             return AuthenticateResult.Fail("Agent not active");
@@ -125,10 +154,6 @@ internal sealed class AgentAuthenticationHandler(
             return AuthenticateResult.Fail($"Invalid agent signature ({signatureResult})");
         }
 
-        if (agent.Status == AgentStatus.Active)
-        {
-            ApplyConnectMetadata(agent, now, null, type);
-        }
         agent.RecordApiKeyUsage(apiKey.ApiKeyId, now, ip, hostname);
         await domainWriteContext.CommitAsync(Context.RequestAborted);
 
@@ -156,7 +181,7 @@ internal sealed class AgentAuthenticationHandler(
     private string? ReadSigningPublicKey()
     {
         var value = ReadOptionalHeader(AgentAuthenticationOptions.AgentSigningKeyHeader);
-        return value is not null && IsValidSigningPublicKey(value) ? value : null;
+        return AgentPublicKey.TryNormalize(value, out var normalized) ? normalized : null;
     }
 
     private string? ReadOptionalHeader(string headerName)
@@ -165,26 +190,17 @@ internal sealed class AgentAuthenticationHandler(
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    private string? ReadOptionalAgentName()
+    private bool TryReadAgentMetadata(out string? name, out string? type)
     {
-        var name = ReadOptionalHeader(AgentAuthenticationOptions.AgentNameHeader);
-        if (name is null)
+        type = null;
+        if (!AgentMetadata.TryNormalizeDisplayName(
+                ReadOptionalHeader(AgentAuthenticationOptions.AgentNameHeader), out name))
         {
-            return null;
+            return false;
         }
 
-        return name.Length > MaxAgentNameLength ? name[..MaxAgentNameLength] : name;
-    }
-
-    private string? ReadAgentType()
-    {
-        var type = ReadOptionalHeader(AgentAuthenticationOptions.AgentTypeHeader);
-        if (type is null)
-        {
-            return null;
-        }
-
-        return type.Length > MaxAgentTypeLength ? type[..MaxAgentTypeLength] : type;
+        return AgentMetadata.TryNormalizeType(
+            ReadOptionalHeader(AgentAuthenticationOptions.AgentTypeHeader), out type);
     }
 
     private async Task<ResolvedApiKey?> FindActiveApiKeyAsync(string keyHash, CancellationToken ct)
@@ -195,9 +211,25 @@ internal sealed class AgentAuthenticationHandler(
             return cached;
         }
 
+        // Hidden child credentials are deliberately never cached. Resolving their logical parent
+        // from authoritative storage on every request makes a committed parent revoke/delete take
+        // effect across every API replica without a distributed cache-invalidation dependency.
+        var child = await readContext.ApiKeyCredentials
+            .Where(x => x.KeyHash == keyHash)
+            .Join(
+                readContext.ApiKeys.Where(x => x.Status == ApiKeyStatus.Active),
+                credential => credential.ApiKeyId,
+                apiKey => apiKey.Id,
+                (credential, apiKey) => new ResolvedApiKey(apiKey.Id, apiKey.OrganizationId, credential.AgentId))
+            .FirstOrDefaultAsync(ct);
+        if (child is not null)
+        {
+            return child;
+        }
+
         var result = await readContext.ApiKeys
             .Where(x => x.KeyHash == keyHash && x.Status == ApiKeyStatus.Active)
-            .Select(x => new ResolvedApiKey(x.Id, x.OrganizationId))
+            .Select(x => new ResolvedApiKey(x.Id, x.OrganizationId, null))
             .FirstOrDefaultAsync(ct);
 
         if (result is not null)
@@ -211,36 +243,29 @@ internal sealed class AgentAuthenticationHandler(
     private async Task<Agent?> FindAgentByPublicKeyAsync(string publicKey, CancellationToken ct) =>
         await writeContext.Agents
             .FirstOrDefaultAsync(x => x.PublicKey == publicKey, ct);
-
-    // Loopback shows as IPv6 "::1" on a local host — store the friendlier 127.0.0.1.
-    // IPv4-mapped IPv6 (::ffff:a.b.c.d) is unwrapped to its plain IPv4 form.
-    private static string? NormalizeIp(IPAddress? address)
-    {
-        if (address is null)
-        {
-            return null;
-        }
-
-        if (IPAddress.IsLoopback(address))
-        {
-            return IPAddress.Loopback.ToString();
-        }
-
-        return address.IsIPv4MappedToIPv6 ? address.MapToIPv4().ToString() : address.ToString();
-    }
-
     private async Task<AuthenticateResult> EnrollPendingAgentAsync(
         Guid organizationId,
         string publicKey,
         Instant now,
         string? name,
         string signingPublicKey,
-        string type,
+        string? type,
         string? ip,
         string? hostname,
         Guid apiKeyId,
-        CancellationToken ct)
+        CancellationToken ct,
+        int remainingFenceRetries = 2)
     {
+        if (name is not null)
+        {
+            await displayNameCoordinator.FenceAsync(organizationId, ct);
+            if (!await displayNameCoordinator.IsAvailableAsync(
+                    organizationId, name, now, null, null, ct))
+            {
+                name = null;
+            }
+        }
+
         var agent = Agent.Create(guidProvider.Generate(), organizationId, publicKey, signingPublicKey, type, now, name, apiKeyId);
         agent.SetConnectionInfo(ip, hostname);
         domainWriteContext.Add(agent);
@@ -250,12 +275,34 @@ internal sealed class AgentAuthenticationHandler(
             await domainWriteContext.CommitAsync(ct);
             return PendingEnrollment(agent.Id);
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: "23505" })
+        catch (DbUpdateConcurrencyException) when (remainingFenceRetries > 0)
+        {
+            domainWriteContext.Clear();
+            return await EnrollPendingAgentAsync(
+                organizationId, publicKey, now, name, signingPublicKey, type, ip, hostname, apiKeyId, ct,
+                remainingFenceRetries - 1);
+        }
+        catch (DbUpdateException ex) when (IsDisplayNameFenceCreationConflict(ex) && remainingFenceRetries > 0)
+        {
+            domainWriteContext.Clear();
+            return await EnrollPendingAgentAsync(
+                organizationId, publicKey, now, name, signingPublicKey, type, ip, hostname, apiKeyId, ct,
+                remainingFenceRetries - 1);
+        }
+        catch (DbUpdateException ex) when (!IsDisplayNameFenceCreationConflict(ex)
+            && ex.InnerException is PostgresException { SqlState: "23505" })
         {
             domainWriteContext.Clear();
             return await ResolveConcurrentEnrollmentAsync(organizationId, publicKey, ct);
         }
     }
+
+    private static bool IsDisplayNameFenceCreationConflict(DbUpdateException exception) =>
+        exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: AgentDisplayNameFenceConfiguration.PrimaryKey,
+        };
 
     // A concurrent enrollment won the race on the unique public-key index. Resolve to the winner only within
     // the SAME organization — returning a cross-org winner would hand back a foreign agent identity.
@@ -275,34 +322,6 @@ internal sealed class AgentAuthenticationHandler(
     {
         Response.Headers[AgentAuthenticationOptions.AgentIdHeader] = agentId.ToString();
         return AuthenticateResult.Fail("Agent pending enrollment");
-    }
-
-    private static bool IsValidPublicKey(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        Span<byte> buffer = stackalloc byte[X25519PublicKeyBytes];
-        if (!Convert.TryFromBase64String(value, buffer, out var decodedLength))
-        {
-            return false;
-        }
-
-        return decodedLength == X25519PublicKeyBytes;
-    }
-
-    private static bool IsValidSigningPublicKey(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        Span<byte> buffer = stackalloc byte[Ed25519PublicKeyBytes];
-        return Convert.TryFromBase64String(value, buffer, out var decodedLength)
-               && decodedLength == Ed25519PublicKeyBytes;
     }
 
     private static AuthenticationTicket BuildTicket(Guid agentId, Guid organizationId, uint accessEpoch)

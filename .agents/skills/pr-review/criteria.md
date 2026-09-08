@@ -34,7 +34,7 @@ Detailed checklist for each review category. Load this file in full before start
 ### Domain persistence split
 - Features never inject `*DbReadContext`, `*DbWriteContext`, base `DbContext` or `DbSet`.
 - Read operations use the module `*DomainReadContext` and no-tracking projections. Mutations load tracked aggregates through `*DomainWriteContext`, call domain methods and persist through `CommitAsync(...)`.
-- A feature may inject both split domain contexts only when it genuinely reads and writes. A combined `*DomainContext` is forbidden.
+- Each operation uses one context: query-only operations use `*DomainReadContext`; mutations use `*DomainWriteContext` for all reads and writes, including authorization, existence, audit-label and retry queries. Flag injecting both, including a second context hidden in a helper. Scalar/DTO projections and `AnyAsync` do not track entities; use `AsNoTracking()` for deliberately read-only entity materialization. A combined `*DomainContext` remains forbidden.
 - EF configurations live in `Infrastructure/Persistence/Configurations/`.
 
 ---

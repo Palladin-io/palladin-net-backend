@@ -1,3 +1,3 @@
 namespace Palladin.Module.Agents.Infrastructure.AgentAuth;
 
-internal sealed record ResolvedApiKey(Guid ApiKeyId, Guid OrganizationId);
+internal sealed record ResolvedApiKey(Guid ApiKeyId, Guid OrganizationId, Guid? AgentId);

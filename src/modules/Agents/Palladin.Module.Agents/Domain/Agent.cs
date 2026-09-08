@@ -14,8 +14,9 @@ internal sealed class Agent : EventEntityBase
     public uint RecipientKeyVersion { get; private set; }
     public uint AccessEpoch { get; private set; }
     public string? Name { get; private set; }
+    public string? NameKey { get; private set; }
     public string? Description { get; private set; }
-    public string Type { get; private set; } = string.Empty;
+    public string? Type { get; private set; }
     public string? IconKey { get; private set; }
     public string? IconColor { get; private set; }
     public AgentStatus Status { get; private set; }
@@ -44,7 +45,7 @@ internal sealed class Agent : EventEntityBase
         Guid organizationId,
         string publicKey,
         string signingPublicKey,
-        string type,
+        string? type,
         Instant now,
         string? name = null,
         Guid? apiKeyId = null)
@@ -59,10 +60,14 @@ internal sealed class Agent : EventEntityBase
             Status = AgentStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
-            Name = name?.Trim(),
-            Type = type.Trim(),
+            Type = type,
             LastUsedApiKeyId = apiKeyId,
         };
+
+        if (name is not null)
+        {
+            agent.SetName(name);
+        }
 
         agent.EmitUpserted();
 
@@ -86,13 +91,10 @@ internal sealed class Agent : EventEntityBase
     {
         if (name is not null)
         {
-            Name = name.Trim();
+            SetName(name);
         }
 
-        if (type is not null)
-        {
-            Type = type.Trim();
-        }
+        if (type is not null) Type = type;
 
         UpdatedAt = now;
         EmitUpserted();
@@ -114,7 +116,7 @@ internal sealed class Agent : EventEntityBase
 
         if (name is not null)
         {
-            Name = name.Trim();
+            SetName(name);
         }
 
         if (type is not null)
@@ -134,6 +136,20 @@ internal sealed class Agent : EventEntityBase
 
         UpdatedAt = now;
         EmitUpserted();
+    }
+
+    internal void RecordBrowserPairingEnrollment()
+    {
+        if (Status != AgentStatus.Active || EnrolledAt is null)
+        {
+            throw new InvalidOperationException("Only an active browser-paired Agent can record enrollment.");
+        }
+
+        AddEvent(new AgentBrowserPairingEnrolledEvent(
+            Id,
+            OrganizationId,
+            Name ?? string.Empty,
+            EnrolledAt.Value));
     }
 
     internal void RequestDeactivation(Guid requestId, Guid deactivatedBy, Instant now)
@@ -191,7 +207,14 @@ internal sealed class Agent : EventEntityBase
 
     internal void Delete(Guid deletedBy, string deletedByName, Instant now) => EmitDeleted(deletedBy, deletedByName, now);
 
-    internal void Update(Instant now, string? name, string? description, string? type, string? iconKey, string? iconColor)
+    internal void Update(
+        Instant now,
+        string? name,
+        string? description,
+        string? type,
+        string? iconKey,
+        string? iconColor,
+        bool updateType = false)
     {
         if (Status == AgentStatus.Deactivating)
         {
@@ -200,7 +223,7 @@ internal sealed class Agent : EventEntityBase
 
         if (name is not null)
         {
-            Name = name;
+            SetName(name);
         }
 
         if (description is not null)
@@ -208,7 +231,7 @@ internal sealed class Agent : EventEntityBase
             Description = description;
         }
 
-        if (type is not null)
+        if (updateType)
         {
             Type = type;
         }
@@ -225,6 +248,12 @@ internal sealed class Agent : EventEntityBase
 
         UpdatedAt = now;
         EmitUpserted();
+    }
+
+    private void SetName(string name)
+    {
+        Name = name.Trim();
+        NameKey = AgentMetadata.DisplayNameReservationKey(Name);
     }
 
     private void EmitUpserted() =>
@@ -264,7 +293,7 @@ internal sealed class Agent : EventEntityBase
             OrganizationId,
             DeactivatedBy!.Value,
             deactivatedByName,
-            Name,
+            Name ?? string.Empty,
             AccessEpoch,
             UpdatedAt));
     }
@@ -285,11 +314,11 @@ internal sealed class Agent : EventEntityBase
             AccessEpoch,
             CurrentAccessEpochStartedAt(),
             UpdatedAt));
-        AddEvent(new AgentReactivatedEvent(Id, OrganizationId, ReactivatedBy!.Value, reactivatedByName, Name, UpdatedAt));
+        AddEvent(new AgentReactivatedEvent(Id, OrganizationId, ReactivatedBy!.Value, reactivatedByName, Name ?? string.Empty, UpdatedAt));
     }
 
     private void EmitDeleted(Guid deletedBy, string deletedByName, Instant now) =>
-        AddEvent(new AgentDeletedEvent(Id, OrganizationId, deletedBy, deletedByName, Name, now));
+        AddEvent(new AgentDeletedEvent(Id, OrganizationId, deletedBy, deletedByName, Name ?? string.Empty, now));
 
     private Instant? CurrentAccessEpochStartedAt() =>
         Status == AgentStatus.Active ? ReactivatedAt ?? EnrolledAt : null;

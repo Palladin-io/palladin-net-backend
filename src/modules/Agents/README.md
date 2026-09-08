@@ -8,8 +8,8 @@
 Owns the agent (AI client) lifecycle — enrollment, approval, deactivation — and API-key management. Provides the authentication path agents use to reach the API: API-key lookup plus Ed25519 request-signature verification.
 
 ## Dependencies / references
-- **ProjectReferences:** `Palladin.Module.Identity.Contracts`, `Palladin.Module.Vault.Contracts`, `Palladin.Module.Notification.Contracts`, `Palladin.Module.Search.Contracts`, `Palladin.Module.Audit.Contracts`, plus its own `Palladin.Module.Agents.Contracts`.
-- **Publishes** (`Palladin.Module.Agents.Contracts.Events`): `AgentUpsertedEvent`, `AgentDeactivatedEvent`, `AgentReactivatedEvent`, `AgentDeletedEvent`, `ApiKeyCreatedEvent`, `ApiKeyActivatedEvent`, `ApiKeyRevokedEvent`, `ApiKeyDeletedEvent`.
+- **ProjectReferences:** `Palladin.Core.Hangfire`, `Palladin.Module.Identity.Contracts`, `Palladin.Module.Vault.Contracts`, `Palladin.Module.Notification.Contracts`, `Palladin.Module.Search.Contracts`, `Palladin.Module.Audit.Contracts`, plus its own `Palladin.Module.Agents.Contracts`.
+- **Publishes** (`Palladin.Module.Agents.Contracts.Events`): `AgentUpsertedEvent`, `AgentBrowserPairingEnrolledEvent`, `AgentDeactivatedEvent`, `AgentReactivatedEvent`, `AgentDeletedEvent`, `ApiKeyCreatedEvent`, `ApiKeyActivatedEvent`, `ApiKeyRevokedEvent`, `ApiKeyDeletedEvent`.
 - **Consumes:** `UserUpsertedEvent` from Identity and `AgentDeactivationCompletedEvent` from Vault.
 - **Sends command** (`Palladin.Module.Notification.Contracts`): `BroadcastNotificationCommand` (fired when a newly enrolled agent is `Pending`, awaiting approval).
 - **Sends commands** to OpenHost modules from its own `On{Event}Audit` / `On{Event}Search` / onboarding triggers: `AppendAuditLogCommand` (agent/apikey audit), `IndexSearchItemCommand`/`RemoveSearchItemCommand` (agent search), `MarkOrganizationOnboardingStepCommand` (org api-key / agent-enrolled onboarding).
@@ -34,8 +34,16 @@ the same version twice; adding a coordinator aggregate only to avoid this short 
 increase schema and retry complexity without reducing the invariant.
 
 ## Key aggregates (name + role)
-- **Agent** — an AI client; `AgentStatus` Pending→Active→Deactivating→Deactivated; carries versioned X25519 recipient identity plus an Ed25519 request-signing public key. Active deactivation is identified by a durable request id. Emits a single `AgentUpsertedEvent` per unit of work via `AddOrReplaceEvent`.
+- **Agent** — an AI client; `AgentStatus` Pending→Active→Deactivating→Deactivated; carries versioned X25519 recipient identity plus an Ed25519 request-signing public key. A bounded SHA-256 `NameKey`, computed with the same invariant normalization as pairing reservations, coordinates new names independently of database Unicode casing; legacy null-key rows retain exact and prior database-case comparison fallbacks. Active deactivation is identified by a durable request id. Emits a single `AgentUpsertedEvent` per unit of work via `AddOrReplaceEvent`.
 - **ApiKey** — credential for agent auth; stored as a hash (`pl_` prefix) plus a 4-char suffix for display.
+- **AgentPairingRequest** — a short-lived, signed browser-pairing state machine. It stores only
+  canonical public keys and reviewable metadata before approval; its optimistic revision fences
+  claim/reserve/approve/reject/expire races. `Pending` requests become `Approved`, `Rejected`, or
+  `Expired`. Approved requests temporarily retain only the credential envelope encrypted to the
+  runtime's X25519 key.
+- **AgentDisplayNameFence** — an organization-scoped optimistic coordinator shared by browser
+  reservations and every standard Agent name assignment. It makes the cross-table name decision
+  atomic without a wide lock or external transaction.
 - **FormDiscoveryMap** — versioned login structure with no credentials, cookie values or executable
   code. Cookie/CMP data is limited to bounded same-origin selector clicks. Versions are serialized
   by one global PostgreSQL sequence and are opaque monotonic tokens whose gaps are valid.
@@ -45,10 +53,54 @@ increase schema and retry complexity without reducing the invariant.
 
 ## Contracts (namespaces / types)
 - Agent identity is carried in the `agent_id` claim (`AgentClaimNames`, internal).
+- `AgentUpsertedEvent.Type` is nullable and preserves the optional free-form Agent type without
+  catalog mapping. Consumers must not infer authorization from it.
 - Persistence contexts: `AgentsDbWriteContext`, `AgentsDbReadContext`, `AgentsDomainWriteContext`, `AgentsDomainReadContext`.
+- Each feature operation uses one domain context, including its helpers: query-only operations use
+  `AgentsDomainReadContext`; mutations use `AgentsDomainWriteContext` for reads and writes. Pairing
+  start, claim, approval and API-key actor projections do not need a second read context. The Agents
+  persistence architecture test checks direct and transitive feature-constructor dependencies.
 
 ## Critical points / invariants
+- Pairing start accepts an optional bounded runtime-declared hostname in the signed body and stores
+  the IP observed on that runtime connection through the existing trusted-proxy pipeline. Approval
+  shows this start snapshot and initializes the standard Agent connection fields from it, never from
+  the approving browser. Normal authenticated Agent requests continue updating `LastIp` and
+  `LastHostname`; these fields describe the latest known connection, not a separate history.
+  Replaying a pairing start does not replace its original snapshot. Hostname is informational,
+  not a permission or verified machine identity; hostname/IP never enter pairing URLs or analytics.
 - Never return a full API key — only the masked `pl_••••{suffix}` form. The raw key is never persisted, only its hash.
+- Browser pairing never accepts an API key. `POST /api/agent-pairings` and signed status polling are
+  anonymous by design and authenticate the exact HTTP request with the declared Ed25519 identity.
+  Only opaque pairing IDs appear in approval URLs. Claim/reserve/approve/reject require the normal
+  authenticated organization permissions and verified e-mail boundary.
+- Pairing has separate key-selection and key-creation slices. `/claim` and `/approve` require
+  `AgentManage + ReadApiKey` and approval accepts only an existing `ApiKeyId`.
+  `/claim-for-new-key` and `/approve-with-new-key` require `AgentManage + WriteApiKey`, not
+  `ReadApiKey`. The creation claim never queries or returns existing key metadata and approval
+  accepts only `NewApiKeyName`. Both use the same organization-bound claim, reservation and atomic
+  standard Agent activation mechanics; no new permission flag or grant is introduced.
+- Pairing approval creates the same standard `Active` Agent aggregate and `AgentUpsertedEvent` as the
+  normal lifecycle. The optional Agent `Type` remains a normalized, bounded free-form string; it is
+  presentation metadata and grants no permission. The final display name is user-approved and may
+  be edited later through the standard Agent endpoint. Approval accepts an optional user-selected
+  `IconKey`, using the standard approval validation and storing it atomically on activation.
+  Approval additionally publishes
+  `AgentBrowserPairingEnrolledEvent` so the dedicated consumer emits the ordinary `agent.enrolled`
+  audit without treating later active-Agent upserts as new enrollment.
+- A pairing creates one random per-Agent `ApiKeyCredential` below the selected logical `ApiKey`.
+  Only its hash and Agent binding are persisted. The child credential is never listed or audited as
+  a separate user object; logical-key revoke/delete invalidates all children, and Agent requests
+  attribute usage to the logical key.
+- Canonical 32-byte Base64 is required for both X25519 and Ed25519 public keys. Whitespace or another
+  textual representation of the same bytes is rejected before identity lookup or persistence.
+- Pairing approval lasts exactly 30 minutes; startup rejects shorter or longer configured lifetimes.
+  Standard enrollment retries organization name-fence conflicts at most twice, rechecking the
+  requested name rather than silently dropping it. Exhausted contention fails without creating an unnamed Agent.
+- `agents.cleanup-agent-pairings` runs in bounded batches. It persists expiry (releasing display-name
+  reservations) and removes all terminal request material after the configured 15-minute retrieval
+  grace. An approved envelope remains retrievable after the original 30-minute approval deadline
+  until that terminal retention elapses.
 - `X-Agent-Key` is one raw 32-byte X25519 public key encoded as Base64. Enrollment rejects every other decoded length so an authenticated Agent can always participate in the frozen Discovery protocol; there is no legacy-length compatibility path.
 - `RecipientKeyVersion` is monotonic Agent identity metadata and is included with both public keys in `AgentUpsertedEvent`; Vault uses its replica to reject discovery envelopes sealed to a stale or substituted Agent identity.
 - Agent summaries expose the non-secret `RecipientKeyVersion` and `AccessEpoch`; only the single-Agent detail additionally exposes the full X25519 public key. An unlocked client binds the authoritative recipient key version into GRANULAR grant envelopes, and binds both it and the access epoch into a FULL `AgentWrappedVaultKey`. Vault validates every value again against its current Agent replica.

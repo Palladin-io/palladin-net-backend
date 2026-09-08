@@ -248,6 +248,7 @@ app.Use(async (context, next) =>
 });
 
 app.UseMiddleware<FillTransportHeadersMiddleware>();
+app.UseMiddleware<AgentPairingRequestBufferingMiddleware>();
 
 app.UseCors();
 app.UseAuthentication();

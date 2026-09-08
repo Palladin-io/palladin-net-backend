@@ -2,7 +2,9 @@ using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Agents.Infrastructure.DiscoveryMaps;
 using Palladin.Module.Agents.Infrastructure.Persistence;
 using Palladin.Module.Agents.Infrastructure.PublicAssets;
+using Palladin.Module.Agents.Infrastructure.Pairing;
 using Palladin.Module.Agents.Features;
+using Palladin.Core.Hangfire;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,6 +18,26 @@ internal static class InfrastructureModule
     {
         services.AddAgentsPersistence(configuration);
         services.AddAgentAuth(configuration);
+        services.AddOptions<AgentPairingOptions>()
+            .Bind(configuration.GetSection(AgentPairingOptions.Position))
+            .Validate(options =>
+                AgentPairingOptions.IsValidApprovalUrlBase(options.ApprovalUrlBase)
+                && options.HasSupportedLifetime
+                && options.PollIntervalMilliseconds is >= 500 and <= 10_000,
+                "Agent pairing requires an allowed approval URL, exactly 30 minutes of lifetime and a bounded poll interval.")
+            .ValidateOnStart();
+        services.AddSingleton<AgentPairingCredentialProtector>();
+        services.AddScoped<AgentPairingClaims>();
+        services.AddScoped<AgentPairingApproval>();
+        var pairingCleanupSection = configuration.GetSection(CleanupAgentPairingsJobOptions.Position);
+        services.AddScopedCronJob<CleanupAgentPairingsJob, CleanupAgentPairingsJobOptions>(pairingCleanupSection);
+        services.AddOptions<CleanupAgentPairingsJobOptions>()
+            .Validate(options => !options.Enabled
+                || (!string.IsNullOrWhiteSpace(options.Expression)
+                    && options.TerminalRetentionMinutes is >= 5 and <= 1440
+                    && options.BatchSize is > 0 and <= 5000),
+                "Agent pairing cleanup requires a valid schedule, retrieval grace, and bounded batch size.")
+            .ValidateOnStart();
         services.AddOptions<FormDiscoveryMapOptions>()
             .Bind(configuration.GetSection(FormDiscoveryMapOptions.Position))
             .Validate(options => options.MaximumDefinitionBytes is > 0 and <= 65_536

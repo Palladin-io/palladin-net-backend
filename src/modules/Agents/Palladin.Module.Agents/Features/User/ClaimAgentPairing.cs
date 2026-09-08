@@ -34,7 +34,7 @@ public sealed record ClaimAgentPairingResponse(
 
 [PublicAPI]
 internal sealed class ClaimAgentPairingEndpoint(
-    AgentsDomainReadContext domainReadContext,
+    AgentsDomainWriteContext domainWriteContext,
     AgentPairingClaims claims) : Endpoint<ClaimAgentPairingRequest, ClaimAgentPairingResponse>
 {
     public override void Configure()
@@ -66,7 +66,7 @@ internal sealed class ClaimAgentPairingEndpoint(
             await Send.NotFoundAsync(ct);
             return;
         }
-        var apiKeys = await domainReadContext.ApiKeys
+        var apiKeys = await domainWriteContext.ApiKeys
             .Where(x => x.OrganizationId == organizationId && x.Status == ApiKeyStatus.Active)
             .OrderBy(x => x.Name)
             .Select(x => new PairingApiKeyOption(x.Id, x.Name, $"pl_••••{x.KeySuffix}"))

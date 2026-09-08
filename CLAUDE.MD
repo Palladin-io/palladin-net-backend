@@ -39,7 +39,7 @@ Repository: [Palladin-io/palladin-net-backend](https://github.com/Palladin-io/pa
 - Apply [docs/architecture/database-guidelines.md](docs/architecture/database-guidelines.md) to every changed database access path, regardless of whether it is reached from HTTP GET/POST, a consumer or a job. EF Core through the split domain contexts is the default; raw SQL, explicit transactions and locks are reviewed last-resort exceptions that require a concrete reason, bounded scope, parameterization and focused tests.
 - Flag a material read whose `WHERE`, `JOIN`, ordering or keyset pagination cannot use a suitable current index at the expected scale. Also flag a new index that duplicates or overlaps a PK, UNIQUE constraint or existing index without serving a distinct current access path. Compare leftmost prefixes, range and ordering columns, partial predicates, included columns and uniqueness; a different column order is neither automatically redundant nor automatically justified. Do not require an index for every query.
 - Do not add a preflight PK/UNIQUE existence query solely to predict a constraint violation. Let the constraint arbitrate and map the exact named violation. Keep a preflight only for distinct authorization or business semantics, or demonstrated expensive-work avoidance, and still handle the write race.
-- Do not query a read context again for authoritative values already freshly loaded or fenced in the current write context; reuse those values. This does not replace the split-context rule: unrelated no-tracking reads still use the module `DomainReadContext`.
+- Use one domain context per operation: a query uses `DomainReadContext`; a mutation uses `DomainWriteContext` for both its reads and writes, including authorization, existence, audit-label and retry queries. Flag injecting both contexts into the same operation; do not hide the second context in a helper. Scalar/DTO projections and `AnyAsync` on the write context do not track entities; use `AsNoTracking()` for entity reads that will not be mutated. Reuse freshly loaded or fenced state instead of re-querying it.
 
 ## Runtime Secrets
 
@@ -225,7 +225,7 @@ Keep subjects under 72 characters. Focus on observable behavior. Don't mix refac
 
 Every module uses **Vertical Slice Architecture** — features live in `/Features` directory.
 
-**Persistence boundary:** every endpoint, command consumer, cron job, and helper in `Features/` accesses persistence exclusively through the module's split domain contexts. Inject `{Module}DomainReadContext` for no-tracking reads and `{Module}DomainWriteContext` for tracked aggregate loads and writes; inject both only when the feature genuinely does both. Never inject or pass `*DbReadContext`, `*DbWriteContext`, base `DbContext`, or a combined `*DomainContext` into a feature.
+**Persistence boundary:** every endpoint, command consumer, cron job, and helper in `Features/` accesses persistence exclusively through one of the module's separate domain contexts. Query-only operations use `{Module}DomainReadContext`; mutations use `{Module}DomainWriteContext` for the entire read-check-write operation. Do not inject both, even when the mutation needs read-only projections. Never inject or pass `*DbReadContext`, `*DbWriteContext`, base `DbContext`, or a combined `*DomainContext` into a feature.
 
 ## Synchronous (HTTP REST via FastEndpoints)
 
@@ -345,7 +345,7 @@ Cross-cutting pieces already exist in `src/core/`. Use them — re-implementing 
 ## MassTransit
 - **No `try/catch` in consumers** — MassTransit retry policy handles transient errors (duplicate PK, timeouts). Never catch `PostgresException { SqlState: "23505" }` or `DbUpdateException` in a consumer to paper over race conditions.
 - **Idempotency via `UpdatedAt`** — integration event contracts must carry `UpdatedAt: Instant`. Consumer checks `msg.UpdatedAt > existing.UpdatedAt` before writing; if the event is older or equal, skip silently.
-- **Features use only split domain contexts** — command consumers under `Features/` use `DomainReadContext` for no-tracking reads and `DomainWriteContext` for tracked loads and commits. Event consumers under `Triggers/` must at minimum persist through `DomainWriteContext`; neither kind ever calls `SaveChangesAsync` directly.
+- **Features use one domain context per operation** — mutating command consumers under `Features/` and event consumers under `Triggers/` use `DomainWriteContext` for reads, tracked loads and commits. Query-only operations use `DomainReadContext`; neither kind ever calls `SaveChangesAsync` directly.
 
 ### Consumer registration — .NET 10 compatibility (critical)
 

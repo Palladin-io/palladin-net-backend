@@ -11,7 +11,6 @@ namespace Palladin.Module.Agents.Features;
 
 [PublicAPI]
 internal sealed class ActivateApiKeyEndpoint(
-    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
     IClock clock) : EndpointWithoutRequest
 {
@@ -55,7 +54,7 @@ internal sealed class ActivateApiKeyEndpoint(
             return;
         }
 
-        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
+        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainWriteContext, userId.Value, ct);
         apiKey.Activate(userId.Value, actorName, clock.GetCurrentInstant());
         try
         {

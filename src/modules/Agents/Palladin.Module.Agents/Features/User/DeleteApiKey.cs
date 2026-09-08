@@ -18,7 +18,6 @@ public sealed record DeleteApiKeyRequest
 
 [PublicAPI]
 internal sealed class DeleteApiKeyEndpoint(
-    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
     IMemoryCache cache,
     IClock clock) : Endpoint<DeleteApiKeyRequest>
@@ -56,7 +55,7 @@ internal sealed class DeleteApiKeyEndpoint(
             return;
         }
 
-        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
+        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainWriteContext, userId.Value, ct);
         apiKey.MarkDeleted(userId.Value, actorName, clock.GetCurrentInstant());
         domainWriteContext.Remove(apiKey);
         try

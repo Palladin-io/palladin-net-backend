@@ -56,6 +56,10 @@ increase schema and retry complexity without reducing the invariant.
 - `AgentUpsertedEvent.Type` is nullable and preserves the optional free-form Agent type without
   catalog mapping. Consumers must not infer authorization from it.
 - Persistence contexts: `AgentsDbWriteContext`, `AgentsDbReadContext`, `AgentsDomainWriteContext`, `AgentsDomainReadContext`.
+- Each feature operation uses one domain context, including its helpers: query-only operations use
+  `AgentsDomainReadContext`; mutations use `AgentsDomainWriteContext` for reads and writes. Pairing
+  start, claim, approval and API-key actor projections do not need a second read context. The Agents
+  persistence architecture test checks direct and transitive feature-constructor dependencies.
 
 ## Critical points / invariants
 - Pairing start accepts an optional bounded runtime-declared hostname in the signed body and stores

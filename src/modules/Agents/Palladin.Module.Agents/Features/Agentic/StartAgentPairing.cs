@@ -55,7 +55,6 @@ internal sealed class StartAgentPairingValidator : Validator<StartAgentPairingRe
 
 [PublicAPI]
 internal sealed class StartAgentPairingEndpoint(
-    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
     AgentSignatureVerifier signatureVerifier,
     AgentPairingCredentialProtector credentialProtector,
@@ -93,7 +92,7 @@ internal sealed class StartAgentPairingEndpoint(
             return;
         }
 
-        var existingRequest = await domainReadContext.AgentPairingRequests
+        var existingRequest = await domainWriteContext.AgentPairingRequests
             .Where(x => x.Id == req.PairingId)
             .Select(x => new
             {
@@ -119,7 +118,7 @@ internal sealed class StartAgentPairingEndpoint(
             return;
         }
 
-        var existingAgent = await domainReadContext.Agents.AnyAsync(x => x.PublicKey == req.PublicKey, ct);
+        var existingAgent = await domainWriteContext.Agents.AnyAsync(x => x.PublicKey == req.PublicKey, ct);
         if (existingAgent)
         {
             await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
@@ -152,7 +151,7 @@ internal sealed class StartAgentPairingEndpoint(
         })
         {
             domainWriteContext.Clear();
-            existingRequest = await domainReadContext.AgentPairingRequests
+            existingRequest = await domainWriteContext.AgentPairingRequests
                 .Where(x => x.Id == req.PairingId)
                 .Select(x => new
                 {

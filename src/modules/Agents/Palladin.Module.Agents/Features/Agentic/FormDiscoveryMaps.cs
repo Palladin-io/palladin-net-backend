@@ -37,7 +37,6 @@ internal sealed class SubmitFormDiscoveryMapValidator : Validator<SubmitFormDisc
 }
 
 internal sealed class SubmitFormDiscoveryMapEndpoint(
-    AgentsDomainReadContext readContext,
     AgentsDomainWriteContext writeContext,
     FormDiscoveryMapContract contract,
     IGuidProvider guidProvider,
@@ -59,7 +58,7 @@ internal sealed class SubmitFormDiscoveryMapEndpoint(
             return;
         }
 
-        if (!await readContext.Agents.AnyAsync(agent => agent.Id == agentId, ct))
+        if (!await writeContext.Agents.AnyAsync(agent => agent.Id == agentId, ct))
         {
             await Send.UnauthorizedAsync(ct);
             return;

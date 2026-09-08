@@ -13,7 +13,6 @@ namespace Palladin.Module.Agents.Features;
 
 [PublicAPI]
 internal sealed class DeleteAgentEndpoint(
-    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
     IMemoryCache cache,
     IClock clock) : EndpointWithoutRequest
@@ -59,7 +58,7 @@ internal sealed class DeleteAgentEndpoint(
             return;
         }
 
-        var credentialHashes = await domainReadContext.ApiKeyCredentials
+        var credentialHashes = await domainWriteContext.ApiKeyCredentials
             .Where(x => x.AgentId == agent.Id)
             .Select(x => x.KeyHash)
             .ToListAsync(ct);

@@ -34,7 +34,6 @@ internal sealed class GenerateApiKeyValidator : Validator<GenerateApiKeyRequest>
 
 [PublicAPI]
 internal sealed class GenerateApiKeyEndpoint(
-    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,
     IClock clock) : Endpoint<GenerateApiKeyRequest, GenerateApiKeyResponse>
@@ -63,7 +62,7 @@ internal sealed class GenerateApiKeyEndpoint(
             return;
         }
 
-        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
+        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainWriteContext, userId.Value, ct);
 
         var (apiKey, plaintext) = ApiKey.Generate(
             guidProvider.Generate(),

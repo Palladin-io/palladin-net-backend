@@ -33,7 +33,6 @@ internal sealed class ApproveAgentPairingWithNewKeyValidator : Validator<Approve
 
 [PublicAPI]
 internal sealed class ApproveAgentPairingWithNewKeyEndpoint(
-    AgentsDomainReadContext domainReadContext,
     AgentsDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,
     IClock clock,
@@ -58,7 +57,7 @@ internal sealed class ApproveAgentPairingWithNewKeyEndpoint(
             await Send.UnauthorizedAsync(ct);
             return;
         }
-        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainReadContext, userId.Value, ct);
+        var actorName = await ApiKeyActor.ResolveActorNameAsync(domainWriteContext, userId.Value, ct);
         var apiKey = ApiKey.GenerateHidden(guidProvider.Generate(), organizationId.Value,
             req.NewApiKeyName.Trim(), userId.Value, actorName, clock.GetCurrentInstant());
         domainWriteContext.Add(apiKey);

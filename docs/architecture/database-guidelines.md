@@ -8,7 +8,7 @@ The goal is predictable correctness and performance without speculative indexes,
 
 - Features access persistence only through their module's split `DomainReadContext` and `DomainWriteContext`. `DbReadContext`, `DbWriteContext`, base `DbContext` and `DbSet` are Infrastructure-only.
 - Read operations use `DomainReadContext` and no-tracking projections. Write operations load tracked aggregates through `DomainWriteContext`, change state through domain methods and persist through `CommitAsync(...)`.
-- A feature that genuinely reads and writes may inject both domain contexts. Never create a combined `DomainContext`.
+- Use one context per operation. A mutation uses `DomainWriteContext` for every read and write in that operation, including authorization, existence checks, audit labels, projections and retries. Do not also inject `DomainReadContext`, directly or through a helper. Query-only operations retain `DomainReadContext`; never create a combined `DomainContext`.
 - Direct EF Core writes are limited to infrastructure concerns such as migrations and test seed or cleanup code. They are not an alternative feature write path.
 - PostgreSQL stores structural integrity through PK, FK, UNIQUE and NOT NULL constraints. Business-value validation and executable behavior belong in domain methods and application services, not CHECK constraints, triggers, stored functions or stored procedures.
 
@@ -18,7 +18,7 @@ EF Core LINQ through a domain context is the default query API.
 
 - Apply tenant, authorization and lifecycle filters in the database before materialization.
 - Project only the columns required by the response or decision. Do not load a complete aggregate for a read-only response when a projection is sufficient.
-- Keep read queries no-tracking. A mutation must reload the tracked aggregate through `DomainWriteContext`; never mutate an entity returned by a read context.
+- Keep query-only reads no-tracking. Within a mutation, use scalar/DTO projections or `AnyAsync` on `DomainWriteContext` for read-only decisions; these do not materialize tracked entities. Use `AsNoTracking()` when an entity result is deliberately read-only. Load aggregates to mutate with tracking through the same write context and reuse freshly loaded/fenced state; never mutate an entity returned by a read context.
 - Prevent N+1 access by joining, projecting correlated values or loading a bounded set in one query.
 - Use `AnyAsync()` when only existence matters, and perform cheap existence or authorization checks before expensive materialization when doing so does not introduce a race or information leak.
 - Keep pagination deterministic and database-side. Use keyset pagination for growing or mutable collections; offset pagination is not permitted for mutable write sets.
@@ -118,7 +118,7 @@ Pre-production migration squashes remain exceptional and require explicit owner 
 For every changed database access path:
 
 1. Identify the owning business requirement and module invariant.
-2. Confirm the feature uses the correct domain context and keeps authorization and tenant filters database-side.
+2. Confirm the operation uses exactly one domain context (read for a query, write for the whole mutation), including its helpers, and keeps authorization and tenant filters database-side. Do not request a second read context merely because a mutation contains projections or existence checks.
 3. Review projection, tracking, materialization, pagination and N+1 behavior.
 4. Compare the query predicates and ordering with PK, UNIQUE and existing indexes before proposing a new one.
 5. Require a distinct current access path for every added overlapping index; do not require an index without a credible scale problem.

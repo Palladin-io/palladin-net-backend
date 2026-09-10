@@ -20,6 +20,8 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired();
 
         builder.Property(x => x.UpdatedAt).IsConcurrencyToken();
+        builder.Property(x => x.SharedUnlockEnabled).HasDefaultValue(true).HasSentinel(true);
+        builder.Property(x => x.SharedUnlockRevision).HasDefaultValue(1u).IsConcurrencyToken();
         builder.Property(x => x.CredentialRevision).IsConcurrencyToken();
         builder.Property(x => x.PrivateKeyWrapRevision).IsConcurrencyToken();
         builder.Property(x => x.KdfProfileId).HasMaxLength(64);

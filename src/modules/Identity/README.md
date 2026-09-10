@@ -52,6 +52,8 @@ Organization membership endpoints:
 
 Account contract:
 - `GET api/account` returns the current nullable `MemberKeyVersion` beside the wrapped private-key material. An unlocked client uses this server-authoritative version when sealing a new Vault key to its own Member public key; it must never assume version `1` after key rotation.
+- `GET api/account/shared-unlock` (JWT) returns `{sharedUnlockEnabled, revision}` for the authenticated account, independent of the active organization. New and migrated accounts default to `true` with revision `1`; an explicitly stored `false` is retained. Responses are not cacheable.
+- `PUT api/account/shared-unlock` (JWT) requires `{sharedUnlockEnabled, expectedRevision}`. Every accepted choice advances the revision, including choosing the already stored value: an explicit off must fence a concurrent enable even when already off. Stale revisions, concurrent writes and revision exhaustion return `409` with `shared-unlock-preference-conflict`; the client must fetch current state before a new intentional attempt. An optimistic user revision token also fences equal-clock writes. Missing fields return `400`; neither account nor environment can be selected by the payload. This preference creates no browser link, session or MK handoff by itself. The shared-unlock bootstrap and client propagation are separate work.
 
 An organization role grants administrative capabilities only. It never grants cryptographic vault access: the Vault module still requires a separate `VaultMember` row containing a client-produced `WrappedVK`.
 

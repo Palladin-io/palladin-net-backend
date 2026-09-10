@@ -102,3 +102,20 @@ EF Core + Postgres, MassTransit publish, custom JWT (`TokenService`), Google OAu
 - Existing accounts are all OAuth, so the `AddEmailPasswordAuth` migration backfills `EmailVerified = true`; the OAuth sign-in path sets it true going forward.
 - A user can belong to multiple organizations, but each JWT and refresh-token lineage carries exactly one `org_id`. JWT authentication validates `(sub, org_id, authz_ver)` against the current `OrganizationMember` on every request. A normal role-assignment or effective-permission change increments `AuthorizationVersion` and revokes all unrevoked refresh tokens for that membership in the same Identity commit, so old access and refresh tokens stop working immediately. A no-op does not invalidate sessions. A staged membership-removal row deliberately remains authorization-current for reads until its Vault removal workflow completes; every unsafe HTTP verb carrying the complete user-JWT claim set requires an `Active` membership by default. Only explicitly reviewed account/exit operations and the read-only Member snapshot/delta and GlobalSearch POSTs opt out through `AllowNonActiveOrganizationMembershipMetadata` in the endpoint's `Configure()` method. Login, TOTP completion, OAuth, refresh and organization switch never issue a session for a non-active membership.
 - **Current fail-closed `GrantManage` stage:** Identity and Vault do not yet have the durable role-change operation, staged `VaultReasonRecipientSet` wire/client material or `CutoverPending` protocol required for an honest cross-module recipient cutover. Therefore any role definition or member-role replacement that would change a member's effective `GrantManage` eligibility returns `409` with `organization-role-grant-manage-cutover-unavailable` before any role, version or refresh-token mutation. A role containing `GrantManage` is not invitation-assignable, and acceptance revalidates the current role and returns the same `409` with zero invitation or membership mutation if the role would grant it. This is an intentional safe restriction, not the final `202 + operationId` saga described by the target PRD; it must not be relaxed to a synchronous role write.
+
+### Candidate shared-unlock receiver proof
+
+`Infrastructure/SharedUnlock/SharedUnlockIdentityProof` verifies the candidate
+`palladin.shared-unlock.identity-proof.v1` Ed25519 contract for the receiver's
+separate consume and commit stages. Expected operation ID, random challenge,
+SHA-256 of the authorized MK transcript, signing public key and exact
+millisecond validity come from Identity's authoritative operation state;
+untrusted input supplies only the signature. Lifetime is at most 30 seconds.
+The verifier does not create sessions or implement replay prevention itself.
+
+The matching fixtures in `tests/Fixtures/SharedUnlock/identity-proof-v1.json`
+are generated synthetic Node Ed25519 vectors from palladin-protocol and are
+verified independently with NSec 26.4.0. The bootstrap endpoints, atomic
+consume/session issuance and local-link revocation fence are still in progress.
+No browser-shared session endpoint is enabled by adding this verifier, and no
+MK or client private key is sent to or stored by Identity.

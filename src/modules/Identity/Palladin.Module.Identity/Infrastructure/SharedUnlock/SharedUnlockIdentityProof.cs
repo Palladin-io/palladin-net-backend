@@ -1,8 +1,7 @@
-using System.Buffers.Binary;
+using static Palladin.Module.Identity.Infrastructure.SharedUnlock.SharedUnlockEncoding;
 using System.Buffers.Text;
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using NodaTime;
 using NSec.Cryptography;
 
@@ -81,12 +80,4 @@ internal static class SharedUnlockIdentityProof
         return stream.ToArray();
     }
 
-    private static void Write(Stream stream, string value)
-    {
-        var encoded = Encoding.UTF8.GetBytes(value);
-        Span<byte> length = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt32BigEndian(length, checked((uint)encoded.Length));
-        stream.Write(length);
-        stream.Write(encoded);
-    }
 }

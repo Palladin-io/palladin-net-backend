@@ -79,7 +79,7 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
         HttpContext.Response.Headers.CacheControl = "no-store";
         var userId = User.GetUserId();
         var organizationId = User.GetOrganizationId();
-        var now = Instant.FromUnixTimeMilliseconds(clock.GetCurrentInstant().ToUnixTimeMilliseconds());
+        var now = clock.GetCurrentInstant();
         var hash = TokenService.HashToken(req.RefreshToken);
         var session = await context.RefreshTokens.SingleOrDefaultAsync(token =>
             token.UserId == userId && token.OrganizationId == organizationId && token.TokenHash == hash, ct);

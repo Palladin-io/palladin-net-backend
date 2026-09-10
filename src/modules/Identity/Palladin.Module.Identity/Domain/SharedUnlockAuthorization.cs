@@ -51,10 +51,37 @@ internal sealed class SharedUnlockAuthorization
         AuthorizationVersion = session.AuthorizationVersion;
         SecondFactorRevision = session.SecondFactorRevision;
         SecondFactorVerifiedAt = session.SecondFactorVerifiedAt;
-        UnlockedAt = now;
+        UnlockedAt = Instant.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds());
         IdleDeadline = idleDeadline;
         AbsoluteDeadline = absoluteDeadline;
         OfflineDeadline = offlineDeadline;
+    }
+
+    internal static SharedUnlockAuthorization Inherit(Guid id, RefreshToken receiver,
+        SharedUnlockAuthorization source, SharedUnlockOperation operation)
+    {
+        if (id == Guid.Empty || receiver.UserId != operation.UserId || source.UserId != operation.UserId
+            || source.Id != operation.SourceAuthorizationId || source.SessionId != operation.SourceSessionId
+            || source.Sequence != operation.SourceSequence || source.LinkId != operation.LinkId
+            || source.LinkEpoch != operation.LinkEpoch || receiver.OrganizationId != operation.OrganizationId
+            || receiver.AuthorizationVersion != operation.AuthorizationVersion
+            || receiver.SecondFactorRevision != source.SecondFactorRevision
+            || receiver.SecondFactorVerifiedAt != source.SecondFactorVerifiedAt)
+        {
+            throw new ArgumentException("Invalid inherited unlock authority.");
+        }
+        return new SharedUnlockAuthorization
+        {
+            Id = id, UserId = receiver.UserId, SessionId = receiver.SessionId ?? receiver.Id,
+            OrganizationId = receiver.OrganizationId, Sequence = operation.SourceSequence,
+            LinkId = operation.LinkId, LinkEpoch = operation.LinkEpoch,
+            SourceGeneration = operation.RecipientGeneration.ToArray(),
+            CredentialRevision = source.CredentialRevision, PrivateKeyWrapRevision = source.PrivateKeyWrapRevision,
+            AuthorizationVersion = receiver.AuthorizationVersion,
+            SecondFactorRevision = source.SecondFactorRevision, SecondFactorVerifiedAt = source.SecondFactorVerifiedAt,
+            UnlockedAt = operation.UnlockedAt, IdleDeadline = operation.IdleDeadline,
+            AbsoluteDeadline = operation.AbsoluteDeadline, OfflineDeadline = operation.OfflineDeadline,
+        };
     }
 
     internal bool TryBind(SharedUnlockLink link)

@@ -26,6 +26,15 @@ internal sealed class AuthSessionIssuer(
         uint? secondFactorRevision = null,
         Instant? secondFactorVerifiedAt = null)
     {
+        var issued = IssueWithSession(user, organization, permissions, authorizationVersion,
+            now, secondFactorRevision, secondFactorVerifiedAt);
+        return (issued.AccessToken, issued.RefreshToken);
+    }
+
+    public IssuedAuthSession IssueWithSession(User user, Organization organization,
+        Permission permissions, uint authorizationVersion, Instant now,
+        uint? secondFactorRevision = null, Instant? secondFactorVerifiedAt = null)
+    {
         var effectivePlan = user.EffectivePlan(organization.PlanType, now);
         var expiresAtCap = organization.PlanType < PlanType.Pro
             ? user.ActiveWaitlistDeveloperBenefitEndsAt(now)
@@ -47,6 +56,6 @@ internal sealed class AuthSessionIssuer(
             authorizationVersion, expiresAt, now, secondFactorRevision, secondFactorVerifiedAt);
         domainWriteContext.Add(refreshToken);
 
-        return (accessToken, rawRefreshToken);
+        return new IssuedAuthSession(accessToken, rawRefreshToken, refreshToken);
     }
 }

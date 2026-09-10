@@ -396,12 +396,14 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
         (await read.SharedUnlockAuthorizations.AnyAsync(a => a.UserId == user.Id, Ct)).ShouldBeFalse();
     }
 
-    [Fact]
-    public async Task When_SourceAlreadyCompletedCurrentTotp_Then_ManualUnlockKeepsThatVerificationAge()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_SourceAlreadyCompletedCurrentTotp_Then_ManualUnlockKeepsThatVerificationAge(bool justVerified)
     {
         // Given
         var source = await SeedSourceAsync();
-        var verifiedAt = Now - Duration.FromMinutes(5);
+        var verifiedAt = justVerified ? apiFactory.FakeClock.GetCurrentInstant() : Now - Duration.FromMinutes(5);
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
@@ -424,7 +426,8 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
         var read = verification.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
         var authority = await read.SharedUnlockAuthorizations.SingleAsync(a => a.UserId == source.User.Id, Ct);
         authority.SecondFactorRevision.ShouldBe(2u);
-        authority.SecondFactorVerifiedAt.ShouldBe(verifiedAt);
+        var persistedSession = await read.RefreshTokens.SingleAsync(t => t.UserId == source.User.Id, Ct);
+        authority.SecondFactorVerifiedAt.ShouldBe(persistedSession.SecondFactorVerifiedAt);
     }
 
     private Instant Now => Instant.FromUnixTimeMilliseconds(apiFactory.FakeClock.GetCurrentInstant().ToUnixTimeMilliseconds());

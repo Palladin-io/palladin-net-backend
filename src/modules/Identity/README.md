@@ -115,10 +115,10 @@ The verifier does not create sessions or implement replay prevention itself.
 
 The matching fixtures in `tests/Fixtures/SharedUnlock/identity-proof-v1.json`
 are generated synthetic Node Ed25519 vectors from palladin-protocol and are
-verified independently with NSec 26.4.0. The bootstrap endpoints, atomic
-consume/session issuance and local-link revocation fence are still in progress.
-No browser-shared session endpoint is enabled by adding this verifier, and no
-MK or client private key is sent to or stored by Identity.
+verified independently with NSec 26.4.0. The operation endpoints below use this
+verifier with persisted one-time state and current authorization. No MK or client
+private key is sent to or stored by Identity. Browser adapters and linked logout
+remain incomplete.
 
 ### Shared-unlock local-link authority (increment)
 
@@ -158,9 +158,9 @@ The migration is incremental; all prior migrations remain untouched.
 
 Activation is available only through the authenticated manual-unlock authorization
 below. These endpoints do not prove that a browser is trusted, issue receiver
-tokens, transfer keys or yet notify clients. Receiver session issuance, consuming
-the current epoch before every handoff, session logout mapping and browser
-propagation remain required before the complete feature is enabled. A successful
+tokens, transfer keys or yet notify clients. The operation endpoints below issue
+receiver sessions after consuming current authority. Session logout mapping and
+browser propagation remain required before the complete feature is enabled. A successful
 metadata mutation must not be presented as completed browser lock/logout until
 adapters have actually handled it.
 
@@ -244,7 +244,78 @@ transaction is introduced. `MarkPropertyAsUpdated` preserves original tracked
 concurrency values and pending domain changes rather than reattaching the object.
 The new migration is incremental and no historical migration is changed.
 
-This is source authorization and activation only. Inherited receiver authority,
-activity-driven idle updates, one-time operation consume/commit, receiver-owned
-tokens, linked logout and browser transport/UI remain required. No public key
-handoff or automatic browser unlock is enabled by these APIs alone.
+The operation endpoints below inherit this authorization. Activity-driven idle
+updates, linked logout and browser transport/UI remain required. These APIs alone
+do not deliver or install an MK in a browser.
+
+
+### One-time shared-unlock operation and independent receiver session (increment)
+
+The source first authenticates the exact browser route, fresh client generations,
+X25519 offers and receiver Ed25519 public key. The browser/configuration is the
+independent authority for extension ID, origins, document and generation; request
+shape checks on Identity do not attest browser identity. Owner-approved same-ID
+extension substitution/full-profile compromise remains outside this boundary.
+
+- `POST api/account/shared-unlock/operations` requires source JWT, its own current
+  refresh token, bound authorization nonce/link epoch/preference revision, explicit
+  receiver organization and the verified channel/public-key metadata. It snapshots
+  current authority, generates a challenge, binds the complete MK transcript and
+  creates an offered operation. TTL is at most 30 seconds, capped by every source
+  deadline and current refresh expiry. The source never forwards its own tokens.
+- `POST api/auth/shared-unlock/operations/{OperationId}/consume` is anonymous at the
+  JWT layer because the receiver may be signed out. A valid Ed25519 consume proof
+  bound to the persisted operation is mandatory. Identity rechecks all current
+  authority and atomically moves offered to consumed. It returns the operation
+  and authoritative account key descriptor; it issues no session yet.
+- `POST .../{OperationId}/commit` requires the distinct commit proof and consumed
+  state. Identity repeats current authority checks, issues the receiver's own
+  access/refresh session, stores inherited unlock authority and records committed
+  state in one domain commit. A replay, wrong order or losing concurrency race
+  cannot issue a second session. Unknown/invalid/expired proof returns 401;
+  changed authorization or already-used state returns 409. Responses are no-store.
+
+The receiver organization may differ from the source organization for the same
+account. Source and target membership, authorization versions and offline policy
+versions are independently checked. The new session uses only the target's current
+permissions/version. No foreign account or organization without active membership
+can be selected. Client account selection and browser generation remain mandatory
+independent adapter checks.
+
+`palladin.shared-unlock.key-context.v1` hashes the account ID, security/minimum
+versions, KDF profile/salt, credential/wrapper/member-key revisions, member public
+key and encrypted private-key wrapper. Identity obtains these from its own current
+User and rechecks the digest before consume/commit. It does not accept a descriptor
+from the peer as authority. Node-generated fixtures verify every field binding;
+independent complete MK-transcript vectors also match the backend byte-for-byte.
+This is ciphertext/public metadata, never MK, private key or Vault plaintext.
+
+Inherited authority has a fresh nonce and the receiver's own logical session ID,
+organization and RAM generation. It copies the original source sequence, link/epoch,
+unlock timestamp, all three ceilings and original MFA verification time. Issuance
+uses the ordinary session issuer; it does not activate or restart a waitlist benefit.
+After commit the child has no dependency on the parent refresh record. It may become
+a source for a new peer within the original limits. Source token rotation during
+an unfinished operation invalidates that attempt; the source starts a fresh attempt
+with its own current token. No handoff resets idle, absolute or offline time.
+
+User, source session, source authorization, both memberships/organizations, factor
+and link are fenced with existing concurrency tokens. Operation revision provides
+the one-time fence; a conflict rolls back operation state, new tokens and child
+authority together. The operation key lookup uses its PK; source/member/link lookups
+use their existing account-scoped indexes. No explicit transaction or raw SQL is
+introduced. Two append-only migrations add the metadata table and the distinct
+`(ExpiresAt, Id)` cleanup access path; no earlier migration is rewritten.
+
+`CleanupSharedUnlockOperationsJob` removes only expired operation metadata in
+ordered bounded batches, clearing tracking between commits. It runs every five
+minutes by default and never removes the independently stored session, inherited
+root or link. Concurrent cleanup conflicts are retried on a subsequent batch/run.
+Options live at `Modules:Identity:CleanupSharedUnlockOperationsJob`; test hosting
+disables scheduling and invokes the job directly. The API bounds offer POSTs to
+30 per authenticated account/minute and anonymous proof POSTs to 60 per IP/minute.
+
+This remains an incomplete feature draft: activity updates, linked logout,
+receiver installation/ACK, browser adapters/UI and the complete supported-browser
+artifact matrix are still required. Passing Identity tests does not prove that a
+browser received or installed an MK.

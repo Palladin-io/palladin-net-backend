@@ -51,7 +51,11 @@ esac'
 printf "%s\n" "$*" >> "$MOCK_CASE_DIR/state/docker-calls"
 case "${1:-}" in
   network) exit 0 ;;
-  login|pull|run|rm|stop)
+  login)
+    cat >/dev/null
+    exit 0
+    ;;
+  pull|run|rm|stop)
     [[ "${1:-}" == "stop" ]] && printf "%s\n" "${@: -1}" >> "$MOCK_CASE_DIR/state/stopped"
     exit 0
     ;;

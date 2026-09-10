@@ -14,6 +14,7 @@ internal sealed class TotpCredential : EventEntityBase
     public string? PendingSecret { get; private set; }
     public string? Secret { get; private set; }
     public bool IsEnabled { get; private set; }
+    public uint ConfigurationRevision { get; private set; } = 1;
     public long LastUsedTimeStep { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant UpdatedAt { get; private set; }
@@ -36,6 +37,7 @@ internal sealed class TotpCredential : EventEntityBase
 
     internal void RestartEnrollment(string secret, Instant now)
     {
+        ConfigurationRevision = checked(ConfigurationRevision + 1);
         PendingSecret = secret;
         UpdatedAt = now;
     }
@@ -46,6 +48,7 @@ internal sealed class TotpCredential : EventEntityBase
     // (or disable) within the verification window.
     internal void Confirm(long matchedTimeStep, Instant now)
     {
+        ConfigurationRevision = checked(ConfigurationRevision + 1);
         Secret = PendingSecret;
         PendingSecret = null;
         IsEnabled = true;
@@ -58,6 +61,7 @@ internal sealed class TotpCredential : EventEntityBase
 
     internal void Disable(Instant now)
     {
+        ConfigurationRevision = checked(ConfigurationRevision + 1);
         Secret = null;
         PendingSecret = null;
         IsEnabled = false;

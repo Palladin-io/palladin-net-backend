@@ -164,3 +164,31 @@ current epoch before every handoff, session logout mapping and browser propagati
 remain required before the complete feature is enabled. A successful metadata
 mutation must not be presented as completed browser lock/logout until adapters
 have actually handled it.
+
+### Session second-factor authority for shared unlock (increment)
+
+Refresh sessions now retain nullable `SecondFactorRevision` and
+`SecondFactorVerifiedAt`. Only successful `login/totp` completion records this
+assurance, including a single-use recovery-code completion. Password-only,
+OAuth, organization-switch and invitation sessions do not infer assurance from
+the account's enabled factor or from a fresh session creation timestamp.
+Existing sessions migrate with no assurance. Refresh rotation copies both
+values exactly; it never upgrades an unverified session or renews verification
+age. The fields are server-owned and are absent from client request/response DTOs.
+
+`TotpCredential.ConfigurationRevision` advances on enrollment restart,
+confirmation/replacement and disable, independently of timestamps and ordinary
+code use. It is an optimistic
+concurrency token. Login completion forces an update of that tracked factor even
+when only a recovery-code row changed, so a concurrent configuration replacement
+rolls back challenge consumption and session issuance through the existing
+authentication-conflict response. The login mutation uses one domain write
+context throughout. Current-factor evaluation additionally rejects inactive
+refresh sessions and a factor belonging to a different account.
+
+This metadata preserves already-completed 2FA for the upcoming source-unlock
+authorization. It does not itself authorize MK transfer or activate a link.
+The bootstrap must still verify the source's own live session, manual-unlock
+authority or inherited lease, current factor, preference, link epoch, account key
+revisions, membership and inherited deadlines in its atomic commit. A missing or
+obsolete factor assurance requires actual step-up; having MK is insufficient.

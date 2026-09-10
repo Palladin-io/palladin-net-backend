@@ -13,5 +13,7 @@ internal interface IAuthSessionIssuer
         Organization organization,
         Permission permissions,
         uint authorizationVersion,
-        Instant now);
+        Instant now,
+        uint? secondFactorRevision = null,
+        Instant? secondFactorVerifiedAt = null);
 }

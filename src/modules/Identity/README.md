@@ -119,3 +119,48 @@ verified independently with NSec 26.4.0. The bootstrap endpoints, atomic
 consume/session issuance and local-link revocation fence are still in progress.
 No browser-shared session endpoint is enabled by adding this verifier, and no
 MK or client private key is sent to or stored by Identity.
+
+### Shared-unlock local-link authority (increment)
+
+Identity now persists nonsensitive browser-link state in `SharedUnlockLinks`,
+scoped by `(UserId, Id)`. The client supplies a random, stable local link ID after
+verified browser discovery; that ID is a correlation marker, not authentication
+or proof of extension identity. Each operation remains authenticated as its owner.
+The browser adapter must retain the marker after disconnect and never generate a
+new ID merely to bypass revocation.
+
+- `POST api/account/shared-unlock/links`: creates a **locked** link, revision/epoch
+  1, only with the current enabled account preference. A duplicate ID returns 409
+  and cannot overwrite or recreate a revoked link.
+- `GET api/account/shared-unlock/links/{LinkId}`: returns only link ID, revision,
+  epoch and state (`locked`, `active`, `revoked`), with `Cache-Control: no-store`.
+- `POST .../{LinkId}/lock`: requires link revision plus current enabled preference
+  revision. It locks the link and advances both counters even for a repeated lock.
+  A queued lock after OFF returns 409 without propagating the action.
+- `POST .../{LinkId}/disconnect`: requires the current link revision, records
+  `revoked` and advances both counters. It works independently of the preference.
+- `POST .../{LinkId}/reconnect`: requires the current revision and a revoked link;
+  it explicitly returns the link to **locked** in a new epoch. It never enables
+  the preference or restores an old unlock.
+
+Lock/disconnect remain available for an authenticated account even when the JWT's
+selected organization membership is no longer active, so users can close their
+local security context. Create/reconnect retain the normal mutation membership
+boundary. Foreign accounts receive 404 for both reads and mutations. Other link
+rows and other devices' account preferences are unaffected.
+
+The link revision is an EF concurrency token. Creation and lock additionally
+force a no-op UPDATE of the tracked User preference revision, using its existing
+concurrency tokens to fence concurrent OFF in the same domain commit. A losing
+race rolls back the whole operation, including a newly inserted link. No raw SQL,
+explicit transaction or extra index is needed beyond the account-scoped PK/FK.
+The migration is incremental; all prior migrations remain untouched.
+
+The domain has an activation transition reserved for the upcoming authenticated
+manual-unlock/bootstrap flow. There is **no activation endpoint in this increment**.
+These metadata endpoints do not prove that a browser is trusted, issue tokens,
+transfer keys or yet notify clients. Receiver session issuance, consuming the
+current epoch before every handoff, session logout mapping and browser propagation
+remain required before the complete feature is enabled. A successful metadata
+mutation must not be presented as completed browser lock/logout until adapters
+have actually handled it.

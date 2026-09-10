@@ -37,7 +37,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         fetched.StatusCode.ShouldBe(HttpStatusCode.OK);
         fetched.Headers.CacheControl!.NoStore.ShouldBeTrue();
         (await fetched.Content.ReadFromJsonAsync<SharedUnlockLinkResponse>(Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(id, 1, 1, "locked"));
+            .ShouldBe(new SharedUnlockLinkResponse(id, 1, 1, "locked", 0, 0));
         (await client.GetFromJsonAsync<SharedUnlockPreferenceResponse>("api/account/shared-unlock", Cancellation))
             .ShouldBe(new SharedUnlockPreferenceResponse(true, 1));
     }
@@ -59,7 +59,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await client.GetFromJsonAsync<SharedUnlockLinkResponse>($"api/account/shared-unlock/links/{link.Id}", Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 2, 2, "revoked"));
+            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 2, 2, "revoked", 1, 0));
     }
 
     [Theory]
@@ -104,7 +104,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         repeated.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await repeated.Content.ReadFromJsonAsync<SharedUnlockLinkResponse>(Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 4, 4, "locked"));
+            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 4, 4, "locked", 2, 0));
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         // Then
         result.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await client.GetFromJsonAsync<SharedUnlockLinkResponse>($"api/account/shared-unlock/links/{link.Id}", Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 2, 2, "active"));
+            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 2, 2, "active", 0, 0));
     }
 
     [Theory]
@@ -153,9 +153,9 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         staleReconnect.StatusCode.ShouldBe(HttpStatusCode.Conflict);
         reconnected.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await reconnected.Content.ReadFromJsonAsync<SharedUnlockLinkResponse>(Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 4, 4, "locked"));
+            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 4, 4, "locked", 2, 0));
         (await client.GetFromJsonAsync<SharedUnlockLinkResponse>($"api/account/shared-unlock/links/{other.Id}", Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(other.Id, 2, 2, "active"));
+            .ShouldBe(new SharedUnlockLinkResponse(other.Id, 2, 2, "active", 0, 0));
         (await client.GetFromJsonAsync<SharedUnlockPreferenceResponse>("api/account/shared-unlock", Cancellation))
             .ShouldBe(new SharedUnlockPreferenceResponse(enabled, 1));
     }
@@ -174,14 +174,15 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         // When
         var read = await client.GetAsync(route, Cancellation);
         var locked = await client.PostAsJsonAsync($"{route}/lock", new { linkId = link.Id, expectedRevision = 2, expectedPreferenceRevision = 1, userId = owner.Id }, Cancellation);
+        var logout = await client.PostAsJsonAsync($"{route}/logout", new { linkId = link.Id, expectedRevision = 2, expectedPreferenceRevision = 1, userId = owner.Id }, Cancellation);
         var disconnect = await client.PostAsJsonAsync($"{route}/disconnect", new { linkId = link.Id, expectedRevision = 2, userId = owner.Id }, Cancellation);
         var reconnect = await client.PostAsJsonAsync($"{route}/reconnect", new { linkId = link.Id, expectedRevision = 2, userId = owner.Id }, Cancellation);
 
         // Then
-        new[] { read, locked, disconnect, reconnect }.ShouldAllBe(response => response.StatusCode == HttpStatusCode.NotFound);
+        new[] { read, locked, logout, disconnect, reconnect }.ShouldAllBe(response => response.StatusCode == HttpStatusCode.NotFound);
         var ownerClient = apiFactory.CreateAuthenticatedClient(owner);
         (await ownerClient.GetFromJsonAsync<SharedUnlockLinkResponse>(route, Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 2, 2, "active"));
+            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 2, 2, "active", 0, 0));
     }
 
     [Fact]
@@ -249,6 +250,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
             await client.GetAsync(route, Cancellation),
             await client.PostAsJsonAsync("api/account/shared-unlock/links", new CreateSharedUnlockLinkRequest { LinkId = id, ExpectedPreferenceRevision = 1 }, Cancellation),
             await client.PostAsJsonAsync($"{route}/lock", new LockSharedUnlockLinkRequest { LinkId = id, ExpectedRevision = 1, ExpectedPreferenceRevision = 1 }, Cancellation),
+            await client.PostAsJsonAsync($"{route}/logout", new LogoutSharedUnlockLinkRequest { LinkId = id, ExpectedRevision = 1, ExpectedPreferenceRevision = 1 }, Cancellation),
             await client.PostAsJsonAsync($"{route}/disconnect", new DisconnectSharedUnlockLinkRequest { LinkId = id, ExpectedRevision = 1 }, Cancellation),
             await client.PostAsJsonAsync($"{route}/reconnect", new ReconnectSharedUnlockLinkRequest { LinkId = id, ExpectedRevision = 1 }, Cancellation),
         };
@@ -288,7 +290,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         reconnect.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         create.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await client.GetFromJsonAsync<SharedUnlockLinkResponse>(route, Cancellation))
-            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 4, 4, "revoked"));
+            .ShouldBe(new SharedUnlockLinkResponse(link.Id, 4, 4, "revoked", 2, 0));
     }
 
     private SharedUnlockLink ActiveLink(Guid userId)

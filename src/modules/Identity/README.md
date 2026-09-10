@@ -133,7 +133,8 @@ new ID merely to bypass revocation.
   1, only with the current enabled account preference. A duplicate ID returns 409
   and cannot overwrite or recreate a revoked link.
 - `GET api/account/shared-unlock/links/{LinkId}`: returns only link ID, revision,
-  epoch and state (`locked`, `active`, `revoked`), with `Cache-Control: no-store`.
+  epoch, state (`locked`, `active`, `revoked`), `lastInvalidationSequence` and
+  `lastLogoutSequence`, with `Cache-Control: no-store`.
 - `POST .../{LinkId}/lock`: requires link revision plus current enabled preference
   revision. It locks the link and advances both counters even for a repeated lock.
   A queued lock after OFF returns 409 without propagating the action.
@@ -159,8 +160,8 @@ The migration is incremental; all prior migrations remain untouched.
 Activation is available only through the authenticated manual-unlock authorization
 below. These endpoints do not prove that a browser is trusted, issue receiver
 tokens, transfer keys or yet notify clients. The operation endpoints below issue
-receiver sessions after consuming current authority. Session logout mapping and
-browser propagation remain required before the complete feature is enabled. A successful
+receiver sessions after consuming current authority. Linked logout is described below;
+browser propagation remains required before the complete feature is enabled. A successful
 metadata mutation must not be presented as completed browser lock/logout until
 adapters have actually handled it.
 
@@ -205,6 +206,9 @@ current active membership. Missing or obsolete 2FA assurance returns 403 with
 `shared-unlock-step-up-required`; MK alone cannot establish this authorization.
 Password verification reuses the existing durable IP/account rate limits and
 account lockout. Expired/revoked/foreign sessions are rejected before verification.
+A manual unlock may record its own authority while sharing is OFF, with the current
+preference revision. It creates no peer session and permits no sharing until ON;
+subsequent binding still requires enabled preference and unchanged valid limits.
 
 Identity stores one `SharedUnlockAuthorization` per logical source session. A
 fresh manual proof replaces its nonce/generation and snapshots key, membership,
@@ -244,9 +248,8 @@ transaction is introduced. `MarkPropertyAsUpdated` preserves original tracked
 concurrency values and pending domain changes rather than reattaching the object.
 The new migration is incremental and no historical migration is changed.
 
-The operation endpoints below inherit this authorization. Activity-driven idle
-updates, linked logout and browser transport/UI remain required. These APIs alone
-do not deliver or install an MK in a browser.
+The operation and activity endpoints below use this authorization. Browser
+transport/UI remain required; these APIs alone do not deliver or install an MK.
 
 
 ### One-time shared-unlock operation and independent receiver session (increment)
@@ -315,7 +318,71 @@ Options live at `Modules:Identity:CleanupSharedUnlockOperationsJob`; test hostin
 disables scheduling and invokes the job directly. The API bounds offer POSTs to
 30 per authenticated account/minute and anonymous proof POSTs to 60 per IP/minute.
 
-This remains an incomplete feature draft: activity updates, linked logout,
-receiver installation/ACK, browser adapters/UI and the complete supported-browser
-artifact matrix are still required. Passing Identity tests does not prove that a
+This remains an incomplete feature draft: consumer/API contract closure, receiver
+installation/ACK, browser adapters/UI and the complete supported-browser artifact
+matrix are still required. Passing Identity tests does not prove that a
 browser received or installed an MK.
+
+
+### Linked logout, own activity and operational availability
+
+`POST api/account/shared-unlock/links/{LinkId}/logout` requires JWT, the current
+link revision and enabled preference revision. One domain commit locks the link,
+advances its epoch/revision and records both invalidation and logout sequences.
+It emits the existing `UserLoggedOutEvent`. It remains available when the selected
+membership is inactive, including an already locked link; a foreign link returns
+404. OFF rejects propagation with 409. The client must use ordinary local logout
+while OFF and must not echo another shared logout after receiving a peer action.
+
+A linked session whose authorization sequence is at or below the durable logout
+barrier cannot refresh, create another handoff or replace its root with a fresh
+password proof. Rotation retains the same logical session and cannot escape the
+barrier. A newly authenticated Identity session may manually unlock and bind with
+a newer sequence; that never revives previous sessions. OFF/ON, reconnect and
+reactivation retain the old logout barrier. Other links and accounts are unaffected.
+The receiver commit response exposes `authorizationSequence` beside its nonce so
+clients can compare their own authority with authenticated link barriers.
+
+Refresh fences the User sequence, source authorization, link revision, refresh
+revocation and membership, including when no rotation is needed. This covers a
+concurrent first authorization or logout without a phantom-session escape. The
+existing waitlist activation transaction remains in place. Conflicting refreshes
+return 409 (`session-refresh-conflict`) without partial issuance; clients must
+coordinate their own refresh and recover current state, not blindly replay a
+superseded token. Existing stateless access JWTs retain their ordinary expiry;
+adapters still have to clear keys and revalidate link state before using them.
+
+Ordinary logout and replay rejection share an account-scoped refresh-lineage walk.
+They follow replacement pointers even when the presented token has already been
+rotated. A concurrent rotation causes a bounded reload/retry of the whole lineage;
+a lost race cannot silently leave a new descendant active. Exhausted retries return
+409 instead of a false success. `Modules:Identity:Jwt:RefreshTokenConcurrencyRetryLimit`
+defaults to 4 (allowed 1–16). Related lookups use the existing account-scoped PKs.
+Authorization roots and link barriers must remain available while their refresh
+lineages can be used; operation cleanup never removes either authority.
+
+`POST api/account/shared-unlock/authorizations/activity` requires JWT, the client's
+own current refresh token, authorization nonce, RAM generation and an absolute
+`idleDeadlineMs` calculated at an actual activity event. It only advances that
+client's idle deadline within its original absolute deadline. It never changes
+unlocked-at, absolute/offline limits, another peer's timer or MFA age. Replaying
+the same deadline cannot add server time. Expired, locked, disconnected, logged-out
+or obsolete authority cannot be revived; old activity loses to current authority
+through optimistic concurrency, including the idle deadline itself. The endpoint
+also works while preference is OFF because it maintains only the client's own
+still-valid authority. It returns the existing manual-authorization response and
+is limited to 60 requests per account/minute. Browser adapters must submit actual
+trusted activity, not heartbeat, navigation, worker restart or handoff events.
+
+`Modules:Identity:SharedUnlock:Enabled` is a separate operational switch, default
+true. Create, consume and commit check it on entry and before their domain commit;
+when false they return 503 without issuing a receiver session. The switch neither
+changes the user's preference nor disables ordinary login/refresh, local activity
+or closing actions. Apply it consistently to every API process; it is configuration,
+not a distributed transaction fence against a change during an in-flight commit.
+
+Two incremental migrations add `LastLogoutSequence` and record idle-deadline
+concurrency metadata. The latter has no SQL schema changes. No prior migration
+is edited. Integration tests cover linked and independent sessions, rotation and
+logout races, fresh login after group logout, OFF behavior, replayed/expired/stale
+activity, hard-limit preservation and all three disabled operation stages.

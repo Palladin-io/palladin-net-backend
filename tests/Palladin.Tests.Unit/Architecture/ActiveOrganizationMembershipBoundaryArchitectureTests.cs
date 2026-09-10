@@ -16,6 +16,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "GetMemberSnapshotEndpoint",
         "GlobalSearchEndpoint",
         "LockSharedUnlockLinkEndpoint",
+        "LogoutSharedUnlockLinkEndpoint",
         "LogoutEndpoint",
         "MarkAllNotificationsReadEndpoint",
         "MarkNotificationReadEndpoint",

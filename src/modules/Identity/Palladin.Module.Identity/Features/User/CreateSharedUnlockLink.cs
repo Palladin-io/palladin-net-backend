@@ -76,6 +76,7 @@ internal sealed class CreateSharedUnlockLinkEndpoint(IdentityDomainWriteContext 
         }
 
         HttpContext.Response.Headers.CacheControl = "no-store";
-        await Send.OkAsync(new SharedUnlockLinkResponse(link.Id, link.Revision, link.Epoch, "locked"), ct);
+        await Send.OkAsync(new SharedUnlockLinkResponse(link.Id, link.Revision, link.Epoch, "locked",
+            link.LastInvalidationSequence, link.LastLogoutSequence), ct);
     }
 }

@@ -4,6 +4,7 @@ using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using Palladin.Core.Api;
 using Palladin.Core.Json;
@@ -25,7 +26,7 @@ public sealed record CommitSharedUnlockOperationRequest
 
 [PublicAPI]
 public sealed record CommitSharedUnlockOperationResponse(AuthSessionResponse Session,
-    Guid AuthorizationId, SharedUnlockTransferContext Context);
+    Guid AuthorizationId, uint AuthorizationSequence, SharedUnlockTransferContext Context);
 
 [UsedImplicitly]
 internal sealed class CommitSharedUnlockOperationValidator : Validator<CommitSharedUnlockOperationRequest>
@@ -39,7 +40,7 @@ internal sealed class CommitSharedUnlockOperationValidator : Validator<CommitSha
 
 [PublicAPI]
 internal sealed class CommitSharedUnlockOperationEndpoint(IdentityDomainWriteContext context,
-    IAuthSessionIssuer sessionIssuer, IGuidProvider guidProvider, IClock clock)
+    IAuthSessionIssuer sessionIssuer, IGuidProvider guidProvider, IClock clock, IOptionsMonitor<SharedUnlockOptions> options)
     : Endpoint<CommitSharedUnlockOperationRequest, CommitSharedUnlockOperationResponse>
 {
     public override void Configure()
@@ -59,6 +60,12 @@ internal sealed class CommitSharedUnlockOperationEndpoint(IdentityDomainWriteCon
     public override async Task HandleAsync(CommitSharedUnlockOperationRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
+        if (!options.CurrentValue.Enabled)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
+            return;
+        }
+
         var operation = await context.SharedUnlockOperations.SingleOrDefaultAsync(operation => operation.Id == req.OperationId, ct);
         var now = clock.GetCurrentInstant();
         if (operation is null || !SharedUnlockIdentityProof.Verify(SharedUnlockTranscript.Proof(operation),
@@ -84,6 +91,11 @@ internal sealed class CommitSharedUnlockOperationEndpoint(IdentityDomainWriteCon
         var inherited = SharedUnlockAuthorization.Inherit(guidProvider.Generate(), issued.Session, authority.Source, operation);
         context.Add(inherited);
         authority.Fence(context);
+        if (!options.CurrentValue.Enabled)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
+            return;
+        }
         try
         {
             await context.CommitAsync(ct);
@@ -96,7 +108,7 @@ internal sealed class CommitSharedUnlockOperationEndpoint(IdentityDomainWriteCon
         await Send.OkAsync(new CommitSharedUnlockOperationResponse(new AuthSessionResponse(
             issued.AccessToken, issued.RefreshToken, authority.User.Id, authority.User.IsOnboarded,
             authority.User.EmailVerified, authority.User.ActiveWaitlistDeveloperBenefitStartedAt(now),
-            authority.User.ActiveWaitlistDeveloperBenefitEndsAt(now)), inherited.Id,
+            authority.User.ActiveWaitlistDeveloperBenefitEndsAt(now)), inherited.Id, inherited.Sequence,
             SharedUnlockOperationResponse.From(operation, authority.KeyContext).Context), ct);
     }
 

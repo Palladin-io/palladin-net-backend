@@ -58,7 +58,6 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
     [InlineData("refresh", HttpStatusCode.Unauthorized)]
     [InlineData("revoked", HttpStatusCode.Unauthorized)]
     [InlineData("expired", HttpStatusCode.Unauthorized)]
-    [InlineData("off", HttpStatusCode.Conflict)]
     [InlineData("credential-revision", HttpStatusCode.Conflict)]
     [InlineData("wrap-revision", HttpStatusCode.Conflict)]
     [InlineData("deadline", HttpStatusCode.Conflict)]
@@ -82,7 +81,6 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
                 case "expired":
                     db.Entry(token).Property(t => t.ExpiresAt).CurrentValue = Now;
                     break;
-                case "off": user.TrySetSharedUnlockPreference(false, 1, Now).ShouldBeTrue(); break;
                 case "credential-revision": request = request with { ExpectedCredentialRevision = 2 }; break;
                 case "wrap-revision": request = request with { ExpectedPrivateKeyWrapRevision = 2 }; break;
                 case "deadline": request = request with { IdleDeadlineMs = Now.ToUnixTimeMilliseconds() }; break;
@@ -428,6 +426,45 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
         authority.SecondFactorRevision.ShouldBe(2u);
         var persistedSession = await read.RefreshTokens.SingleAsync(t => t.UserId == source.User.Id, Ct);
         authority.SecondFactorVerifiedAt.ShouldBe(persistedSession.SecondFactorVerifiedAt);
+    }
+
+    [Fact]
+    public async Task When_ManualUnlockOccursWhileOff_Then_OwnAuthorityCanBeUsedOnlyAfterSharingIsEnabled()
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        var link = await SeedLinkAsync(source.User.Id);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            (await db.Users.SingleAsync(u => u.Id == source.User.Id, Ct)).TrySetSharedUnlockPreference(false, 1, Now).ShouldBeTrue();
+            await db.SaveChangesAsync(Ct);
+        }
+        var client = apiFactory.CreateAuthenticatedClient(source.User);
+
+        // When
+        var (created, root) = await client.POSTAsync<AuthorizeSharedUnlockEndpoint,
+            AuthorizeSharedUnlockRequest, AuthorizeSharedUnlockResponse>(Request(source) with { ExpectedPreferenceRevision = 2 });
+        var (disabled, _) = await client.POSTAsync<ActivateSharedUnlockLinkEndpoint,
+            ActivateSharedUnlockLinkRequest, SharedUnlockLinkResponse>(Activate(source, root, link.Id, 1) with { ExpectedPreferenceRevision = 2 });
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            (await db.Users.SingleAsync(u => u.Id == source.User.Id, Ct)).TrySetSharedUnlockPreference(true, 2, Now).ShouldBeTrue();
+            await db.SaveChangesAsync(Ct);
+        }
+        var (enabled, _) = await client.POSTAsync<ActivateSharedUnlockLinkEndpoint,
+            ActivateSharedUnlockLinkRequest, SharedUnlockLinkResponse>(Activate(source, root, link.Id, 1) with { ExpectedPreferenceRevision = 3 });
+
+        // Then
+        created.StatusCode.ShouldBe(HttpStatusCode.OK);
+        disabled.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        enabled.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var verification = apiFactory.Services.CreateAsyncScope();
+        var read = verification.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await read.RefreshTokens.CountAsync(t => t.UserId == source.User.Id, Ct)).ShouldBe(1);
+        (await read.SharedUnlockAuthorizations.SingleAsync(a => a.UserId == source.User.Id, Ct))
+            .AbsoluteDeadline.ToUnixTimeMilliseconds().ShouldBe(root.AbsoluteDeadlineMs);
     }
 
     private Instant Now => Instant.FromUnixTimeMilliseconds(apiFactory.FakeClock.GetCurrentInstant().ToUnixTimeMilliseconds());

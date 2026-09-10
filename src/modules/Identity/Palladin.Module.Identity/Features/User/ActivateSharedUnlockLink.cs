@@ -119,7 +119,8 @@ internal sealed class ActivateSharedUnlockLinkEndpoint(IdentityDomainWriteContex
             return;
         }
 
-        await Send.OkAsync(new SharedUnlockLinkResponse(link.Id, link.Revision, link.Epoch, "active"), ct);
+        await Send.OkAsync(new SharedUnlockLinkResponse(link.Id, link.Revision, link.Epoch, "active",
+            link.LastInvalidationSequence, link.LastLogoutSequence), ct);
     }
 
     private async Task SendConflictAsync(CancellationToken ct)

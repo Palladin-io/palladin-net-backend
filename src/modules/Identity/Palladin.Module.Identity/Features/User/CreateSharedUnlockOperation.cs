@@ -6,6 +6,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using Palladin.Core.Api;
 using Palladin.Core.Guid;
@@ -98,7 +99,7 @@ internal sealed class CreateSharedUnlockOperationValidator : Validator<CreateSha
 
 [PublicAPI]
 internal sealed class CreateSharedUnlockOperationEndpoint(IdentityDomainWriteContext context,
-    IGuidProvider guidProvider, IClock clock)
+    IGuidProvider guidProvider, IClock clock, IOptionsMonitor<SharedUnlockOptions> options)
     : Endpoint<CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>
 {
     public override void Configure()
@@ -112,6 +113,12 @@ internal sealed class CreateSharedUnlockOperationEndpoint(IdentityDomainWriteCon
     public override async Task HandleAsync(CreateSharedUnlockOperationRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
+        if (!options.CurrentValue.Enabled)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
+            return;
+        }
+
         var userId = User.GetUserId();
         var organizationId = User.GetOrganizationId();
         var hash = TokenService.HashToken(req.RefreshToken);
@@ -145,6 +152,11 @@ internal sealed class CreateSharedUnlockOperationEndpoint(IdentityDomainWriteCon
         if (clock.GetCurrentInstant() >= operation.ExpiresAt)
         {
             await SendUnavailableAsync(ct);
+            return;
+        }
+        if (!options.CurrentValue.Enabled)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
             return;
         }
         try

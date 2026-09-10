@@ -1,4 +1,6 @@
 using NodaTime;
+using Palladin.Core.Events;
+using Palladin.Module.Identity.Contracts.Events;
 
 namespace Palladin.Module.Identity.Domain;
 
@@ -9,7 +11,7 @@ internal enum SharedUnlockLinkState
     Revoked = 3,
 }
 
-internal sealed class SharedUnlockLink
+internal sealed class SharedUnlockLink : EventEntityBase
 {
     public Guid UserId { get; private set; }
     public Guid Id { get; private set; }
@@ -17,6 +19,7 @@ internal sealed class SharedUnlockLink
     public uint Epoch { get; private set; }
     public uint Revision { get; private set; }
     public uint LastInvalidationSequence { get; private set; }
+    public uint LastLogoutSequence { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant UpdatedAt { get; private set; }
 
@@ -43,6 +46,21 @@ internal sealed class SharedUnlockLink
 
     internal bool TryLock(uint expectedRevision, uint sequence, Instant now) =>
         State != SharedUnlockLinkState.Revoked && TryInvalidate(SharedUnlockLinkState.Locked, expectedRevision, sequence, now);
+
+    internal bool TryLogout(uint expectedRevision, uint sequence, Instant now)
+    {
+        if (!TryLock(expectedRevision, sequence, now))
+        {
+            return false;
+        }
+        LastLogoutSequence = sequence;
+        AddEvent(new UserLoggedOutEvent(UserId));
+        return true;
+    }
+
+    internal bool RevokesSession(SharedUnlockAuthorization authorization) =>
+        authorization.UserId == UserId && authorization.LinkId == Id
+        && authorization.Sequence <= LastLogoutSequence;
 
     internal bool TryDisconnect(uint expectedRevision, uint sequence, Instant now) =>
         TryInvalidate(SharedUnlockLinkState.Revoked, expectedRevision, sequence, now);

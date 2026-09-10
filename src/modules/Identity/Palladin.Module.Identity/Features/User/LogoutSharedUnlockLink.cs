@@ -13,36 +13,38 @@ using Palladin.Module.Identity.Infrastructure.Persistence;
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
-public sealed record DisconnectSharedUnlockLinkRequest
+public sealed record LogoutSharedUnlockLinkRequest
 {
     public Guid LinkId { get; init; }
     public uint ExpectedRevision { get; init; }
+    public uint ExpectedPreferenceRevision { get; init; }
 }
 
 [UsedImplicitly]
-internal sealed class DisconnectSharedUnlockLinkValidator : Validator<DisconnectSharedUnlockLinkRequest>
+internal sealed class LogoutSharedUnlockLinkValidator : Validator<LogoutSharedUnlockLinkRequest>
 {
-    public DisconnectSharedUnlockLinkValidator()
+    public LogoutSharedUnlockLinkValidator()
     {
         RuleFor(request => request.LinkId).NotEmpty();
         RuleFor(request => request.ExpectedRevision).GreaterThan(0u);
+        RuleFor(request => request.ExpectedPreferenceRevision).GreaterThan(0u);
     }
 }
 
 [PublicAPI]
-internal sealed class DisconnectSharedUnlockLinkEndpoint(IdentityDomainWriteContext context, IClock clock)
-    : Endpoint<DisconnectSharedUnlockLinkRequest, SharedUnlockLinkResponse>
+internal sealed class LogoutSharedUnlockLinkEndpoint(IdentityDomainWriteContext context, IClock clock)
+    : Endpoint<LogoutSharedUnlockLinkRequest, SharedUnlockLinkResponse>
 {
     public override void Configure()
     {
-        Post("api/account/shared-unlock/links/{LinkId}/disconnect");
+        Post("api/account/shared-unlock/links/{LinkId}/logout");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
         Options(builder => builder.AllowNonActiveOrganizationMembership());
         Tags("Identity/Account");
-        Summary(summary => summary.Summary = "Revoke this local browser link without changing the account preference");
+        Summary(summary => summary.Summary = "Log out the local linked sessions and invalidate their previous epoch");
     }
 
-    public override async Task HandleAsync(DisconnectSharedUnlockLinkRequest req, CancellationToken ct)
+    public override async Task HandleAsync(LogoutSharedUnlockLinkRequest req, CancellationToken ct)
     {
         var userId = User.GetUserId();
         var link = await context.SharedUnlockLinks.SingleOrDefaultAsync(link => link.UserId == userId && link.Id == req.LinkId, ct);
@@ -52,10 +54,18 @@ internal sealed class DisconnectSharedUnlockLinkEndpoint(IdentityDomainWriteCont
             return;
         }
 
-        var user = await context.Users.SingleAsync(user => user.Id == userId, ct);
+        var user = await context.Users.SingleOrDefaultAsync(user => user.Id == userId, ct);
+        if (user is null || !user.SharedUnlockEnabled || user.SharedUnlockRevision != req.ExpectedPreferenceRevision)
+        {
+            AddError(ErrorResponses.General("shared-unlock-preference-conflict"));
+            await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
+            return;
+        }
+
+        context.MarkPropertyAsUpdated(user, current => current.SharedUnlockRevision);
 
         if (!user.TryAdvanceSharedUnlockSequence()
-            || !link.TryDisconnect(req.ExpectedRevision, user.SharedUnlockSequence, clock.GetCurrentInstant()))
+            || !link.TryLogout(req.ExpectedRevision, user.SharedUnlockSequence, clock.GetCurrentInstant()))
         {
             AddError(ErrorResponses.General("shared-unlock-link-conflict"));
             await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);

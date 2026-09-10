@@ -45,6 +45,7 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
         result.Session.UserId.ShouldBe(source.User.Id);
         result.Context.ShouldBe(operation.Context);
         result.AuthorizationId.ShouldNotBe(source.Authorization.Id);
+        result.AuthorizationSequence.ShouldBe(source.Authorization.Sequence);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
         var hash = TokenService.HashToken(result.Session.RefreshToken);
@@ -465,6 +466,63 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
         (await read.RefreshTokens.CountAsync(t => t.UserId == source.User.Id, Ct)).ShouldBe(1);
         (await read.SharedUnlockAuthorizations.CountAsync(a => a.UserId == source.User.Id, Ct)).ShouldBe(1);
         (await read.SharedUnlockLinks.CountAsync(l => l.UserId == source.User.Id, Ct)).ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("create")]
+    [InlineData("consume")]
+    [InlineData("commit")]
+    public async Task When_EmergencySwitchIsDisabled_Then_NoNewReceiverSessionIsIssuedAndOwnSessionSurvives(string stage)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        SharedUnlockOperationResponse? operation = null;
+        if (stage != "create") { operation = await OfferAsync(source, receiver); }
+        if (stage == "commit")
+        {
+            (await ConsumeAsync(operation!, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        var monitor = apiFactory.Services.GetRequiredService<IOptionsMonitor<SharedUnlockOptions>>();
+        var cache = apiFactory.Services.GetRequiredService<IOptionsMonitorCache<SharedUnlockOptions>>();
+        var original = monitor.CurrentValue;
+        cache.TryRemove(Options.DefaultName);
+        cache.TryAdd(Options.DefaultName, new SharedUnlockOptions { Enabled = false });
+
+        // When
+        HttpStatusCode status;
+        HttpStatusCode ownSessionStatus;
+        try
+        {
+            if (stage == "create")
+            {
+                var (response, _) = await apiFactory.CreateAuthenticatedClient(source.User)
+                    .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(Request(source, receiver));
+                status = response.StatusCode;
+            }
+            else
+            {
+                status = stage == "consume" ? (await ConsumeAsync(operation!, receiver)).Response.StatusCode
+                    : (await CommitAsync(operation!, receiver)).Response.StatusCode;
+            }
+            var (refreshed, _) = await apiFactory.CreateClient().POSTAsync<RefreshAccessTokenEndpoint,
+                RefreshAccessTokenRequest, RefreshAccessTokenResponse>(new() { RefreshToken = source.RawToken });
+            ownSessionStatus = refreshed.StatusCode;
+        }
+        finally
+        {
+            cache.TryRemove(Options.DefaultName);
+            cache.TryAdd(Options.DefaultName, original);
+        }
+
+        // Then
+        status.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        ownSessionStatus.ShouldBe(HttpStatusCode.OK);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var read = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await read.SharedUnlockAuthorizations.CountAsync(a => a.UserId == source.User.Id, Ct)).ShouldBe(1);
+        (await read.SharedUnlockOperations.AnyAsync(o => o.UserId == source.User.Id && o.State == SharedUnlockOperationState.Committed, Ct)).ShouldBeFalse();
+        (await read.Users.SingleAsync(u => u.Id == source.User.Id, Ct)).SharedUnlockEnabled.ShouldBeTrue();
     }
 
     private Instant Now => Instant.FromUnixTimeMilliseconds(apiFactory.FakeClock.GetCurrentInstant().ToUnixTimeMilliseconds());

@@ -4,6 +4,7 @@ using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using Palladin.Core.Api;
 using Palladin.Core.Json;
@@ -30,7 +31,7 @@ internal sealed class ConsumeSharedUnlockOperationValidator : Validator<ConsumeS
 }
 
 [PublicAPI]
-internal sealed class ConsumeSharedUnlockOperationEndpoint(IdentityDomainWriteContext context, IClock clock)
+internal sealed class ConsumeSharedUnlockOperationEndpoint(IdentityDomainWriteContext context, IClock clock, IOptionsMonitor<SharedUnlockOptions> options)
     : Endpoint<ConsumeSharedUnlockOperationRequest, SharedUnlockOperationResponse>
 {
     public override void Configure()
@@ -49,6 +50,12 @@ internal sealed class ConsumeSharedUnlockOperationEndpoint(IdentityDomainWriteCo
     public override async Task HandleAsync(ConsumeSharedUnlockOperationRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
+        if (!options.CurrentValue.Enabled)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
+            return;
+        }
+
         var operation = await context.SharedUnlockOperations.SingleOrDefaultAsync(operation => operation.Id == req.OperationId, ct);
         var now = clock.GetCurrentInstant();
         if (operation is null || !SharedUnlockIdentityProof.Verify(SharedUnlockTranscript.Proof(operation),
@@ -64,6 +71,11 @@ internal sealed class ConsumeSharedUnlockOperationEndpoint(IdentityDomainWriteCo
             return;
         }
         authority.Fence(context);
+        if (!options.CurrentValue.Enabled)
+        {
+            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
+            return;
+        }
         try
         {
             await context.CommitAsync(ct);

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Hangfire;
 using Palladin.Module.Identity.Features;
+using Palladin.Module.Identity.Infrastructure.SharedUnlock;
 
 namespace Palladin.Module.Identity.Infrastructure;
 
@@ -27,6 +28,7 @@ internal static class InfrastructureModule
         services.AddIdentityTotp(configuration);
         services.AddIdentityLogin(configuration);
         services.AddOrganizationInvitations(configuration);
+        services.Configure<SharedUnlockOptions>(configuration.GetSection(SharedUnlockOptions.Position));
         services.AddScopedCronJob<CleanupSharedUnlockOperationsJob, CleanupSharedUnlockOperationsJobOptions>(
             configuration.GetSection(CleanupSharedUnlockOperationsJobOptions.Position));
         services.AddOptions<CleanupSharedUnlockOperationsJobOptions>()

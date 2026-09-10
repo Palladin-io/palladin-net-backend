@@ -99,8 +99,12 @@ internal sealed class SharedUnlockAuthorization
     }
 
     internal bool IsCurrent(User user, RefreshToken session, OrganizationMember membership,
+        TotpCredential? factor, Instant now) => user.SharedUnlockEnabled
+        && IsSessionCurrent(user, session, membership, factor, now);
+
+    internal bool IsSessionCurrent(User user, RefreshToken session, OrganizationMember membership,
         TotpCredential? factor, Instant now) =>
-        user.Id == UserId && user.SharedUnlockEnabled
+        user.Id == UserId
         && user.CredentialRevision == CredentialRevision
         && user.PrivateKeyWrapRevision == PrivateKeyWrapRevision
         && session.UserId == UserId && (session.SessionId ?? session.Id) == SessionId
@@ -112,6 +116,20 @@ internal sealed class SharedUnlockAuthorization
         && session.SatisfiesSecondFactor(factor, now)
         && (factor is not { IsEnabled: true } || SecondFactorRevision == factor.ConfigurationRevision)
         && now >= UnlockedAt && now < IdleDeadline && now < AbsoluteDeadline && now < OfflineDeadline;
+
+    internal bool TryRecordActivity(Instant idleDeadline, Instant now)
+    {
+        if (now < UnlockedAt || now >= IdleDeadline || now >= AbsoluteDeadline || now >= OfflineDeadline
+            || idleDeadline <= now || idleDeadline > AbsoluteDeadline)
+        {
+            return false;
+        }
+        if (idleDeadline > IdleDeadline)
+        {
+            IdleDeadline = idleDeadline;
+        }
+        return true;
+    }
 
     internal static bool ValidDeadlines(Instant idle, Instant absolute, Instant offline,
         Instant sessionExpiry, Instant now) =>

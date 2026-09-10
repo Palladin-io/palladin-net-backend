@@ -1,4 +1,6 @@
 using Palladin.Core.Security;
+using Palladin.Core.Api;
+using Microsoft.AspNetCore.Http;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
@@ -29,7 +31,7 @@ internal sealed class LogoutValidator : Validator<LogoutRequest>
 [PublicAPI]
 internal sealed class LogoutEndpoint(
     IdentityDomainWriteContext domainWriteContext,
-    IClock clock) : Endpoint<LogoutRequest>
+    IClock clock, RefreshTokenLineageRevoker lineageRevoker) : Endpoint<LogoutRequest>
 {
     public override void Configure()
     {
@@ -39,7 +41,7 @@ internal sealed class LogoutEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Logout";
-            summary.Description = "Revokes the provided refresh token to log the user out.";
+            summary.Description = "Revokes the provided refresh-token lineage, including a concurrently rotated successor.";
         });
         Tags("Identity/Auth");
     }
@@ -60,11 +62,12 @@ internal sealed class LogoutEndpoint(
         var existingToken = await domainWriteContext.RefreshTokens
             .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash && rt.UserId == userId, ct);
 
-        if (existingToken is not null && existingToken.IsActive(now))
+        if (existingToken is not null
+            && !await lineageRevoker.RevokeForLogoutAsync(existingToken.UserId, existingToken.Id, now, ct))
         {
-            existingToken.RevokeForLogout(now);
-            domainWriteContext.Update(existingToken);
-            await domainWriteContext.CommitAsync(ct);
+            AddError(ErrorResponses.General("session-logout-conflict"));
+            await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
+            return;
         }
 
         await Send.NoContentAsync(ct);

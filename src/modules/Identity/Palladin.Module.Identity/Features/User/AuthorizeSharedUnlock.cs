@@ -18,6 +18,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.SharedUnlock;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -101,7 +102,15 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
             return;
         }
 
-        if (!user.SharedUnlockEnabled || user.SharedUnlockRevision != req.ExpectedPreferenceRevision
+        var sessionRevocation = await SharedUnlockSessionRevocation.LoadAsync(context, session, ct);
+        if (sessionRevocation.IsRevoked)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+        sessionRevocation.Fence(context);
+
+        if (user.SharedUnlockRevision != req.ExpectedPreferenceRevision
             || user.CredentialRevision != req.ExpectedCredentialRevision
             || user.PrivateKeyWrapRevision != req.ExpectedPrivateKeyWrapRevision)
         {
@@ -187,8 +196,7 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
         }
 
         var sessionId = session.SessionId ?? session.Id;
-        var authorization = await context.SharedUnlockAuthorizations.SingleOrDefaultAsync(
-            authorization => authorization.UserId == user.Id && authorization.SessionId == sessionId, ct);
+        var authorization = sessionRevocation.Authorization;
         if (authorization is null)
         {
             authorization = SharedUnlockAuthorization.Create(user.Id, sessionId);
@@ -204,7 +212,7 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
             context.MarkPropertyAsUpdated(factor, factor => factor.ConfigurationRevision);
         }
 
-        if (!authorization.IsCurrent(user, session, membership, user.TotpCredential, clock.GetCurrentInstant()))
+        if (!authorization.IsSessionCurrent(user, session, membership, user.TotpCredential, clock.GetCurrentInstant()))
         {
             await SendConflictAsync(ct);
             return;

@@ -12,6 +12,7 @@ internal sealed class SharedUnlockAuthorizationConfiguration : IEntityTypeConfig
     {
         builder.HasKey(authorization => new { authorization.UserId, authorization.SessionId });
         builder.Property(authorization => authorization.Sequence).IsConcurrencyToken();
+        builder.Property(authorization => authorization.IdleDeadline).IsConcurrencyToken();
         builder.Property(authorization => authorization.LinkId).IsConcurrencyToken();
         builder.Property(authorization => authorization.LinkEpoch).IsConcurrencyToken();
         builder.HasOne<User>().WithMany().HasForeignKey(authorization => authorization.UserId);

@@ -11,7 +11,8 @@ namespace Palladin.Module.Identity.Features;
 public sealed record GetSharedUnlockLinkRequest(Guid LinkId);
 
 [PublicAPI]
-public sealed record SharedUnlockLinkResponse(Guid LinkId, uint Revision, uint Epoch, string State);
+public sealed record SharedUnlockLinkResponse(Guid LinkId, uint Revision, uint Epoch, string State,
+    uint LastInvalidationSequence, uint LastLogoutSequence);
 
 [PublicAPI]
 internal sealed class GetSharedUnlockLinkEndpoint(IdentityDomainReadContext context)
@@ -30,7 +31,7 @@ internal sealed class GetSharedUnlockLinkEndpoint(IdentityDomainReadContext cont
         var userId = User.GetUserId();
         var link = await context.SharedUnlockLinks
             .Where(link => link.UserId == userId && link.Id == req.LinkId)
-            .Select(link => new { link.Id, link.Revision, link.Epoch, link.State })
+            .Select(link => new { link.Id, link.Revision, link.Epoch, link.State, link.LastInvalidationSequence, link.LastLogoutSequence })
             .SingleOrDefaultAsync(ct);
         if (link is null)
         {
@@ -40,6 +41,6 @@ internal sealed class GetSharedUnlockLinkEndpoint(IdentityDomainReadContext cont
 
         HttpContext.Response.Headers.CacheControl = "no-store";
         await Send.OkAsync(new SharedUnlockLinkResponse(link.Id, link.Revision, link.Epoch,
-            link.State.ToString().ToLowerInvariant()), ct);
+            link.State.ToString().ToLowerInvariant(), link.LastInvalidationSequence, link.LastLogoutSequence), ct);
     }
 }

@@ -67,6 +67,11 @@ public sealed class SharedUnlockApiContractTests
 
         // Then
         operation.KeyContext.AccountId.ShouldBe(context.AccountId);
+        operation.KeyContext.KdfProfileId.ShouldBe(IdentityKdfProfiles.CurrentProfileId);
+        operation.KeyContext.SecurityVersion.ShouldBe(IdentityKdfProfiles.CurrentSecurityVersion);
+        operation.KeyContext.MinimumSecurityVersion.ShouldBe(IdentityKdfProfiles.CurrentSecurityVersion);
+        Decode(operation.KeyContext.KdfSalt).Length.ShouldBe(IdentityKdfProfiles.KdfSaltBytes);
+        context.OperationId.ShouldNotBe(context.AccountId);
         digest.ShouldBe(Decode(context.KeyContextDigest));
         transcriptHash.ShouldBe(proof.TranscriptHash);
         consume.OperationId.ShouldBe(context.OperationId);

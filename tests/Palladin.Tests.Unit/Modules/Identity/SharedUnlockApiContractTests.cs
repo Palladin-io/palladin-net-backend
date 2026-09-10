@@ -72,6 +72,17 @@ public sealed class SharedUnlockApiContractTests
         operation.KeyContext.MinimumSecurityVersion.ShouldBe(IdentityKdfProfiles.CurrentSecurityVersion);
         Decode(operation.KeyContext.KdfSalt).Length.ShouldBe(IdentityKdfProfiles.KdfSaltBytes);
         context.OperationId.ShouldNotBe(context.AccountId);
+        var source = vector.GetProperty("sourceAuthorization").Deserialize<AuthorizeSharedUnlockResponse>(PalladinJsonSerializationSettings.DefaultOptions)!;
+        if (index == 1)
+        {
+            source.OrganizationId.ShouldNotBe(context.OrganizationId);
+            source.AuthorizationVersion.ShouldNotBe(context.AuthorizationVersion);
+        }
+        else
+        {
+            source.OrganizationId.ShouldBe(context.OrganizationId);
+            source.AuthorizationVersion.ShouldBe(context.AuthorizationVersion);
+        }
         digest.ShouldBe(Decode(context.KeyContextDigest));
         transcriptHash.ShouldBe(proof.TranscriptHash);
         consume.OperationId.ShouldBe(context.OperationId);

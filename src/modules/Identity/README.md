@@ -386,3 +386,12 @@ concurrency metadata. The latter has no SQL schema changes. No prior migration
 is edited. Integration tests cover linked and independent sessions, rotation and
 logout races, fresh login after group logout, OFF behavior, replayed/expired/stale
 activity, hard-limit preservation and all three disabled operation stages.
+
+
+The candidate protocol `v1/session-api.md` and generated `session-api-fixtures.json`
+specify REST ownership, receiver installation/ACK and lifecycle requirements. The
+backend keeps a byte-identical test copy at `tests/Fixtures/SharedUnlock/session-api-v1.json`.
+Provider contract tests cover all 19 wire response variants (including nullable
+benefits), coherent descriptor/proof bindings in both directions and the seven
+actual link-domain transitions. These tests do not replace browser consumer tests
+or prove MK installation; adapters must use the same fixtures before release.

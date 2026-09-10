@@ -77,7 +77,21 @@ internal sealed class DisableTotpEndpoint(
         }
 
         credential.Disable(now);
-        await domainWriteContext.CommitAsync(ct);
+        if (!user.TryAdvanceSharedUnlockSequence())
+        {
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
+
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
 
         await Send.NoContentAsync(ct);
     }

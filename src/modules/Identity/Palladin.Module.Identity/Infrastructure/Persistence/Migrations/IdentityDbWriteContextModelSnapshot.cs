@@ -264,6 +264,7 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<int>("Status")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(1);
@@ -371,7 +372,17 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Instant?>("RevokedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("SecondFactorRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<Instant?>("SecondFactorVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("TokenHash")
                         .IsRequired()
@@ -419,10 +430,251 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("Roles");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockAuthorization", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("AbsoluteDeadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("AuthorizationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CredentialRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("IdleDeadline")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("LinkEpoch")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("LinkId")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("OfflineDeadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("PrivateKeyWrapRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("SecondFactorRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<Instant?>("SecondFactorVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Sequence")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("SourceGeneration")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<Instant>("UnlockedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId", "SessionId");
+
+                    b.ToTable("SharedUnlockAuthorizations");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockLink", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Epoch")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LastInvalidationSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LastLogoutSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId", "Id");
+
+                    b.ToTable("SharedUnlockLinks");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("AbsoluteDeadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ApiOrigin")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<long>("AuthorizationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("Challenge")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DocumentBinding")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("ExtensionGeneration")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ExtensionId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Instant>("IdleDeadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("KeyContextDigest")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<long>("LinkEpoch")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("LinkId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("OfflineDeadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("OfflinePolicyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("PreferenceRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("RecipientProofPublicKey")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("RecipientPublicKey")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<Guid?>("RecipientSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("SourceAuthorizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("SourceOfflinePolicyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("SourceOrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("SourcePublicKey")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<Guid>("SourceRefreshTokenId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("SourceSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("SourceSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("TranscriptHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<Instant>("UnlockedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("WebGeneration")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("WebOrigin")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ExpiresAt", "Id");
+
+                    b.ToTable("SharedUnlockOperations");
+                });
+
             modelBuilder.Entity("Palladin.Module.Identity.Domain.TotpCredential", b =>
                 {
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
+
+                    b.Property<long>("ConfigurationRevision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
 
                     b.Property<Instant?>("ConfirmedAt")
                         .HasColumnType("timestamp with time zone");
@@ -558,6 +810,21 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("SecurityVersion")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("SharedUnlockEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<long>("SharedUnlockRevision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
+                    b.Property<long>("SharedUnlockSequence")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
 
                     b.Property<Instant>("UpdatedAt")
                         .IsConcurrencyToken()
@@ -777,6 +1044,33 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockAuthorization", b =>
+                {
+                    b.HasOne("Palladin.Module.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockLink", b =>
+                {
+                    b.HasOne("Palladin.Module.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockOperation", b =>
+                {
+                    b.HasOne("Palladin.Module.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Palladin.Module.Identity.Domain.TotpCredential", b =>

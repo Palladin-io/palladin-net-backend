@@ -13,5 +13,12 @@ internal interface IAuthSessionIssuer
         Organization organization,
         Permission permissions,
         uint authorizationVersion,
-        Instant now);
+        Instant now,
+        uint? secondFactorRevision = null,
+        Instant? secondFactorVerifiedAt = null);
+    IssuedAuthSession IssueWithSession(
+        User user, Organization organization, Permission permissions, uint authorizationVersion,
+        Instant now, uint? secondFactorRevision = null, Instant? secondFactorVerifiedAt = null);
 }
+
+internal sealed record IssuedAuthSession(string AccessToken, string RefreshToken, RefreshToken Session);

@@ -31,7 +31,10 @@ public abstract class DomainWriteContextBase(
     {
         var entry = writeContext.Entry(entity);
 
-        writeContext.Set<TEntity>().Attach(entity);
+        if (entry.State == EntityState.Detached)
+        {
+            writeContext.Set<TEntity>().Attach(entity);
+        }
         entry.Property(selector).IsModified = true;
     }
 

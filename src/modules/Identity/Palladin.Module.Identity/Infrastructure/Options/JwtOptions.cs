@@ -9,4 +9,5 @@ internal sealed class JwtOptions
     public int AccessTokenExpiryMinutes { get; init; } = 15;
     public int RefreshTokenExpiryDays { get; init; } = 365;
     public int RefreshTokenRotationThresholdDays { get; init; } = 7;
+    public int RefreshTokenConcurrencyRetryLimit { get; init; } = 4;
 }

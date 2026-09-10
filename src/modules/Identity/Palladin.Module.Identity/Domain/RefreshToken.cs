@@ -9,8 +9,11 @@ internal sealed class RefreshToken : EventEntityBase
     public Guid UserId { get; private set; }
     public Guid OrganizationId { get; private set; }
     public Guid Id { get; private set; }
+    public Guid? SessionId { get; private set; }
     public string TokenHash { get; private set; } = string.Empty;
     public uint AuthorizationVersion { get; private set; }
+    public uint? SecondFactorRevision { get; private set; }
+    public Instant? SecondFactorVerifiedAt { get; private set; }
     public Instant ExpiresAt { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant? RevokedAt { get; private set; }
@@ -34,17 +37,39 @@ internal sealed class RefreshToken : EventEntityBase
         string tokenHash,
         uint authorizationVersion,
         Instant expiresAt,
-        Instant now) =>
-        new()
+        Instant now,
+        uint? secondFactorRevision = null,
+        Instant? secondFactorVerifiedAt = null,
+        Guid? sessionId = null)
+    {
+        if (secondFactorRevision.HasValue != secondFactorVerifiedAt.HasValue
+            || secondFactorRevision is 0 || secondFactorVerifiedAt > now)
+        {
+            throw new ArgumentException("Invalid second-factor assurance.");
+        }
+
+        return new()
         {
             Id = id,
+            SessionId = sessionId ?? id,
             UserId = userId,
             OrganizationId = organizationId,
             TokenHash = tokenHash,
             AuthorizationVersion = authorizationVersion,
+            SecondFactorRevision = secondFactorRevision,
+            SecondFactorVerifiedAt = secondFactorVerifiedAt,
             ExpiresAt = expiresAt,
             CreatedAt = now,
         };
+    }
+
+    internal bool SatisfiesSecondFactor(TotpCredential? currentFactor, Instant now) =>
+        IsActive(now)
+        && (currentFactor is null
+            || (currentFactor.UserId == UserId
+                && (!currentFactor.IsEnabled
+                    || (SecondFactorRevision == currentFactor.ConfigurationRevision
+                        && SecondFactorVerifiedAt is { } verifiedAt && verifiedAt <= now))));
 
     internal void Revoke(Instant now, Guid? replacedByTokenId = null)
     {

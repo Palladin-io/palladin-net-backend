@@ -18,11 +18,14 @@ internal static class JwtModule
             .Validate(
                 options => Encoding.UTF8.GetByteCount(options.Secret) >= 32,
                 "Identity JWT signing secret must contain at least 32 bytes.")
+            .Validate(options => options.RefreshTokenConcurrencyRetryLimit is > 0 and <= 16,
+                "Refresh token concurrency retry limit must be between 1 and 16.")
             .ValidateOnStart();
 
         services.AddSingleton<IServerKeyDeriver, JwtServerKeyDeriver>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<IAuthSessionIssuer, AuthSessionIssuer>();
+        services.AddScoped<RefreshTokenLineageRevoker>();
         services.AddScoped<IOrganizationMembershipValidator, OrganizationMembershipValidator>();
 
         return services;

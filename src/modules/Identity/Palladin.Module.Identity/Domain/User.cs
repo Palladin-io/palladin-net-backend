@@ -17,6 +17,9 @@ internal sealed class User : EventEntityBase
     public string? AvatarUrl { get; private set; }
 
     public PreferredLanguage PreferredLanguage { get; private set; } = PreferredLanguage.Default;
+    public bool SharedUnlockEnabled { get; private set; } = true;
+    public uint SharedUnlockRevision { get; private set; } = 1;
+    public uint SharedUnlockSequence { get; private set; }
 
     public byte[]? Salt { get; private set; }
     public byte[]? RecoverySalt { get; private set; }
@@ -54,6 +57,30 @@ internal sealed class User : EventEntityBase
     public bool MobileRegistered { get; private set; }
 
     private User() { }
+
+    internal bool TryAdvanceSharedUnlockSequence()
+    {
+        if (SharedUnlockSequence == uint.MaxValue)
+        {
+            return false;
+        }
+
+        SharedUnlockSequence++;
+        return true;
+    }
+
+    internal bool TrySetSharedUnlockPreference(bool enabled, uint expectedRevision, Instant now)
+    {
+        if (SharedUnlockRevision != expectedRevision || SharedUnlockRevision == uint.MaxValue)
+        {
+            return false;
+        }
+
+        SharedUnlockEnabled = enabled;
+        SharedUnlockRevision++;
+        UpdatedAt = now;
+        return true;
+    }
 
     public Permission EffectivePermissions(Guid organizationId) =>
         OrganizationMemberships

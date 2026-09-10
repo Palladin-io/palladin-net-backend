@@ -22,7 +22,18 @@ internal sealed class AuthSessionIssuer(
         Organization organization,
         Permission permissions,
         uint authorizationVersion,
-        Instant now)
+        Instant now,
+        uint? secondFactorRevision = null,
+        Instant? secondFactorVerifiedAt = null)
+    {
+        var issued = IssueWithSession(user, organization, permissions, authorizationVersion,
+            now, secondFactorRevision, secondFactorVerifiedAt);
+        return (issued.AccessToken, issued.RefreshToken);
+    }
+
+    public IssuedAuthSession IssueWithSession(User user, Organization organization,
+        Permission permissions, uint authorizationVersion, Instant now,
+        uint? secondFactorRevision = null, Instant? secondFactorVerifiedAt = null)
     {
         var effectivePlan = user.EffectivePlan(organization.PlanType, now);
         var expiresAtCap = organization.PlanType < PlanType.Pro
@@ -42,9 +53,9 @@ internal sealed class AuthSessionIssuer(
         var expiresAt = now.Plus(Duration.FromDays(jwtOptions.Value.RefreshTokenExpiryDays));
         var refreshToken = RefreshToken.Create(
             guidProvider.Generate(), user.Id, organization.Id, refreshTokenHash,
-            authorizationVersion, expiresAt, now);
+            authorizationVersion, expiresAt, now, secondFactorRevision, secondFactorVerifiedAt);
         domainWriteContext.Add(refreshToken);
 
-        return (accessToken, rawRefreshToken);
+        return new IssuedAuthSession(accessToken, rawRefreshToken, refreshToken);
     }
 }

@@ -14,6 +14,7 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
 
         builder.HasIndex(x => x.TokenHash);
         builder.Property(x => x.AuthorizationVersion).HasDefaultValue(1u);
+        builder.Property(x => x.RevokedAt).IsConcurrencyToken();
 
         builder.HasOne(x => x.User)
             .WithMany(x => x.RefreshTokens)

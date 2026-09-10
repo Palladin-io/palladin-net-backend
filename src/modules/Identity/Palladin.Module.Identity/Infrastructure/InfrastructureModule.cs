@@ -8,6 +8,9 @@ using Palladin.Module.Identity.Infrastructure.OAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Palladin.Core.Hangfire;
+using Palladin.Module.Identity.Features;
+using Palladin.Module.Identity.Infrastructure.SharedUnlock;
 
 namespace Palladin.Module.Identity.Infrastructure;
 
@@ -25,6 +28,14 @@ internal static class InfrastructureModule
         services.AddIdentityTotp(configuration);
         services.AddIdentityLogin(configuration);
         services.AddOrganizationInvitations(configuration);
+        services.Configure<SharedUnlockOptions>(configuration.GetSection(SharedUnlockOptions.Position));
+        services.AddScopedCronJob<CleanupSharedUnlockOperationsJob, CleanupSharedUnlockOperationsJobOptions>(
+            configuration.GetSection(CleanupSharedUnlockOperationsJobOptions.Position));
+        services.AddOptions<CleanupSharedUnlockOperationsJobOptions>()
+            .Validate(options => !options.Enabled || (!string.IsNullOrWhiteSpace(options.Expression)
+                && options.BatchSize is > 0 and <= 5000),
+                "Shared-unlock cleanup requires a valid schedule and bounded batch size.")
+            .ValidateOnStart();
         return services;
     }
 }

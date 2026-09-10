@@ -41,6 +41,26 @@ internal static class RateLimitingExtensions
                     return FixedWindow($"auth-login:{path}:{ip}", permitLimit: 30);
                 }
 
+                if (HttpMethods.IsPost(context.Request.Method)
+                    && path.StartsWithSegments("/api/auth/shared-unlock/operations"))
+                {
+                    return FixedWindow($"shared-unlock-proof:{ip}", permitLimit: 60);
+                }
+
+                if (HttpMethods.IsPost(context.Request.Method)
+                    && path.Equals(new PathString("/api/account/shared-unlock/operations")))
+                {
+                    var userId = context.User.GetUserId()?.ToString() ?? ip;
+                    return FixedWindow($"shared-unlock-offer:{userId}", permitLimit: 30);
+                }
+
+                if (HttpMethods.IsPost(context.Request.Method)
+                    && path.Equals(new PathString("/api/account/shared-unlock/authorizations/activity")))
+                {
+                    var userId = context.User.GetUserId()?.ToString() ?? ip;
+                    return FixedWindow($"shared-unlock-activity:{userId}", permitLimit: 60);
+                }
+
                 if (path.StartsWithSegments("/api/account/password")
                     || path.StartsWithSegments("/api/account/recovery")
                     || path.StartsWithSegments("/api/account/setup"))

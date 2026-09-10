@@ -13,6 +13,7 @@ internal sealed class TotpCredentialConfiguration : IEntityTypeConfiguration<Tot
         builder.HasKey(x => x.UserId);
         builder.Property(x => x.PendingSecret).HasMaxLength(128);
         builder.Property(x => x.Secret).HasMaxLength(128);
+        builder.Property(x => x.ConfigurationRevision).HasDefaultValue(1u).IsConcurrencyToken();
 
         builder.HasOne(x => x.User)
             .WithOne(u => u.TotpCredential)

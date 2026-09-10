@@ -1,4 +1,7 @@
 using Palladin.Core.Guid;
+using Palladin.Core.Api;
+using Microsoft.AspNetCore.Http;
+using Palladin.Module.Identity.Infrastructure.SharedUnlock;
 using Palladin.Module.Identity.Domain;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Options;
@@ -44,6 +47,7 @@ internal sealed class RefreshAccessTokenValidator : Validator<RefreshAccessToken
 internal sealed class RefreshAccessTokenEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITokenService tokenService,
+    RefreshTokenLineageRevoker lineageRevoker,
     IGuidProvider guidProvider,
     IClock clock,
     WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
@@ -63,6 +67,7 @@ internal sealed class RefreshAccessTokenEndpoint(
 
     public override async Task HandleAsync(RefreshAccessTokenRequest req, CancellationToken ct)
     {
+        HttpContext.Response.Headers.CacheControl = "no-store";
         var now = clock.GetCurrentInstant();
         var tokenHash = TokenService.HashToken(req.RefreshToken);
 
@@ -83,7 +88,11 @@ internal sealed class RefreshAccessTokenEndpoint(
         // every session, which would log the victim out on all devices).
         if (existingToken.IsRevoked)
         {
-            await RevokeTokenLineageAsync(existingToken, now, ct);
+            if (!await lineageRevoker.RevokeAfterReplayAsync(existingToken.UserId, existingToken.Id, now, ct))
+            {
+                await SendConflictAsync(ct);
+                return;
+            }
             await Send.UnauthorizedAsync(ct);
             return;
         }
@@ -100,7 +109,15 @@ internal sealed class RefreshAccessTokenEndpoint(
         if (membership is null || membership.Status != OrganizationMemberStatus.Active)
         {
             existingToken.Revoke(now);
-            await domainWriteContext.CommitAsync(ct);
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await SendConflictAsync(ct);
+                return;
+            }
             await Send.UnauthorizedAsync(ct);
             return;
         }
@@ -108,13 +125,32 @@ internal sealed class RefreshAccessTokenEndpoint(
         if (existingToken.AuthorizationVersion != membership.AuthorizationVersion)
         {
             existingToken.Revoke(now);
-            await domainWriteContext.CommitAsync(ct);
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await SendConflictAsync(ct);
+                return;
+            }
             await Send.UnauthorizedAsync(ct);
             return;
         }
 
         await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
+
+        var sharedRevocation = await SharedUnlockSessionRevocation.LoadAsync(domainWriteContext, existingToken, ct);
+        if (sharedRevocation.IsRevoked)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+        sharedRevocation.Fence(domainWriteContext);
+        domainWriteContext.MarkPropertyAsUpdated(user, user => user.SharedUnlockSequence);
+        domainWriteContext.MarkPropertyAsUpdated(existingToken, token => token.RevokedAt);
+        domainWriteContext.MarkPropertyAsUpdated(membership, member => member.Status);
 
         var organizationAuthority = await domainWriteContext.Organizations
             .Where(o => o.Id == existingToken.OrganizationId)
@@ -149,17 +185,26 @@ internal sealed class RefreshAccessTokenEndpoint(
             var newExpiresAt = now.Plus(Duration.FromDays(jwtOptions.Value.RefreshTokenExpiryDays));
 
             existingToken.Revoke(now, newId);
-            domainWriteContext.Update(existingToken);
 
             var newRefreshToken = RefreshToken.Create(
                 newId, user.Id, existingToken.OrganizationId, newHash,
-                membership.AuthorizationVersion, newExpiresAt, now);
+                membership.AuthorizationVersion, newExpiresAt, now,
+                existingToken.SecondFactorRevision, existingToken.SecondFactorVerifiedAt,
+                existingToken.SessionId ?? existingToken.Id);
             domainWriteContext.Add(newRefreshToken);
 
             rawRefreshToken = newRawToken;
         }
 
-        await domainWriteContext.CommitAsync(transaction, ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(transaction, ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await SendConflictAsync(ct);
+            return;
+        }
 
         await Send.OkAsync(new RefreshAccessTokenResponse(
             accessToken,
@@ -171,30 +216,9 @@ internal sealed class RefreshAccessTokenEndpoint(
             user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
     }
 
-    // Walk the presented token's rotation lineage via the ReplacedByTokenId chain and revoke the still-active
-    // descendants it was rotated into. Ancestors are already revoked (a token is only revoked once it is
-    // replaced), so following the chain forward from the replayed token is enough to kill the live session it
-    // belongs to without touching unrelated sessions on the user's other devices.
-    private async Task RevokeTokenLineageAsync(RefreshToken presentedToken, Instant now, CancellationToken ct)
+    private async Task SendConflictAsync(CancellationToken ct)
     {
-        var visited = new HashSet<Guid> { presentedToken.Id };
-        var nextId = presentedToken.ReplacedByTokenId;
-        while (nextId is { } id && visited.Add(id))
-        {
-            var token = await domainWriteContext.RefreshTokens.FirstOrDefaultAsync(rt => rt.Id == id, ct);
-            if (token is null)
-            {
-                break;
-            }
-
-            if (token.RevokedAt is null)
-            {
-                token.Revoke(now);
-            }
-
-            nextId = token.ReplacedByTokenId;
-        }
-
-        await domainWriteContext.CommitAsync(ct);
+        AddError(ErrorResponses.General("session-refresh-conflict"));
+        await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
     }
 }

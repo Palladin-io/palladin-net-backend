@@ -37,7 +37,6 @@ internal sealed class LoginTotpValidator : Validator<LoginTotpRequest>
 
 [PublicAPI]
 internal sealed class LoginTotpEndpoint(
-    IdentityDomainReadContext domainReadContext,
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
     IAuthSessionIssuer sessionIssuer,
@@ -76,7 +75,7 @@ internal sealed class LoginTotpEndpoint(
             return;
         }
 
-        var challengeOwner = await domainReadContext.VerificationTokens
+        var challengeOwner = await domainWriteContext.VerificationTokens
             .Where(t => t.TokenHash == challengeHash
                         && t.Purpose == VerificationTokenPurpose.LoginTotpChallenge
                         && t.ConsumedAt == null
@@ -175,6 +174,7 @@ internal sealed class LoginTotpEndpoint(
         }
 
         challenge.Consume(now);
+        domainWriteContext.MarkPropertyAsUpdated(totp, factor => factor.ConfigurationRevision);
         await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
 
@@ -183,6 +183,8 @@ internal sealed class LoginTotpEndpoint(
             user.Organization,
             membership.EffectivePermissions(),
             membership.AuthorizationVersion,
+            now,
+            totp.ConfigurationRevision,
             now);
         try
         {

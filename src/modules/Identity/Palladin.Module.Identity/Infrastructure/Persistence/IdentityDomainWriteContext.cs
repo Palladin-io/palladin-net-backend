@@ -17,6 +17,9 @@ internal sealed class IdentityDomainWriteContext(
     public IQueryable<OrganizationMemberRole> OrganizationMemberRoles => Track<OrganizationMemberRole>();
     public IQueryable<OrganizationInvitation> OrganizationInvitations => Track<OrganizationInvitation>();
     public IQueryable<OAuthConnection> OAuthConnections => Track<OAuthConnection>();
+    public IQueryable<SharedUnlockLink> SharedUnlockLinks => Track<SharedUnlockLink>();
+    public IQueryable<SharedUnlockAuthorization> SharedUnlockAuthorizations => Track<SharedUnlockAuthorization>();
+    public IQueryable<SharedUnlockOperation> SharedUnlockOperations => Track<SharedUnlockOperation>();
     public IQueryable<RefreshToken> RefreshTokens => Track<RefreshToken>();
     public IQueryable<WaitlistEntry> WaitlistEntries => Track<WaitlistEntry>();
     public IQueryable<PasswordCredential> PasswordCredentials => Track<PasswordCredential>();

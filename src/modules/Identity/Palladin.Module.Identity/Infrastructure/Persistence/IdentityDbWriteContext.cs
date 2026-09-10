@@ -13,6 +13,9 @@ internal sealed class IdentityDbWriteContext(DbContextOptions<IdentityDbWriteCon
     public DbSet<OrganizationMemberRole> OrganizationMemberRoles => Set<OrganizationMemberRole>();
     public DbSet<OrganizationInvitation> OrganizationInvitations => Set<OrganizationInvitation>();
     public DbSet<OAuthConnection> OAuthConnections => Set<OAuthConnection>();
+    public DbSet<SharedUnlockLink> SharedUnlockLinks => Set<SharedUnlockLink>();
+    public DbSet<SharedUnlockAuthorization> SharedUnlockAuthorizations => Set<SharedUnlockAuthorization>();
+    public DbSet<SharedUnlockOperation> SharedUnlockOperations => Set<SharedUnlockOperation>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<WaitlistEntry> WaitlistEntries => Set<WaitlistEntry>();
     public DbSet<PasswordCredential> PasswordCredentials => Set<PasswordCredential>();

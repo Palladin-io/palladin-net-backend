@@ -69,7 +69,7 @@ public sealed class SessionSecondFactorTests(ApiFactory apiFactory) : TestBase
         var hash = TokenService.HashToken(result.RefreshToken);
         var session = await read.RefreshTokens.SingleAsync(t => t.UserId == user.Id && t.TokenHash == hash, TestContext.Current.CancellationToken);
         session.SecondFactorRevision.ShouldBe(revision);
-        session.SecondFactorVerifiedAt.ShouldBe(now);
+        session.SecondFactorVerifiedAt.ShouldBe(session.CreatedAt);
         var currentFactor = await read.TotpCredentials.SingleAsync(t => t.UserId == user.Id, TestContext.Current.CancellationToken);
         session.SatisfiesSecondFactor(currentFactor, now).ShouldBeTrue();
     }
@@ -111,7 +111,14 @@ public sealed class SessionSecondFactorTests(ApiFactory apiFactory) : TestBase
         var hash = TokenService.HashToken(result.RefreshToken);
         var session = await read.RefreshTokens.SingleAsync(t => t.UserId == user.Id && t.TokenHash == hash, TestContext.Current.CancellationToken);
         session.SecondFactorRevision.ShouldBe(assured ? 2u : null);
-        session.SecondFactorVerifiedAt.ShouldBe(assured ? originalTime : null);
+        var persistedOriginal = await read.RefreshTokens.SingleAsync(t =>
+            t.UserId == user.Id && t.Id == original.Id, TestContext.Current.CancellationToken);
+        session.SecondFactorVerifiedAt.ShouldBe(persistedOriginal.SecondFactorVerifiedAt);
+        if (assured)
+        {
+            session.SecondFactorVerifiedAt.ShouldNotBeNull().ToUnixTimeMilliseconds()
+                .ShouldBe(originalTime.ToUnixTimeMilliseconds());
+        }
     }
 
     [Fact]

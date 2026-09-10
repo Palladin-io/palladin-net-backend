@@ -48,7 +48,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         // Given
         var (user, _, _) = await apiFactory.Services.SeedUserAsync();
         var link = SharedUnlockLink.Create(user.Id, Guid.NewGuid(), apiFactory.FakeClock.GetCurrentInstant());
-        link.TryDisconnect(1, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+        link.TryDisconnect(1, 1, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
         await SeedAsync(link);
         var client = apiFactory.CreateAuthenticatedClient(user);
 
@@ -199,8 +199,8 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
         var stale = await secondContext.SharedUnlockLinks.SingleAsync(item => item.UserId == user.Id && item.Id == link.Id, Cancellation);
 
         // When
-        locking.TryLock(2, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
-        stale.TryActivateFromManualUnlock(2, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+        locking.TryLock(2, 1, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+        stale.TryActivateFromManualUnlock(2, 1, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
         await firstContext.CommitAsync(Cancellation);
 
         // Then
@@ -294,7 +294,7 @@ public sealed class SharedUnlockLinkTests(ApiFactory apiFactory) : TestBase
     private SharedUnlockLink ActiveLink(Guid userId)
     {
         var link = SharedUnlockLink.Create(userId, Guid.NewGuid(), apiFactory.FakeClock.GetCurrentInstant());
-        link.TryActivateFromManualUnlock(1, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+        link.TryActivateFromManualUnlock(1, 1, apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
         return link;
     }
 

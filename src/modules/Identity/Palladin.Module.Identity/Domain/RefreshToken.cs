@@ -9,6 +9,7 @@ internal sealed class RefreshToken : EventEntityBase
     public Guid UserId { get; private set; }
     public Guid OrganizationId { get; private set; }
     public Guid Id { get; private set; }
+    public Guid? SessionId { get; private set; }
     public string TokenHash { get; private set; } = string.Empty;
     public uint AuthorizationVersion { get; private set; }
     public uint? SecondFactorRevision { get; private set; }
@@ -38,7 +39,8 @@ internal sealed class RefreshToken : EventEntityBase
         Instant expiresAt,
         Instant now,
         uint? secondFactorRevision = null,
-        Instant? secondFactorVerifiedAt = null)
+        Instant? secondFactorVerifiedAt = null,
+        Guid? sessionId = null)
     {
         if (secondFactorRevision.HasValue != secondFactorVerifiedAt.HasValue
             || secondFactorRevision is 0 || secondFactorVerifiedAt > now)
@@ -49,6 +51,7 @@ internal sealed class RefreshToken : EventEntityBase
         return new()
         {
             Id = id,
+            SessionId = sessionId ?? id,
             UserId = userId,
             OrganizationId = organizationId,
             TokenHash = tokenHash,

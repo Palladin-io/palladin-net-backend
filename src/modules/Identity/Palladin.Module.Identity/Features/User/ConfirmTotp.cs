@@ -86,7 +86,21 @@ internal sealed class ConfirmTotpEndpoint(
 
         credential.Confirm(matchedTimeStep, clock.GetCurrentInstant());
         domainWriteContext.AddRange(recoveryEntities);
-        await domainWriteContext.CommitAsync(ct);
+        if (!user.TryAdvanceSharedUnlockSequence())
+        {
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
+
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await Send.StatusCodeAsync(409, ct);
+            return;
+        }
 
         await Send.OkAsync(new ConfirmTotpResponse(recoveryCodes), ct);
     }

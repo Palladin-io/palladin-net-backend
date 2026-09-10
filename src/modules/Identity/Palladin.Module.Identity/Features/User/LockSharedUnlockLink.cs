@@ -64,7 +64,8 @@ internal sealed class LockSharedUnlockLinkEndpoint(IdentityDomainWriteContext co
 
         context.MarkPropertyAsUpdated(user, current => current.SharedUnlockRevision);
 
-        if (!link.TryLock(req.ExpectedRevision, clock.GetCurrentInstant()))
+        if (!user.TryAdvanceSharedUnlockSequence()
+            || !link.TryLock(req.ExpectedRevision, user.SharedUnlockSequence, clock.GetCurrentInstant()))
         {
             AddError(ErrorResponses.General("shared-unlock-link-conflict"));
             await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);

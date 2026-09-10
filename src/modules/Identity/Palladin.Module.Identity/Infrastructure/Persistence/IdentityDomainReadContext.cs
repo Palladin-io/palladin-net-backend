@@ -14,6 +14,7 @@ internal sealed class IdentityDomainReadContext(IdentityDbReadContext readContex
     public IQueryable<OrganizationInvitation> OrganizationInvitations => Query<OrganizationInvitation>();
     public IQueryable<OAuthConnection> OAuthConnections => Query<OAuthConnection>();
     public IQueryable<SharedUnlockLink> SharedUnlockLinks => Query<SharedUnlockLink>();
+    public IQueryable<SharedUnlockAuthorization> SharedUnlockAuthorizations => Query<SharedUnlockAuthorization>();
     public IQueryable<RefreshToken> RefreshTokens => Query<RefreshToken>();
     public IQueryable<WaitlistEntry> WaitlistEntries => Query<WaitlistEntry>();
     public IQueryable<PasswordCredential> PasswordCredentials => Query<PasswordCredential>();

@@ -52,8 +52,10 @@ internal sealed class DisconnectSharedUnlockLinkEndpoint(IdentityDomainWriteCont
             return;
         }
 
+        var user = await context.Users.SingleAsync(user => user.Id == userId, ct);
 
-        if (!link.TryDisconnect(req.ExpectedRevision, clock.GetCurrentInstant()))
+        if (!user.TryAdvanceSharedUnlockSequence()
+            || !link.TryDisconnect(req.ExpectedRevision, user.SharedUnlockSequence, clock.GetCurrentInstant()))
         {
             AddError(ErrorResponses.General("shared-unlock-link-conflict"));
             await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);

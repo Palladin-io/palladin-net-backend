@@ -16,6 +16,7 @@ internal sealed class SharedUnlockLink
     public SharedUnlockLinkState State { get; private set; }
     public uint Epoch { get; private set; }
     public uint Revision { get; private set; }
+    public uint LastInvalidationSequence { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant UpdatedAt { get; private set; }
 
@@ -40,19 +41,31 @@ internal sealed class SharedUnlockLink
         };
     }
 
-    internal bool TryLock(uint expectedRevision, Instant now) =>
-        State != SharedUnlockLinkState.Revoked && TryTransition(SharedUnlockLinkState.Locked, expectedRevision, now);
+    internal bool TryLock(uint expectedRevision, uint sequence, Instant now) =>
+        State != SharedUnlockLinkState.Revoked && TryInvalidate(SharedUnlockLinkState.Locked, expectedRevision, sequence, now);
 
-    internal bool TryDisconnect(uint expectedRevision, Instant now) =>
-        TryTransition(SharedUnlockLinkState.Revoked, expectedRevision, now);
+    internal bool TryDisconnect(uint expectedRevision, uint sequence, Instant now) =>
+        TryInvalidate(SharedUnlockLinkState.Revoked, expectedRevision, sequence, now);
 
-    internal bool TryReconnect(uint expectedRevision, Instant now) =>
-        State == SharedUnlockLinkState.Revoked && TryTransition(SharedUnlockLinkState.Locked, expectedRevision, now);
+    internal bool TryReconnect(uint expectedRevision, uint sequence, Instant now) =>
+        State == SharedUnlockLinkState.Revoked && TryInvalidate(SharedUnlockLinkState.Locked, expectedRevision, sequence, now);
 
-    internal bool TryActivateFromManualUnlock(uint expectedRevision, Instant now) =>
-        State != SharedUnlockLinkState.Revoked && TryTransition(SharedUnlockLinkState.Active, expectedRevision, now);
+    internal bool TryActivateFromManualUnlock(uint expectedRevision, uint authorizationSequence, Instant now) =>
+        authorizationSequence > LastInvalidationSequence
+        && State != SharedUnlockLinkState.Revoked && TryTransition(SharedUnlockLinkState.Active, expectedRevision, now);
 
     internal bool AllowsTransfer(uint epoch) => State == SharedUnlockLinkState.Active && Epoch == epoch;
+
+    private bool TryInvalidate(SharedUnlockLinkState state, uint expectedRevision, uint sequence, Instant now)
+    {
+        if (sequence <= LastInvalidationSequence || !TryTransition(state, expectedRevision, now))
+        {
+            return false;
+        }
+
+        LastInvalidationSequence = sequence;
+        return true;
+    }
 
     private bool TryTransition(SharedUnlockLinkState state, uint expectedRevision, Instant now)
     {

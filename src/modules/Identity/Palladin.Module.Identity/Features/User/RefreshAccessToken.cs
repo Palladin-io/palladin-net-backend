@@ -154,7 +154,8 @@ internal sealed class RefreshAccessTokenEndpoint(
             var newRefreshToken = RefreshToken.Create(
                 newId, user.Id, existingToken.OrganizationId, newHash,
                 membership.AuthorizationVersion, newExpiresAt, now,
-                existingToken.SecondFactorRevision, existingToken.SecondFactorVerifiedAt);
+                existingToken.SecondFactorRevision, existingToken.SecondFactorVerifiedAt,
+                existingToken.SessionId ?? existingToken.Id);
             domainWriteContext.Add(newRefreshToken);
 
             rawRefreshToken = newRawToken;

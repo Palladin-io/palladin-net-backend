@@ -156,14 +156,13 @@ race rolls back the whole operation, including a newly inserted link. No raw SQL
 explicit transaction or extra index is needed beyond the account-scoped PK/FK.
 The migration is incremental; all prior migrations remain untouched.
 
-The domain has an activation transition reserved for the upcoming authenticated
-manual-unlock/bootstrap flow. There is **no activation endpoint in this increment**.
-These metadata endpoints do not prove that a browser is trusted, issue tokens,
-transfer keys or yet notify clients. Receiver session issuance, consuming the
-current epoch before every handoff, session logout mapping and browser propagation
-remain required before the complete feature is enabled. A successful metadata
-mutation must not be presented as completed browser lock/logout until adapters
-have actually handled it.
+Activation is available only through the authenticated manual-unlock authorization
+below. These endpoints do not prove that a browser is trusted, issue receiver
+tokens, transfer keys or yet notify clients. Receiver session issuance, consuming
+the current epoch before every handoff, session logout mapping and browser
+propagation remain required before the complete feature is enabled. A successful
+metadata mutation must not be presented as completed browser lock/logout until
+adapters have actually handled it.
 
 ### Session second-factor authority for shared unlock (increment)
 
@@ -186,9 +185,66 @@ authentication-conflict response. The login mutation uses one domain write
 context throughout. Current-factor evaluation additionally rejects inactive
 refresh sessions and a factor belonging to a different account.
 
-This metadata preserves already-completed 2FA for the upcoming source-unlock
-authorization. It does not itself authorize MK transfer or activate a link.
+This metadata preserves already-completed 2FA for the source-unlock
+authorization below. It does not itself authorize MK transfer or activate a link.
 The bootstrap must still verify the source's own live session, manual-unlock
 authority or inherited lease, current factor, preference, link epoch, account key
 revisions, membership and inherited deadlines in its atomic commit. A missing or
 obsolete factor assurance requires actual step-up; having MK is insufficient.
+
+
+### Manual-unlock source authorization and local binding (increment)
+
+`POST api/account/shared-unlock/authorizations` requires JWT plus the source's own
+refresh token, fresh password-derived AuthCredential, its RAM generation, current
+preference/credential/wrapper revisions and its current idle/absolute/offline
+ceilings. AuthCredential goes directly to Identity and is cleared after the
+verifier; it is never handed to a peer. Account and organization come from JWT,
+not the payload. The refresh session must match that account/organization and
+current active membership. Missing or obsolete 2FA assurance returns 403 with
+`shared-unlock-step-up-required`; MK alone cannot establish this authorization.
+Password verification reuses the existing durable IP/account rate limits and
+account lockout. Expired/revoked/foreign sessions are rejected before verification.
+
+Identity stores one `SharedUnlockAuthorization` per logical source session. A
+fresh manual proof replaces its nonce/generation and snapshots key, membership,
+2FA and time authority. Deadlines must still be future, idle cannot exceed
+absolute, and none may exceed the current source refresh-session expiry. These
+are ceilings declared by the trusted source under its client timeout policy;
+they do not grant offline Vault access or replace the Vault's signed offline
+policy/leases. Browser consumers must preserve their reviewed policy and timers.
+Binding and refresh never reset those ceilings or the original unlock timestamp.
+
+Refresh rotation retains a logical `SessionId` (old pre-feature rows use their
+own ID until rotation). Authority therefore survives legitimate token rotation
+without copying tokens between peers or renewing its deadlines. Presenting the
+revoked old refresh token still fails; the source submits its own current token.
+The authorization ID itself is neither a bearer token nor browser authentication.
+
+`POST api/account/shared-unlock/links/{LinkId}/activate` binds that exact nonce,
+RAM generation and source session to one account-owned link. It revalidates
+preference, membership/status, key revisions, current 2FA, source session and all
+ceilings. A locked link becomes active in a new epoch. An already-active link
+keeps its epoch; retries for the same bound epoch are harmless. One authorization
+cannot bind another link or return after its bound epoch changes.
+
+A monotonic `User.SharedUnlockSequence` orders fresh manual proofs and local
+lock/disconnect/reconnect commits, independently of clock resolution. Each closing
+or reconnect action stores its sequence in that link's `LastInvalidationSequence`.
+An old unbound proof cannot activate it even after explicit reconnect; fresh
+manual authority must be newer than the barrier. Barriers are per link, so another
+device's link is not implicitly revoked. The stable nonsensitive client marker
+must still survive disconnect; inventing a new marker is not a reconnect path.
+
+User sequence, authorization sequence/binding, link revision, membership status
+and source-token revocation use optimistic concurrency in one domain commit.
+TOTP confirm/disable also advance the User sequence, fencing first-factor-row
+creation as well as replacement; stale writes return 409. No raw SQL or extra
+transaction is introduced. `MarkPropertyAsUpdated` preserves original tracked
+concurrency values and pending domain changes rather than reattaching the object.
+The new migration is incremental and no historical migration is changed.
+
+This is source authorization and activation only. Inherited receiver authority,
+activity-driven idle updates, one-time operation consume/commit, receiver-owned
+tokens, linked logout and browser transport/UI remain required. No public key
+handoff or automatic browser unlock is enabled by these APIs alone.

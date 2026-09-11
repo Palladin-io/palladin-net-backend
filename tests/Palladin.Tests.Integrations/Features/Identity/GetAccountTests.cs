@@ -1,8 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 using Microsoft.AspNetCore.WebUtilities;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Features;
+using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
 using Palladin.Tests.Integrations.Shared.Fakers;
@@ -18,6 +22,50 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class GetAccountTests(ApiFactory apiFactory) : TestBase
 {
+    [Theory]
+    [InlineData("absent", false)]
+    [InlineData("pending", false)]
+    [InlineData("enabled", true)]
+    [InlineData("disabled", false)]
+    public async Task When_AccountFactorStateChanges_Then_ReturnsExplicitOwnTotpEnabled(
+        string factorState, bool expectedEnabled)
+    {
+        // Given
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var (otherUser, _, _) = await apiFactory.Services.SeedUserAsync();
+        await apiFactory.Services.SeedTotpCredentialAsync(otherUser.Id, "JBSWY3DPEHPK3PXP");
+        if (factorState != "absent")
+        {
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            var now = SystemClock.Instance.GetCurrentInstant();
+            var factor = TotpCredential.StartEnrollment(user.Id, "JBSWY3DPEHPK3PXP", now);
+            if (factorState is "enabled" or "disabled")
+            {
+                factor.Confirm(0, now);
+            }
+            if (factorState == "disabled")
+            {
+                factor.Disable(now);
+            }
+            writeContext.TotpCredentials.Add(factor);
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var response = await client.GetAsync("api/account");
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.RootElement.TryGetProperty("totpEnabled", out var enabled).ShouldBeTrue();
+        enabled.GetBoolean().ShouldBe(expectedEnabled);
+        payload.RootElement.TryGetProperty("secret", out _).ShouldBeFalse();
+        payload.RootElement.TryGetProperty("pendingSecret", out _).ShouldBeFalse();
+        payload.RootElement.TryGetProperty("recoveryCodes", out _).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task When_AuthenticatedUser_WithoutKeys_Then_ReturnsAccountWithIsOnboardedFalse()
     {

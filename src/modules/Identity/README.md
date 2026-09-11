@@ -433,6 +433,12 @@ rotated-away, foreign or obsolete authorization-version tokens return 401. The
 lookups use the existing refresh TokenHash index and account/session and account/
 link primary keys; no new index, migration, write context or mutation is added.
 
+JWT authentication already validates the current membership generation and
+organization offline-policy version through `OnTokenValidated` and
+`OrganizationMembershipValidator.IsCurrentAsync`. The read-only membership
+exception skips only the additional Active-status gate; a stale JWT remains 401,
+even if its matching refresh token escaped bulk revocation.
+
 The response contains only `action` (`none`, `lock`, `logout`) and nullable `link`
 using the existing link response. Identity decides the action from its own bound
 root sequence and durable link barriers. A missing bound link returns logout.

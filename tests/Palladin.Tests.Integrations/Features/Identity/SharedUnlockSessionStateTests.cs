@@ -16,6 +16,37 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 
 public sealed partial class SharedUnlockSessionLifecycleTests
 {
+    [Fact]
+    public async Task When_StaleJwtAndRefreshSurviveMembershipRevocation_Then_JwtAuthenticationRejectsClosingRead()
+    {
+        // Given
+        var account = await SeedAsync();
+        var client = apiFactory.CreateAuthenticatedClient(account.User);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            var membership = await db.OrganizationMembers.SingleAsync(member =>
+                member.UserId == account.User.Id && member.OrganizationId == account.User.OrganizationId, Ct);
+            membership.InvalidateAuthorization(Now);
+            membership.FetchEvents();
+            await db.SaveChangesAsync(Ct);
+        }
+
+        // When
+        var (response, _) = await client.POSTAsync<GetSharedUnlockSessionStateEndpoint,
+            GetSharedUnlockSessionStateRequest, SharedUnlockSessionStateResponse>(new()
+            { RefreshToken = account.PeerRaw, LinkId = account.LinkId });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        await using var verification = apiFactory.Services.CreateAsyncScope();
+        var hash = TokenService.HashToken(account.PeerRaw);
+        var token = await verification.ServiceProvider.GetRequiredService<IdentityDbReadContext>().RefreshTokens
+            .SingleAsync(token => token.UserId == account.User.Id && token.TokenHash == hash, Ct);
+        token.AuthorizationVersion.ShouldBe(1u);
+        token.RevokedAt.ShouldBeNull();
+    }
+
     [Theory]
     [InlineData("none")]
     [InlineData("lock")]

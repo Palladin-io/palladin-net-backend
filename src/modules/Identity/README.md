@@ -213,9 +213,16 @@ subsequent binding still requires enabled preference and unchanged valid limits.
 
 Identity stores one `SharedUnlockAuthorization` per logical source session. A
 fresh manual proof replaces its nonce/generation and snapshots key, membership,
-2FA and time authority. Deadlines must still be future, idle cannot exceed
-absolute, and none may exceed the current source refresh-session expiry. These
-are ceilings declared by the trusted source under its client timeout policy;
+2FA and time authority. Requested deadlines must still be future and idle cannot
+exceed requested absolute. Identity caps absolute/offline by the authenticated
+source's actual refresh-session expiry (rounded down to wire milliseconds), then
+caps idle by effective absolute. A locally sealed client envelope may expire
+slightly later because it was created after the server issued its session; that
+does not invalidate a fresh password proof. Persisted and returned deadlines are
+the same effective values, never the longer request; no refresh expiry is extended.
+The three overshoot cases (including one millisecond), expired/misordered requests
+and unchanged own refresh session are covered by SharedUnlockAuthorizationTests.
+These are ceilings declared by the trusted source under its client timeout policy;
 they do not grant offline Vault access or replace the Vault's signed offline
 policy/leases. Browser consumers must preserve their reviewed policy and timers.
 Binding and refresh never reset those ceilings or the original unlock timestamp.

@@ -135,6 +135,16 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
         var idle = Instant.FromUnixTimeMilliseconds(req.IdleDeadlineMs);
         var absolute = Instant.FromUnixTimeMilliseconds(req.AbsoluteDeadlineMs);
         var offline = Instant.FromUnixTimeMilliseconds(req.OfflineDeadlineMs);
+        if (!SharedUnlockAuthorization.ValidDeadlines(idle, absolute, offline, Instant.MaxValue, now))
+        {
+            await SendConflictAsync(ct);
+            return;
+        }
+
+        var sessionExpiry = Instant.FromUnixTimeMilliseconds(session.ExpiresAt.ToUnixTimeMilliseconds());
+        absolute = new[] { absolute, sessionExpiry }.Min();
+        idle = new[] { idle, absolute }.Min();
+        offline = new[] { offline, sessionExpiry }.Min();
         if (!SharedUnlockAuthorization.ValidDeadlines(idle, absolute, offline, session.ExpiresAt, now))
         {
             await SendConflictAsync(ct);
@@ -233,8 +243,8 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
         await Send.OkAsync(new AuthorizeSharedUnlockResponse(authorization.Id, authorization.Sequence,
             user.Id, authorization.OrganizationId, authorization.CredentialRevision,
             authorization.PrivateKeyWrapRevision, authorization.AuthorizationVersion,
-            authorization.UnlockedAt.ToUnixTimeMilliseconds(), req.IdleDeadlineMs,
-            req.AbsoluteDeadlineMs, req.OfflineDeadlineMs), ct);
+            authorization.UnlockedAt.ToUnixTimeMilliseconds(), authorization.IdleDeadline.ToUnixTimeMilliseconds(),
+            authorization.AbsoluteDeadline.ToUnixTimeMilliseconds(), authorization.OfflineDeadline.ToUnixTimeMilliseconds()), ct);
     }
 
     private async Task SendConflictAsync(CancellationToken ct)

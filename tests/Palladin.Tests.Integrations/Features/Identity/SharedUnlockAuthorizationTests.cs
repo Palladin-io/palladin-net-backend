@@ -18,6 +18,43 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : TestBase
 {
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(86400000, false)]
+    [InlineData(1, true)]
+    public async Task When_ClientCeilingsExceedOwnRefreshExpiry_Then_UsesAuthoritativeShorterLimits(
+        long excessMilliseconds, bool idleAlsoExceeds)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        var expiry = (Now + Duration.FromDays(1)).ToUnixTimeMilliseconds();
+        var request = Request(source) with
+        {
+            AbsoluteDeadlineMs = expiry + excessMilliseconds,
+            OfflineDeadlineMs = expiry + excessMilliseconds,
+            IdleDeadlineMs = idleAlsoExceeds ? expiry + excessMilliseconds : Request(source).IdleDeadlineMs,
+        };
+
+        // When
+        var (response, authority) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<AuthorizeSharedUnlockEndpoint, AuthorizeSharedUnlockRequest, AuthorizeSharedUnlockResponse>(request);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        authority.AbsoluteDeadlineMs.ShouldBe(expiry);
+        authority.OfflineDeadlineMs.ShouldBe(expiry);
+        authority.IdleDeadlineMs.ShouldBe(Math.Min(request.IdleDeadlineMs, expiry));
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var stored = await db.SharedUnlockAuthorizations.SingleAsync(root => root.UserId == source.User.Id, Ct);
+        stored.AbsoluteDeadline.ToUnixTimeMilliseconds().ShouldBe(authority.AbsoluteDeadlineMs);
+        stored.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(authority.OfflineDeadlineMs);
+        stored.IdleDeadline.ToUnixTimeMilliseconds().ShouldBe(authority.IdleDeadlineMs);
+        var session = await db.RefreshTokens.SingleAsync(token => token.UserId == source.User.Id, Ct);
+        session.ExpiresAt.ToUnixTimeMilliseconds().ShouldBe(expiry);
+        session.RevokedAt.ShouldBeNull();
+    }
+
     [Fact]
     public async Task When_ManualUnlockPrecedesPeerDiscovery_Then_LaterBindingKeepsOriginalDeadlines()
     {
@@ -61,7 +98,9 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
     [InlineData("credential-revision", HttpStatusCode.Conflict)]
     [InlineData("wrap-revision", HttpStatusCode.Conflict)]
     [InlineData("deadline", HttpStatusCode.Conflict)]
-    [InlineData("session-cap", HttpStatusCode.Conflict)]
+    [InlineData("absolute-expired", HttpStatusCode.Conflict)]
+    [InlineData("offline-expired", HttpStatusCode.Conflict)]
+    [InlineData("idle-after-absolute", HttpStatusCode.Conflict)]
     [InlineData("totp", HttpStatusCode.Forbidden)]
     public async Task When_SourceAuthorityIsInvalid_Then_NoAuthorizationIsStored(string kind, HttpStatusCode expected)
     {
@@ -84,7 +123,9 @@ public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : Test
                 case "credential-revision": request = request with { ExpectedCredentialRevision = 2 }; break;
                 case "wrap-revision": request = request with { ExpectedPrivateKeyWrapRevision = 2 }; break;
                 case "deadline": request = request with { IdleDeadlineMs = Now.ToUnixTimeMilliseconds() }; break;
-                case "session-cap": request = request with { AbsoluteDeadlineMs = (Now + Duration.FromDays(10)).ToUnixTimeMilliseconds() }; break;
+                case "absolute-expired": request = request with { AbsoluteDeadlineMs = Now.ToUnixTimeMilliseconds() }; break;
+                case "offline-expired": request = request with { OfflineDeadlineMs = Now.ToUnixTimeMilliseconds() }; break;
+                case "idle-after-absolute": request = request with { IdleDeadlineMs = request.AbsoluteDeadlineMs + 1 }; break;
                 case "totp":
                     var factor = TotpCredential.StartEnrollment(user.Id, "synthetic-factor", Now);
                     factor.Confirm(0, Now);

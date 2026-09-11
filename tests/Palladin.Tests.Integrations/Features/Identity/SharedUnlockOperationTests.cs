@@ -224,6 +224,15 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
         source.Authorization.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(root.GetProperty("offlineDeadlineMs").GetInt64() + offset);
         foreach (var vector in fixture.RootElement.GetProperty("positive").EnumerateArray())
         {
+            var expiry = vector.TryGetProperty("sourceRefreshExpiresAtMs", out var overrideExpiry)
+                ? overrideExpiry.GetInt64() : fixture.RootElement.GetProperty("sourceRefreshExpiresAtMs").GetInt64();
+            await using (var setup = apiFactory.Services.CreateAsyncScope())
+            {
+                var db = setup.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+                var session = await db.RefreshTokens.SingleAsync(t => t.Id == source.Authorization.SessionId, Ct);
+                db.Entry(session).Property(t => t.ExpiresAt).CurrentValue = Instant.FromUnixTimeMilliseconds(expiry + offset);
+                await db.SaveChangesAsync(Ct);
+            }
             using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
             var deadlines = vector.GetProperty("requestDeadlines");
             var request = Request(source, receiver, direction) with

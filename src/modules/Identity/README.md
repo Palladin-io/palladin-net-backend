@@ -264,7 +264,8 @@ extension substitution/full-profile compromise remains outside this boundary.
   refresh token, bound authorization nonce/link epoch/preference revision, explicit
   receiver organization, the source's current effective `idleDeadlineMs`,
   `absoluteDeadlineMs`, `offlineDeadlineMs`, and verified channel/public-key metadata.
-  Required ceilings include a shorter local client policy. Identity clamps them to
+  Required ceilings use integer Unix milliseconds in `1..253402300799999` and
+  include a shorter local client policy. Identity clamps them to
   the current root and refresh expiry, additionally caps idle by effective absolute,
   and rejects expired ceilings. It snapshots current authority, generates a challenge, binds the complete MK transcript and
   creates an offered operation. TTL is at most 30 seconds, capped by every source
@@ -406,8 +407,8 @@ actual link-domain transitions. These tests do not replace browser consumer test
 or prove MK installation; adapters must use the same fixtures before release.
 
 
-The shared `operation-request-v1.json` fixture also executes four clamping and
+The shared `operation-request-v1.json` fixture also executes five clamping and
 24 rejection cases through actual HTTP binding/validation in both directions
-(56 combinations). Source-root authority is independent of requested/output
+(58 combinations). Source-root authority is independent of requested/output
 limits. Tests check the offered context and persisted committed receiver root,
 and prove invalid requests create neither an operation nor a receiver session.

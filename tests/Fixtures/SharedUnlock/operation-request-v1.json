@@ -68,6 +68,21 @@
         "offlineDeadlineMs": 1800003600000,
         "expiresAtMs": 1800000030000
       }
+    },
+    {
+      "name": "refresh-expiry-earlier-than-root",
+      "sourceRefreshExpiresAtMs": 1800000020000,
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedDeadlines": {
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800000020000,
+        "offlineDeadlineMs": 1800000020000,
+        "expiresAtMs": 1800000020000
+      }
     }
   ],
   "negative": [

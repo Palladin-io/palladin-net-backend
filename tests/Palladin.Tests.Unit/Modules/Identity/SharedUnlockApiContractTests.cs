@@ -60,6 +60,11 @@ public sealed class SharedUnlockApiContractTests
         // Then
         JsonNode.DeepEquals(serialized, JsonNode.Parse(expected.GetRawText())).ShouldBeTrue();
         validator.Validate(request).IsValid.ShouldBeTrue();
+        const long maxDeadlineMs = 253402300799999;
+        Instant.MaxValue.ToUnixTimeMilliseconds().ShouldBe(maxDeadlineMs);
+        validator.Validate(request with { IdleDeadlineMs = maxDeadlineMs }).IsValid.ShouldBeTrue();
+        validator.Validate(request with { AbsoluteDeadlineMs = maxDeadlineMs }).IsValid.ShouldBeTrue();
+        validator.Validate(request with { OfflineDeadlineMs = maxDeadlineMs }).IsValid.ShouldBeTrue();
         foreach (var invalid in new[] { 0L, -1L, long.MaxValue })
         {
             validator.Validate(request with { IdleDeadlineMs = invalid }).IsValid.ShouldBeFalse();

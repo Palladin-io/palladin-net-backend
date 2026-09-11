@@ -336,8 +336,11 @@ browser received or installed an MK.
 ### Linked logout, own activity and operational availability
 
 `POST api/account/shared-unlock/links/{LinkId}/logout` requires JWT, the current
-link revision and enabled preference revision. One domain commit locks the link,
+link revision and enabled preference revision. One domain commit closes the link,
 advances its epoch/revision and records both invalidation and logout sequences.
+An active or locked link becomes locked; an already disconnected link remains
+revoked. Logout therefore revokes its old logical sessions without reconnecting
+the browser. A later explicit reconnect preserves the logout barrier.
 It emits the existing `UserLoggedOutEvent`. It remains available when the selected
 membership is inactive, including an already locked link; a foreign link returns
 404. OFF rejects propagation with 409. The client must use ordinary local logout

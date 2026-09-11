@@ -111,8 +111,10 @@ public sealed class SharedUnlockSessionLifecycleTests(ApiFactory apiFactory) : T
             .Select(a => a.Sequence).ToListAsync(Ct)).ShouldAllBe(sequence => sequence == 1);
     }
 
-    [Fact]
-    public async Task When_LogoutFollowsLockWithRemovingMembership_Then_ExistingLocalSessionsStillClose()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_LogoutFollowsClosingWithRemovingMembership_Then_ExistingLocalSessionsStillClose(bool disconnected)
     {
         // Given
         var account = await SeedAsync();
@@ -122,7 +124,8 @@ public sealed class SharedUnlockSessionLifecycleTests(ApiFactory apiFactory) : T
             var user = await db.Users.SingleAsync(u => u.Id == account.User.Id, Ct);
             var link = await db.SharedUnlockLinks.SingleAsync(l => l.UserId == user.Id && l.Id == account.LinkId, Ct);
             user.TryAdvanceSharedUnlockSequence().ShouldBeTrue();
-            link.TryLock(2, user.SharedUnlockSequence, Now).ShouldBeTrue();
+            (disconnected ? link.TryDisconnect(2, user.SharedUnlockSequence, Now)
+                : link.TryLock(2, user.SharedUnlockSequence, Now)).ShouldBeTrue();
             var member = await db.OrganizationMembers.SingleAsync(m => m.UserId == user.Id, Ct);
             db.Entry(member).Property(m => m.Status).CurrentValue = OrganizationMemberStatus.Removing;
             await db.SaveChangesAsync(Ct);
@@ -136,7 +139,44 @@ public sealed class SharedUnlockSessionLifecycleTests(ApiFactory apiFactory) : T
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         result.LastLogoutSequence.ShouldBe(4u);
+        result.State.ShouldBe(disconnected ? "revoked" : "locked");
         (await RefreshAsync(account.PeerRaw)).Response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task When_LogoutFollowsDisconnect_Then_ReconnectCannotReviveItsSessions()
+    {
+        // Given
+        var account = await SeedAsync();
+        var client = apiFactory.CreateAuthenticatedClient(account.User);
+        var (disconnected, link) = await client.POSTAsync<DisconnectSharedUnlockLinkEndpoint,
+            DisconnectSharedUnlockLinkRequest, SharedUnlockLinkResponse>(new()
+        { LinkId = account.LinkId, ExpectedRevision = 2 });
+        disconnected.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await RefreshAsync(account.PeerRaw)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // When
+        var (stale, _) = await client.POSTAsync<LogoutSharedUnlockLinkEndpoint,
+            LogoutSharedUnlockLinkRequest, SharedUnlockLinkResponse>(Request(account));
+        var (response, loggedOut) = await client.POSTAsync<LogoutSharedUnlockLinkEndpoint,
+            LogoutSharedUnlockLinkRequest, SharedUnlockLinkResponse>(Request(account) with { ExpectedRevision = link.Revision });
+        var (reconnected, reopened) = await client.POSTAsync<ReconnectSharedUnlockLinkEndpoint,
+            ReconnectSharedUnlockLinkRequest, SharedUnlockLinkResponse>(new()
+        { LinkId = account.LinkId, ExpectedRevision = loggedOut.Revision });
+
+        // Then
+        stale.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        loggedOut.State.ShouldBe("revoked");
+        loggedOut.Revision.ShouldBe(link.Revision + 1);
+        loggedOut.Epoch.ShouldBe(link.Epoch + 1);
+        loggedOut.LastLogoutSequence.ShouldBeGreaterThan(link.LastInvalidationSequence);
+        reconnected.StatusCode.ShouldBe(HttpStatusCode.OK);
+        reopened.State.ShouldBe("locked");
+        reopened.LastLogoutSequence.ShouldBe(loggedOut.LastLogoutSequence);
+        (await RefreshAsync(account.SourceRaw)).Response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await RefreshAsync(account.PeerRaw)).Response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await RefreshAsync(account.OtherRaw)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]

@@ -49,7 +49,10 @@ internal sealed class SharedUnlockLink : EventEntityBase
 
     internal bool TryLogout(uint expectedRevision, uint sequence, Instant now)
     {
-        if (!TryLock(expectedRevision, sequence, now))
+        var closedState = State == SharedUnlockLinkState.Revoked
+            ? SharedUnlockLinkState.Revoked
+            : SharedUnlockLinkState.Locked;
+        if (!TryInvalidate(closedState, expectedRevision, sequence, now))
         {
             return false;
         }

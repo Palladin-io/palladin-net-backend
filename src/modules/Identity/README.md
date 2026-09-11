@@ -20,6 +20,7 @@ Auth endpoints (all `AllowAnonymous` unless noted; the anonymous ones ARE the au
 - `POST api/auth/verify-email` — consumes a single-use token; expired vs invalid distinguished by error key. It can activate the matching waitlist benefit and returns the verified `UserId` plus the active exact benefit window.
 - `POST api/auth/verify-email/resend` (JWT) — throttled re-issue; already-verified/OAuth is a 204 no-op.
 - `POST api/auth/totp/enroll` · `/confirm` · `/disable` (JWT) — TOTP lifecycle; confirm returns one-time recovery codes (only hashes stored).
+- `GET api/account` (JWT) reports explicit `totpEnabled` from the authenticated user's factor in the existing no-tracking account projection. Missing, pending-only and disabled factors return `false`; a confirmed enabled factor returns `true`. No TOTP seed or recovery code is included. Provider contract tests cover all four states with another enabled account present.
 - `PUT api/account/password` (JWT) — version 1 password change with current-credential proof and credential/wrap revision CAS; preserves recovery material and revokes all refresh sessions.
 - `PUT api/account/recovery` (JWT) — recovery-secret proof happens client-side; atomically installs version 1 authentication/wrapper state, preserves the Member keypair, invalidates old device wrappers and revokes all refresh sessions.
 

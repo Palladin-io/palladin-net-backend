@@ -29,6 +29,9 @@ public sealed record CreateSharedUnlockOperationRequest
     public uint LinkEpoch { get; init; }
     public uint ExpectedPreferenceRevision { get; init; }
     public Guid RecipientOrganizationId { get; init; }
+    public long IdleDeadlineMs { get; init; }
+    public long AbsoluteDeadlineMs { get; init; }
+    public long OfflineDeadlineMs { get; init; }
     public string Direction { get; init; } = string.Empty;
     public string ApiOrigin { get; init; } = string.Empty;
     public string WebOrigin { get; init; } = string.Empty;
@@ -80,6 +83,9 @@ internal sealed class CreateSharedUnlockOperationValidator : Validator<CreateSha
         RuleFor(request => request.LinkEpoch).GreaterThan(0u);
         RuleFor(request => request.ExpectedPreferenceRevision).GreaterThan(0u);
         RuleFor(request => request.RecipientOrganizationId).NotEmpty();
+        RuleFor(request => request.IdleDeadlineMs).InclusiveBetween(1, Instant.MaxValue.ToUnixTimeMilliseconds());
+        RuleFor(request => request.AbsoluteDeadlineMs).InclusiveBetween(1, Instant.MaxValue.ToUnixTimeMilliseconds());
+        RuleFor(request => request.OfflineDeadlineMs).InclusiveBetween(1, Instant.MaxValue.ToUnixTimeMilliseconds());
         RuleFor(request => request.Direction).Must(value => value is "web-to-extension" or "extension-to-web");
         RuleFor(request => request.ApiOrigin).MaximumLength(256).Must(IsOrigin);
         RuleFor(request => request.WebOrigin).MaximumLength(256).Must(IsOrigin);
@@ -140,12 +146,21 @@ internal sealed class CreateSharedUnlockOperationEndpoint(IdentityDomainWriteCon
             await SendUnavailableAsync(ct);
             return;
         }
+        var idleDeadline = Instant.FromUnixTimeMilliseconds(req.IdleDeadlineMs);
+        var absoluteDeadline = Instant.FromUnixTimeMilliseconds(req.AbsoluteDeadlineMs);
+        var offlineDeadline = Instant.FromUnixTimeMilliseconds(req.OfflineDeadlineMs);
+        if (idleDeadline <= now || absoluteDeadline <= now || offlineDeadline <= now)
+        {
+            await SendUnavailableAsync(ct);
+            return;
+        }
         var operation = SharedUnlockOperation.Create(guidProvider.Generate(), authority.User, authority.Source,
             session, authority.SourceOrganization, authority.TargetOrganization, authority.TargetMember, authority.Link,
             new SharedUnlockChannel(direction, req.ApiOrigin, req.WebOrigin, req.ExtensionId, req.DocumentBinding,
                 req.WebGeneration, req.ExtensionGeneration, req.SourcePublicKey, req.RecipientPublicKey,
                 req.RecipientProofPublicKey), SharedUnlockKeyContextDigest.Hash(authority.KeyContext),
-            SharedUnlockTranscript.Challenge(), Instant.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds()));
+            SharedUnlockTranscript.Challenge(), idleDeadline, absoluteDeadline, offlineDeadline,
+            Instant.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds()));
         operation.BindTranscriptHash(SharedUnlockTranscript.Hash(operation));
         context.Add(operation);
         authority.Fence(context);

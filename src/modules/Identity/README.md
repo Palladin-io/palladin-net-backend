@@ -262,10 +262,19 @@ extension substitution/full-profile compromise remains outside this boundary.
 
 - `POST api/account/shared-unlock/operations` requires source JWT, its own current
   refresh token, bound authorization nonce/link epoch/preference revision, explicit
-  receiver organization and the verified channel/public-key metadata. It snapshots
-  current authority, generates a challenge, binds the complete MK transcript and
+  receiver organization, the source's current effective `idleDeadlineMs`,
+  `absoluteDeadlineMs`, `offlineDeadlineMs`, and verified channel/public-key metadata.
+  Required ceilings use integer Unix milliseconds in `1..253402300799999` and
+  include a shorter local client policy. Identity clamps them to
+  the current root and refresh expiry, additionally caps idle by effective absolute,
+  and rejects expired ceilings. It snapshots current authority, generates a challenge, binds the complete MK transcript and
   creates an offered operation. TTL is at most 30 seconds, capped by every source
-  deadline and current refresh expiry. The source never forwards its own tokens.
+  effective deadline and current refresh expiry. The committed receiver root keeps
+  these shorter ceilings through subsequent handoffs, even if the next request
+  declares longer limits. Original unlockedAt, sequence and MFA age remain unchanged;
+  the original source root is not shortened by a peer handoff. Receivers still apply
+  their own shorter policy and submit those effective limits if they become a source.
+  The source never forwards its own tokens.
 - `POST api/auth/shared-unlock/operations/{OperationId}/consume` is anonymous at the
   JWT layer because the receiver may be signed out. A valid Ed25519 consume proof
   bound to the persisted operation is mandatory. Identity rechecks all current
@@ -396,3 +405,15 @@ combinations of independent session fields in each direction), distinct source/
 recipient organizations and versions, coherent descriptor/proof bindings and the seven
 actual link-domain transitions. These tests do not replace browser consumer tests
 or prove MK installation; adapters must use the same fixtures before release.
+
+
+The shared `operation-request-v1.json` fixture also executes five clamping and
+24 rejection cases through actual HTTP binding/validation in both directions
+(58 combinations). Source-root authority is independent of requested/output
+limits. Tests check the offered context and persisted committed receiver root,
+and prove invalid requests create neither an operation nor a receiver session.
+
+Each positive fixture commits after two seconds and uses that receiver's own
+session for a reverse handoff at five/six seconds. Both persisted receiver roots
+and refresh sessions retain the original unlock timestamp, sequence and MFA age,
+as well as the clamped ceilings; the new operation keeps its own bounded TTL.

@@ -1,0 +1,288 @@
+{
+  "warning": "Deterministic synthetic request cases. Apply to both full createRequest direction fixtures, replacing only deadline fields. Identity validates requests; consumers must not duplicate these rules as response validation.",
+  "nowMs": 1800000000000,
+  "sourceAuthorization": {
+    "unlockedAtMs": 1800000000000,
+    "idleDeadlineMs": 1800000900000,
+    "absoluteDeadlineMs": 1800028800000,
+    "offlineDeadlineMs": 1800003600000
+  },
+  "sourceRefreshExpiresAtMs": 1800086400000,
+  "directions": [
+    "web-to-extension",
+    "extension-to-web"
+  ],
+  "positive": [
+    {
+      "name": "shorter-idleDeadlineMs",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedDeadlines": {
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000,
+        "expiresAtMs": 1800000020000
+      }
+    },
+    {
+      "name": "shorter-absoluteDeadlineMs",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800000020000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedDeadlines": {
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800000020000,
+        "offlineDeadlineMs": 1800003600000,
+        "expiresAtMs": 1800000020000
+      }
+    },
+    {
+      "name": "shorter-offlineDeadlineMs",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800000020000
+      },
+      "expectedDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800000020000,
+        "expiresAtMs": 1800000020000
+      }
+    },
+    {
+      "name": "longer-request-clamped-to-source",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800086500000,
+        "absoluteDeadlineMs": 1800086500000,
+        "offlineDeadlineMs": 1800086500000
+      },
+      "expectedDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000,
+        "expiresAtMs": 1800000030000
+      }
+    }
+  ],
+  "negative": [
+    {
+      "name": "idleDeadlineMs/omitted",
+      "requestDeadlines": {
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/null",
+      "requestDeadlines": {
+        "idleDeadlineMs": null,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/text",
+      "requestDeadlines": {
+        "idleDeadlineMs": "invalid-deadline",
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/fractional",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000000000.5,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/zero",
+      "requestDeadlines": {
+        "idleDeadlineMs": 0,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/negative",
+      "requestDeadlines": {
+        "idleDeadlineMs": -1,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/out-of-range",
+      "requestDeadlines": {
+        "idleDeadlineMs": 253402300800000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "idleDeadlineMs/expired",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000000000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 409
+    },
+    {
+      "name": "absoluteDeadlineMs/omitted",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/null",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": null,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/text",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": "invalid-deadline",
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/fractional",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800000000000.5,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/zero",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 0,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/negative",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": -1,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/out-of-range",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 253402300800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "absoluteDeadlineMs/expired",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800000000000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedStatus": 409
+    },
+    {
+      "name": "offlineDeadlineMs/omitted",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/null",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": null
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/text",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": "invalid-deadline"
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/fractional",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800000000000.5
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/zero",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 0
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/negative",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": -1
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/out-of-range",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 253402300800000
+      },
+      "expectedStatus": 400
+    },
+    {
+      "name": "offlineDeadlineMs/expired",
+      "requestDeadlines": {
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800000000000
+      },
+      "expectedStatus": 409
+    }
+  ]
+}

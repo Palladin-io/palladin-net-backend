@@ -23,6 +23,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Content Include="..\Fixtures\SharedUnlock\operation-request-v1.json" Link="Fixtures\SharedUnlock\operation-request-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\..\src\Palladin.Api\Palladin.Api.csproj" />
     </ItemGroup>
 

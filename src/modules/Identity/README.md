@@ -404,3 +404,10 @@ combinations of independent session fields in each direction), distinct source/
 recipient organizations and versions, coherent descriptor/proof bindings and the seven
 actual link-domain transitions. These tests do not replace browser consumer tests
 or prove MK installation; adapters must use the same fixtures before release.
+
+
+The shared `operation-request-v1.json` fixture also executes four clamping and
+24 rejection cases through actual HTTP binding/validation in both directions
+(56 combinations). Source-root authority is independent of requested/output
+limits. Tests check the offered context and persisted committed receiver root,
+and prove invalid requests create neither an operation nor a receiver session.

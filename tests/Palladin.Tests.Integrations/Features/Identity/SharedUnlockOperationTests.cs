@@ -1,6 +1,10 @@
 using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Palladin.Core.Json;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -202,6 +206,99 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
         (await db.SharedUnlockOperations.AnyAsync(o => o.UserId == source.User.Id, Ct)).ShouldBeFalse();
         (await db.RefreshTokens.CountAsync(t => t.UserId == source.User.Id, Ct)).ShouldBe(1);
     }
+
+    [Theory]
+    [InlineData("web-to-extension")]
+    [InlineData("extension-to-web")]
+    public async Task When_SharedClampFixturesReachProvider_Then_OperationAndReceiverMatchIndependentExpectedLimits(string direction)
+    {
+        // Given
+        using var fixture = ReadOperationRequests();
+        var fixtureNow = fixture.RootElement.GetProperty("nowMs").GetInt64();
+        var offset = Now.ToUnixTimeMilliseconds() - fixtureNow;
+        var source = await SeedSourceAsync();
+        var root = fixture.RootElement.GetProperty("sourceAuthorization");
+        source.Authorization.UnlockedAt.ToUnixTimeMilliseconds().ShouldBe(root.GetProperty("unlockedAtMs").GetInt64() + offset);
+        source.Authorization.IdleDeadline.ToUnixTimeMilliseconds().ShouldBe(root.GetProperty("idleDeadlineMs").GetInt64() + offset);
+        source.Authorization.AbsoluteDeadline.ToUnixTimeMilliseconds().ShouldBe(root.GetProperty("absoluteDeadlineMs").GetInt64() + offset);
+        source.Authorization.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(root.GetProperty("offlineDeadlineMs").GetInt64() + offset);
+        foreach (var vector in fixture.RootElement.GetProperty("positive").EnumerateArray())
+        {
+            using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+            var deadlines = vector.GetProperty("requestDeadlines");
+            var request = Request(source, receiver, direction) with
+            {
+                IdleDeadlineMs = deadlines.GetProperty("idleDeadlineMs").GetInt64() + offset,
+                AbsoluteDeadlineMs = deadlines.GetProperty("absoluteDeadlineMs").GetInt64() + offset,
+                OfflineDeadlineMs = deadlines.GetProperty("offlineDeadlineMs").GetInt64() + offset,
+            };
+
+            // When
+            var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+                .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+            offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+            (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var (committed, result) = await CommitAsync(operation, receiver);
+
+            // Then
+            committed.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var expected = vector.GetProperty("expectedDeadlines");
+            result.Context.ShouldBe(operation.Context);
+            result.Context.IdleDeadlineMs.ShouldBe(expected.GetProperty("idleDeadlineMs").GetInt64() + offset);
+            result.Context.AbsoluteDeadlineMs.ShouldBe(expected.GetProperty("absoluteDeadlineMs").GetInt64() + offset);
+            result.Context.OfflineDeadlineMs.ShouldBe(expected.GetProperty("offlineDeadlineMs").GetInt64() + offset);
+            result.Context.ExpiresAtMs.ShouldBe(expected.GetProperty("expiresAtMs").GetInt64() + offset);
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var read = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+            var inherited = await read.SharedUnlockAuthorizations.SingleAsync(a => a.Id == result.AuthorizationId, Ct);
+            inherited.IdleDeadline.ToUnixTimeMilliseconds().ShouldBe(result.Context.IdleDeadlineMs);
+            inherited.AbsoluteDeadline.ToUnixTimeMilliseconds().ShouldBe(result.Context.AbsoluteDeadlineMs);
+            inherited.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(result.Context.OfflineDeadlineMs);
+        }
+    }
+
+    [Theory]
+    [InlineData("web-to-extension")]
+    [InlineData("extension-to-web")]
+    public async Task When_SharedRejectionFixturesReachProvider_Then_NoOperationOrReceiverIsCreated(string direction)
+    {
+        // Given
+        using var fixture = ReadOperationRequests();
+        var fixtureNow = fixture.RootElement.GetProperty("nowMs").GetInt64();
+        var offset = Now.ToUnixTimeMilliseconds() - fixtureNow;
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var client = apiFactory.CreateAuthenticatedClient(source.User);
+        foreach (var vector in fixture.RootElement.GetProperty("negative").EnumerateArray())
+        {
+            var request = JsonSerializer.SerializeToNode(Request(source, receiver, direction), PalladinJsonSerializationSettings.DefaultOptions)!.AsObject();
+            foreach (var field in new[] { "idleDeadlineMs", "absoluteDeadlineMs", "offlineDeadlineMs" })
+            {
+                request.Remove(field);
+            }
+            foreach (var field in vector.GetProperty("requestDeadlines").EnumerateObject())
+            {
+                request[field.Name] = field.Value.ValueKind == JsonValueKind.Number
+                    && field.Value.GetDouble() >= fixtureNow
+                    && field.Value.GetDouble() <= fixture.RootElement.GetProperty("sourceRefreshExpiresAtMs").GetDouble()
+                    ? JsonValue.Create(field.Value.GetDouble() + offset)
+                    : JsonNode.Parse(field.Value.GetRawText());
+            }
+
+            // When
+            var response = await client.PostAsJsonAsync("api/account/shared-unlock/operations", request, Ct);
+
+            // Then
+            ((int)response.StatusCode).ShouldBe(vector.GetProperty("expectedStatus").GetInt32(), vector.GetProperty("name").GetString());
+        }
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var read = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await read.SharedUnlockOperations.AnyAsync(o => o.UserId == source.User.Id, Ct)).ShouldBeFalse();
+        (await read.RefreshTokens.CountAsync(t => t.UserId == source.User.Id, Ct)).ShouldBe(1);
+    }
+
+    private static JsonDocument ReadOperationRequests() => JsonDocument.Parse(File.ReadAllText(
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "SharedUnlock", "operation-request-v1.json")));
 
     [Theory]
     [InlineData("wrong-key")]

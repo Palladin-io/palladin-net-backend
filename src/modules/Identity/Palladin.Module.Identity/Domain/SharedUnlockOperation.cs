@@ -55,10 +55,14 @@ internal sealed class SharedUnlockOperation
         SharedUnlockAuthorization source, RefreshToken sourceSession,
         Organization sourceOrganization, Organization targetOrganization,
         OrganizationMember targetMember, SharedUnlockLink link,
-        SharedUnlockChannel channel, byte[] keyDigest, byte[] challenge, Instant now)
+        SharedUnlockChannel channel, byte[] keyDigest, byte[] challenge, Instant idleDeadline,
+        Instant absoluteDeadline, Instant offlineDeadline, Instant now)
     {
-        var expiresAt = new[] { now + Duration.FromSeconds(30), source.IdleDeadline,
-            source.AbsoluteDeadline, source.OfflineDeadline, sourceSession.ExpiresAt }.Min();
+        absoluteDeadline = new[] { absoluteDeadline, source.AbsoluteDeadline, sourceSession.ExpiresAt }.Min();
+        idleDeadline = new[] { idleDeadline, source.IdleDeadline, absoluteDeadline }.Min();
+        offlineDeadline = new[] { offlineDeadline, source.OfflineDeadline, sourceSession.ExpiresAt }.Min();
+        var expiresAt = new[] { now + Duration.FromSeconds(30), idleDeadline,
+            absoluteDeadline, offlineDeadline }.Min();
         expiresAt = Instant.FromUnixTimeMilliseconds(expiresAt.ToUnixTimeMilliseconds());
         if (expiresAt <= now || id == Guid.Empty || keyDigest.Length != 32 || challenge.Length != 32
             || source.UserId != user.Id || sourceSession.UserId != user.Id || link.UserId != user.Id
@@ -87,8 +91,8 @@ internal sealed class SharedUnlockOperation
             RecipientProofPublicKey = channel.RecipientProofPublicKey.ToArray(),
             Challenge = challenge.ToArray(), KeyContextDigest = keyDigest.ToArray(),
             IssuedAt = now, ExpiresAt = expiresAt, UnlockedAt = source.UnlockedAt,
-            IdleDeadline = source.IdleDeadline, AbsoluteDeadline = source.AbsoluteDeadline,
-            OfflineDeadline = source.OfflineDeadline, State = SharedUnlockOperationState.Offered, Revision = 1,
+            IdleDeadline = idleDeadline, AbsoluteDeadline = absoluteDeadline,
+            OfflineDeadline = offlineDeadline, State = SharedUnlockOperationState.Offered, Revision = 1,
         };
     }
 

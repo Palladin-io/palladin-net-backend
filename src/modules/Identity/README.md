@@ -262,10 +262,18 @@ extension substitution/full-profile compromise remains outside this boundary.
 
 - `POST api/account/shared-unlock/operations` requires source JWT, its own current
   refresh token, bound authorization nonce/link epoch/preference revision, explicit
-  receiver organization and the verified channel/public-key metadata. It snapshots
-  current authority, generates a challenge, binds the complete MK transcript and
+  receiver organization, the source's current effective `idleDeadlineMs`,
+  `absoluteDeadlineMs`, `offlineDeadlineMs`, and verified channel/public-key metadata.
+  Required ceilings include a shorter local client policy. Identity clamps them to
+  the current root and refresh expiry, additionally caps idle by effective absolute,
+  and rejects expired ceilings. It snapshots current authority, generates a challenge, binds the complete MK transcript and
   creates an offered operation. TTL is at most 30 seconds, capped by every source
-  deadline and current refresh expiry. The source never forwards its own tokens.
+  effective deadline and current refresh expiry. The committed receiver root keeps
+  these shorter ceilings through subsequent handoffs, even if the next request
+  declares longer limits. Original unlockedAt, sequence and MFA age remain unchanged;
+  the original source root is not shortened by a peer handoff. Receivers still apply
+  their own shorter policy and submit those effective limits if they become a source.
+  The source never forwards its own tokens.
 - `POST api/auth/shared-unlock/operations/{OperationId}/consume` is anonymous at the
   JWT layer because the receiver may be signed out. A valid Ed25519 consume proof
   bound to the persisted operation is mandatory. Identity rechecks all current

@@ -111,6 +111,99 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Theory]
+    [InlineData("web-to-extension", "idle")]
+    [InlineData("web-to-extension", "absolute")]
+    [InlineData("web-to-extension", "offline")]
+    [InlineData("extension-to-web", "idle")]
+    [InlineData("extension-to-web", "absolute")]
+    [InlineData("extension-to-web", "offline")]
+    public async Task When_ClientHasShorterLimit_Then_CommitAndNextHandoffPreserveIt(string direction, string limit)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var cap = Now + Duration.FromSeconds(20);
+        var request = Request(source, receiver, direction);
+        request = limit switch
+        {
+            "idle" => request with { IdleDeadlineMs = cap.ToUnixTimeMilliseconds() },
+            "absolute" => request with { AbsoluteDeadlineMs = cap.ToUnixTimeMilliseconds() },
+            _ => request with { OfflineDeadlineMs = cap.ToUnixTimeMilliseconds() },
+        };
+
+        // When
+        var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+        offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+        operation.Context.ExpiresAtMs.ShouldBe(cap.ToUnixTimeMilliseconds());
+        (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var (committed, first) = await CommitAsync(operation, receiver);
+        committed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var nextReceiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var reverse = direction == "web-to-extension" ? "extension-to-web" : "web-to-extension";
+        var nextRequest = Request(source, nextReceiver, reverse) with
+        {
+            RefreshToken = first.Session.RefreshToken, AuthorizationId = first.AuthorizationId,
+            ExtensionGeneration = direction == "web-to-extension" ? RecipientGeneration : NewWebGeneration,
+            WebGeneration = direction == "web-to-extension" ? NewWebGeneration : RecipientGeneration,
+        };
+        var nextClient = apiFactory.CreateClient();
+        nextClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", first.Session.AccessToken);
+        var (nextOffered, next) = await nextClient
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(nextRequest);
+        nextOffered.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await ConsumeAsync(next, nextReceiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var (nextCommitted, final) = await CommitAsync(next, nextReceiver);
+
+        // Then
+        nextCommitted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        final.Context.UnlockedAtMs.ShouldBe(source.Authorization.UnlockedAt.ToUnixTimeMilliseconds());
+        final.Context.IdleDeadlineMs.ShouldBe(limit is "idle" or "absolute" ? cap.ToUnixTimeMilliseconds() : request.IdleDeadlineMs);
+        final.Context.AbsoluteDeadlineMs.ShouldBe(request.AbsoluteDeadlineMs);
+        final.Context.OfflineDeadlineMs.ShouldBe(request.OfflineDeadlineMs);
+        final.Context.ExpiresAtMs.ShouldBe(cap.ToUnixTimeMilliseconds());
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var inherited = await db.SharedUnlockAuthorizations.SingleAsync(a => a.Id == final.AuthorizationId, Ct);
+        inherited.SecondFactorVerifiedAt.ShouldBe(source.Authorization.SecondFactorVerifiedAt);
+        inherited.SecondFactorRevision.ShouldBe(source.Authorization.SecondFactorRevision);
+        inherited.Sequence.ShouldBe(source.Authorization.Sequence);
+        var original = await db.SharedUnlockAuthorizations.SingleAsync(a => a.Id == source.Authorization.Id, Ct);
+        original.IdleDeadline.ShouldBe(source.Authorization.IdleDeadline);
+        original.AbsoluteDeadline.ShouldBe(source.Authorization.AbsoluteDeadline);
+        original.OfflineDeadline.ShouldBe(source.Authorization.OfflineDeadline);
+    }
+
+    [Theory]
+    [InlineData("idle")]
+    [InlineData("absolute")]
+    [InlineData("offline")]
+    public async Task When_ClientLimitIsExpired_Then_NoOperationOrReceiverSessionIsCreated(string limit)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var request = Request(source, receiver);
+        request = limit switch
+        {
+            "idle" => request with { IdleDeadlineMs = Now.ToUnixTimeMilliseconds() },
+            "absolute" => request with { AbsoluteDeadlineMs = Now.ToUnixTimeMilliseconds() },
+            _ => request with { OfflineDeadlineMs = Now.ToUnixTimeMilliseconds() },
+        };
+
+        // When
+        var (response, _) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await db.SharedUnlockOperations.AnyAsync(o => o.UserId == source.User.Id, Ct)).ShouldBeFalse();
+        (await db.RefreshTokens.CountAsync(t => t.UserId == source.User.Id, Ct)).ShouldBe(1);
+    }
+
+    [Theory]
     [InlineData("wrong-key")]
     [InlineData("wrong-purpose")]
     [InlineData("wrong-operation")]
@@ -298,15 +391,32 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task When_OperationReachesExactExpiry_Then_ConsumeOrCommitCannotIssueSession(bool afterConsume)
+    [InlineData(false, "ttl")]
+    [InlineData(true, "ttl")]
+    [InlineData(false, "idle")]
+    [InlineData(true, "idle")]
+    [InlineData(false, "absolute")]
+    [InlineData(true, "absolute")]
+    [InlineData(false, "offline")]
+    [InlineData(true, "offline")]
+    public async Task When_OperationReachesExactExpiry_Then_ConsumeOrCommitCannotIssueSession(bool afterConsume, string limit)
     {
         // Given
         var originalTime = apiFactory.FakeClock.GetCurrentInstant();
         var source = await SeedSourceAsync();
         using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
-        var operation = await OfferAsync(source, receiver);
+        var request = Request(source, receiver);
+        var cap = (Now + Duration.FromSeconds(10)).ToUnixTimeMilliseconds();
+        request = limit switch
+        {
+            "idle" => request with { IdleDeadlineMs = cap },
+            "absolute" => request with { AbsoluteDeadlineMs = cap },
+            "offline" => request with { OfflineDeadlineMs = cap },
+            _ => request,
+        };
+        var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+        offered.StatusCode.ShouldBe(HttpStatusCode.OK);
         if (afterConsume)
         {
             (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -444,7 +554,8 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
                     new SharedUnlockChannel(SharedUnlockDirection.WebToExtension, "https://api.example.test",
                         "https://app.example.test", "synthetic-extension", "synthetic-document", SourceGeneration,
                         RecipientGeneration, SourceGeneration, RecipientGeneration, receiver.PublicKey.Export(KeyBlobFormat.RawPublicKey)),
-                    SharedUnlockKeyContextDigest.Hash(SharedUnlockKeyContextDigest.FromUser(user)!), new byte[32], Now);
+                    SharedUnlockKeyContextDigest.Hash(SharedUnlockKeyContextDigest.FromUser(user)!), new byte[32],
+                    source.Authorization.IdleDeadline, source.Authorization.AbsoluteDeadline, source.Authorization.OfflineDeadline, Now);
                 operation.BindTranscriptHash(SharedUnlockTranscript.Hash(operation));
                 db.SharedUnlockOperations.Add(operation);
                 if (i < 3) { db.Entry(operation).Property(o => o.ExpiresAt).CurrentValue = Now; }
@@ -566,6 +677,9 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
     {
         RefreshToken = source.RawToken, AuthorizationId = source.Authorization.Id, LinkId = source.Link.Id,
         LinkEpoch = source.Link.Epoch, ExpectedPreferenceRevision = 1, RecipientOrganizationId = source.User.OrganizationId,
+        IdleDeadlineMs = source.Authorization.IdleDeadline.ToUnixTimeMilliseconds(),
+        AbsoluteDeadlineMs = source.Authorization.AbsoluteDeadline.ToUnixTimeMilliseconds(),
+        OfflineDeadlineMs = source.Authorization.OfflineDeadline.ToUnixTimeMilliseconds(),
         Direction = direction, ApiOrigin = "https://api.example.test", WebOrigin = "https://app.example.test",
         ExtensionId = "synthetic-extension", DocumentBinding = "synthetic-browser-document",
         WebGeneration = direction == "web-to-extension" ? SourceGeneration : RecipientGeneration,

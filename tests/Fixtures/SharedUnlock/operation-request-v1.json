@@ -2,12 +2,20 @@
   "warning": "Deterministic synthetic request cases. Apply to both full createRequest direction fixtures, replacing only deadline fields. Identity validates requests; consumers must not duplicate these rules as response validation.",
   "nowMs": 1800000000000,
   "sourceAuthorization": {
+    "sequence": 1,
+    "secondFactorRevision": 2,
+    "secondFactorVerifiedAtMs": 1799999700000,
     "unlockedAtMs": 1800000000000,
     "idleDeadlineMs": 1800000900000,
     "absoluteDeadlineMs": 1800028800000,
     "offlineDeadlineMs": 1800003600000
   },
   "sourceRefreshExpiresAtMs": 1800086400000,
+  "lifecycle": {
+    "firstCommitAtMs": 1800000002000,
+    "reverseOfferAtMs": 1800000005000,
+    "reverseCommitAtMs": 1800000006000
+  },
   "directions": [
     "web-to-extension",
     "extension-to-web"
@@ -25,7 +33,17 @@
         "absoluteDeadlineMs": 1800028800000,
         "offlineDeadlineMs": 1800003600000,
         "expiresAtMs": 1800000020000
-      }
+      },
+      "expectedReceiverAuthority": {
+        "sequence": 1,
+        "secondFactorRevision": 2,
+        "secondFactorVerifiedAtMs": 1799999700000,
+        "unlockedAtMs": 1800000000000,
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedReverseExpiresAtMs": 1800000020000
     },
     {
       "name": "shorter-absoluteDeadlineMs",
@@ -39,7 +57,17 @@
         "absoluteDeadlineMs": 1800000020000,
         "offlineDeadlineMs": 1800003600000,
         "expiresAtMs": 1800000020000
-      }
+      },
+      "expectedReceiverAuthority": {
+        "sequence": 1,
+        "secondFactorRevision": 2,
+        "secondFactorVerifiedAtMs": 1799999700000,
+        "unlockedAtMs": 1800000000000,
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800000020000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedReverseExpiresAtMs": 1800000020000
     },
     {
       "name": "shorter-offlineDeadlineMs",
@@ -53,7 +81,17 @@
         "absoluteDeadlineMs": 1800028800000,
         "offlineDeadlineMs": 1800000020000,
         "expiresAtMs": 1800000020000
-      }
+      },
+      "expectedReceiverAuthority": {
+        "sequence": 1,
+        "secondFactorRevision": 2,
+        "secondFactorVerifiedAtMs": 1799999700000,
+        "unlockedAtMs": 1800000000000,
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800000020000
+      },
+      "expectedReverseExpiresAtMs": 1800000020000
     },
     {
       "name": "longer-request-clamped-to-source",
@@ -67,7 +105,17 @@
         "absoluteDeadlineMs": 1800028800000,
         "offlineDeadlineMs": 1800003600000,
         "expiresAtMs": 1800000030000
-      }
+      },
+      "expectedReceiverAuthority": {
+        "sequence": 1,
+        "secondFactorRevision": 2,
+        "secondFactorVerifiedAtMs": 1799999700000,
+        "unlockedAtMs": 1800000000000,
+        "idleDeadlineMs": 1800000900000,
+        "absoluteDeadlineMs": 1800028800000,
+        "offlineDeadlineMs": 1800003600000
+      },
+      "expectedReverseExpiresAtMs": 1800000035000
     },
     {
       "name": "refresh-expiry-earlier-than-root",
@@ -82,7 +130,17 @@
         "absoluteDeadlineMs": 1800000020000,
         "offlineDeadlineMs": 1800000020000,
         "expiresAtMs": 1800000020000
-      }
+      },
+      "expectedReceiverAuthority": {
+        "sequence": 1,
+        "secondFactorRevision": 2,
+        "secondFactorVerifiedAtMs": 1799999700000,
+        "unlockedAtMs": 1800000000000,
+        "idleDeadlineMs": 1800000020000,
+        "absoluteDeadlineMs": 1800000020000,
+        "offlineDeadlineMs": 1800000020000
+      },
+      "expectedReverseExpiresAtMs": 1800000020000
     }
   ],
   "negative": [

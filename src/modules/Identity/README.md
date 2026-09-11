@@ -412,3 +412,8 @@ The shared `operation-request-v1.json` fixture also executes five clamping and
 (58 combinations). Source-root authority is independent of requested/output
 limits. Tests check the offered context and persisted committed receiver root,
 and prove invalid requests create neither an operation nor a receiver session.
+
+Each positive fixture commits after two seconds and uses that receiver's own
+session for a reverse handoff at five/six seconds. Both persisted receiver roots
+and refresh sessions retain the original unlock timestamp, sequence and MFA age,
+as well as the clamped ceilings; the new operation keeps its own bounded TTL.

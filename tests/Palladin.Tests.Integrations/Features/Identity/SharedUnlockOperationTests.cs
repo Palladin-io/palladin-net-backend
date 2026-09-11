@@ -224,46 +224,90 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
         source.Authorization.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(root.GetProperty("offlineDeadlineMs").GetInt64() + offset);
         foreach (var vector in fixture.RootElement.GetProperty("positive").EnumerateArray())
         {
-            var expiry = vector.TryGetProperty("sourceRefreshExpiresAtMs", out var overrideExpiry)
-                ? overrideExpiry.GetInt64() : fixture.RootElement.GetProperty("sourceRefreshExpiresAtMs").GetInt64();
-            await using (var setup = apiFactory.Services.CreateAsyncScope())
+            var originalTime = apiFactory.FakeClock.GetCurrentInstant();
+            try
             {
-                var db = setup.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
-                var session = await db.RefreshTokens.SingleAsync(t => t.Id == source.Authorization.SessionId, Ct);
-                db.Entry(session).Property(t => t.ExpiresAt).CurrentValue = Instant.FromUnixTimeMilliseconds(expiry + offset);
-                await db.SaveChangesAsync(Ct);
+                var expiry = vector.TryGetProperty("sourceRefreshExpiresAtMs", out var overrideExpiry)
+                    ? overrideExpiry.GetInt64() : fixture.RootElement.GetProperty("sourceRefreshExpiresAtMs").GetInt64();
+                await using (var setup = apiFactory.Services.CreateAsyncScope())
+                {
+                    var db = setup.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+                    var session = await db.RefreshTokens.SingleAsync(t => t.Id == source.Authorization.SessionId, Ct);
+                    db.Entry(session).Property(t => t.ExpiresAt).CurrentValue = Instant.FromUnixTimeMilliseconds(expiry + offset);
+                    await db.SaveChangesAsync(Ct);
+                }
+                using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+                var deadlines = vector.GetProperty("requestDeadlines");
+                var request = Request(source, receiver, direction) with
+                {
+                    IdleDeadlineMs = deadlines.GetProperty("idleDeadlineMs").GetInt64() + offset,
+                    AbsoluteDeadlineMs = deadlines.GetProperty("absoluteDeadlineMs").GetInt64() + offset,
+                    OfflineDeadlineMs = deadlines.GetProperty("offlineDeadlineMs").GetInt64() + offset,
+                };
+
+                // When
+                var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+                    .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+                offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+                (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+                var lifecycle = fixture.RootElement.GetProperty("lifecycle");
+                apiFactory.FakeClock.Reset(Instant.FromUnixTimeMilliseconds(lifecycle.GetProperty("firstCommitAtMs").GetInt64() + offset));
+                var (committed, result) = await CommitAsync(operation, receiver);
+
+                // Then
+                committed.StatusCode.ShouldBe(HttpStatusCode.OK);
+                var expected = vector.GetProperty("expectedDeadlines");
+                result.Context.ShouldBe(operation.Context);
+                result.Context.IdleDeadlineMs.ShouldBe(expected.GetProperty("idleDeadlineMs").GetInt64() + offset);
+                result.Context.AbsoluteDeadlineMs.ShouldBe(expected.GetProperty("absoluteDeadlineMs").GetInt64() + offset);
+                result.Context.OfflineDeadlineMs.ShouldBe(expected.GetProperty("offlineDeadlineMs").GetInt64() + offset);
+                result.Context.ExpiresAtMs.ShouldBe(expected.GetProperty("expiresAtMs").GetInt64() + offset);
+                var expectedAuthority = vector.GetProperty("expectedReceiverAuthority");
+                await AssertReceiverAuthorityAsync(result.AuthorizationId, expectedAuthority, offset);
+
+                using var nextReceiver = Key.Create(SignatureAlgorithm.Ed25519);
+                var reverse = direction == "web-to-extension" ? "extension-to-web" : "web-to-extension";
+                var nextRequest = Request(source, nextReceiver, reverse) with
+                {
+                    RefreshToken = result.Session.RefreshToken, AuthorizationId = result.AuthorizationId,
+                    ExtensionGeneration = direction == "web-to-extension" ? RecipientGeneration : NewWebGeneration,
+                    WebGeneration = direction == "web-to-extension" ? NewWebGeneration : RecipientGeneration,
+                };
+                var nextClient = apiFactory.CreateClient();
+                nextClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", result.Session.AccessToken);
+                apiFactory.FakeClock.Reset(Instant.FromUnixTimeMilliseconds(lifecycle.GetProperty("reverseOfferAtMs").GetInt64() + offset));
+                var (nextOffered, next) = await nextClient
+                    .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(nextRequest);
+                nextOffered.StatusCode.ShouldBe(HttpStatusCode.OK);
+                (await ConsumeAsync(next, nextReceiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+                apiFactory.FakeClock.Reset(Instant.FromUnixTimeMilliseconds(lifecycle.GetProperty("reverseCommitAtMs").GetInt64() + offset));
+                var (nextCommitted, final) = await CommitAsync(next, nextReceiver);
+                nextCommitted.StatusCode.ShouldBe(HttpStatusCode.OK);
+                final.Context.ExpiresAtMs.ShouldBe(vector.GetProperty("expectedReverseExpiresAtMs").GetInt64() + offset);
+                await AssertReceiverAuthorityAsync(final.AuthorizationId, expectedAuthority, offset);
             }
-            using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
-            var deadlines = vector.GetProperty("requestDeadlines");
-            var request = Request(source, receiver, direction) with
+            finally
             {
-                IdleDeadlineMs = deadlines.GetProperty("idleDeadlineMs").GetInt64() + offset,
-                AbsoluteDeadlineMs = deadlines.GetProperty("absoluteDeadlineMs").GetInt64() + offset,
-                OfflineDeadlineMs = deadlines.GetProperty("offlineDeadlineMs").GetInt64() + offset,
-            };
-
-            // When
-            var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
-                .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
-            offered.StatusCode.ShouldBe(HttpStatusCode.OK);
-            (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
-            var (committed, result) = await CommitAsync(operation, receiver);
-
-            // Then
-            committed.StatusCode.ShouldBe(HttpStatusCode.OK);
-            var expected = vector.GetProperty("expectedDeadlines");
-            result.Context.ShouldBe(operation.Context);
-            result.Context.IdleDeadlineMs.ShouldBe(expected.GetProperty("idleDeadlineMs").GetInt64() + offset);
-            result.Context.AbsoluteDeadlineMs.ShouldBe(expected.GetProperty("absoluteDeadlineMs").GetInt64() + offset);
-            result.Context.OfflineDeadlineMs.ShouldBe(expected.GetProperty("offlineDeadlineMs").GetInt64() + offset);
-            result.Context.ExpiresAtMs.ShouldBe(expected.GetProperty("expiresAtMs").GetInt64() + offset);
-            await using var scope = apiFactory.Services.CreateAsyncScope();
-            var read = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
-            var inherited = await read.SharedUnlockAuthorizations.SingleAsync(a => a.Id == result.AuthorizationId, Ct);
-            inherited.IdleDeadline.ToUnixTimeMilliseconds().ShouldBe(result.Context.IdleDeadlineMs);
-            inherited.AbsoluteDeadline.ToUnixTimeMilliseconds().ShouldBe(result.Context.AbsoluteDeadlineMs);
-            inherited.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(result.Context.OfflineDeadlineMs);
+                apiFactory.FakeClock.Reset(originalTime);
+            }
         }
+    }
+
+    private async Task AssertReceiverAuthorityAsync(Guid authorizationId, JsonElement expected, long offset)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var read = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var inherited = await read.SharedUnlockAuthorizations.SingleAsync(a => a.Id == authorizationId, Ct);
+        inherited.UnlockedAt.ToUnixTimeMilliseconds().ShouldBe(expected.GetProperty("unlockedAtMs").GetInt64() + offset);
+        inherited.IdleDeadline.ToUnixTimeMilliseconds().ShouldBe(expected.GetProperty("idleDeadlineMs").GetInt64() + offset);
+        inherited.AbsoluteDeadline.ToUnixTimeMilliseconds().ShouldBe(expected.GetProperty("absoluteDeadlineMs").GetInt64() + offset);
+        inherited.OfflineDeadline.ToUnixTimeMilliseconds().ShouldBe(expected.GetProperty("offlineDeadlineMs").GetInt64() + offset);
+        inherited.Sequence.ShouldBe(expected.GetProperty("sequence").GetUInt32());
+        inherited.SecondFactorRevision.ShouldBe(expected.GetProperty("secondFactorRevision").GetUInt32());
+        inherited.SecondFactorVerifiedAt!.Value.ToUnixTimeMilliseconds().ShouldBe(expected.GetProperty("secondFactorVerifiedAtMs").GetInt64() + offset);
+        var session = await read.RefreshTokens.SingleAsync(t => t.UserId == inherited.UserId && t.SessionId == inherited.SessionId, Ct);
+        session.SecondFactorRevision.ShouldBe(inherited.SecondFactorRevision);
+        session.SecondFactorVerifiedAt.ShouldBe(inherited.SecondFactorVerifiedAt);
     }
 
     [Theory]

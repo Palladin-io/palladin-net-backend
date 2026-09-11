@@ -17,7 +17,7 @@ using Shouldly;
 namespace Palladin.Tests.Integrations.Features.Identity;
 
 [Collection<ApiFactoryCollection>]
-public sealed class SharedUnlockSessionLifecycleTests(ApiFactory apiFactory) : TestBase
+public sealed partial class SharedUnlockSessionLifecycleTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
     public async Task When_LinkedClientsLogOut_Then_TheirSessionsStayRevokedWhileOtherDevicesAndAccountsSurvive()

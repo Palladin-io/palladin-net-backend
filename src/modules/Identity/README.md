@@ -420,3 +420,46 @@ Each positive fixture commits after two seconds and uses that receiver's own
 session for a reverse handoff at five/six seconds. Both persisted receiver roots
 and refresh sessions retain the original unlock timestamp, sequence and MFA age,
 as well as the clamped ceilings; the new operation keeps its own bounded TTL.
+
+
+### Own-session closing-state repair
+
+`POST api/account/shared-unlock/session-state` is a read-only endpoint requiring
+JWT plus this client's own current refresh token and locally selected `linkId`.
+The POST body keeps the refresh token out of URLs. One no-tracking projection
+binds the token hash to the authenticated account and organization, then selects
+its logical session's root and the requested account-owned link. Expired, revoked,
+rotated-away, foreign or obsolete authorization-version tokens return 401. The
+lookups use the existing refresh TokenHash index and account/session and account/
+link primary keys; no new index, migration, write context or mutation is added.
+
+JWT authentication already validates the current membership generation and
+organization offline-policy version through `OnTokenValidated` and
+`OrganizationMembershipValidator.IsCurrentAsync`. The read-only membership
+exception skips only the additional Active-status gate; a stale JWT remains 401,
+even if its matching refresh token escaped bulk revocation.
+
+The response contains only `action` (`none`, `lock`, `logout`) and nullable `link`
+using the existing link response. Identity decides the action from its own bound
+root sequence and durable link barriers. A missing bound link returns logout.
+A different/unbound logical session returns none, even when its browser retains
+an old local marker. A rotated current token retains its logical binding; a new
+Identity login has independent authority. Reconnect/reactivation never erases an
+older linked session's logout. Another account's requested link is not disclosed.
+
+This account-scoped closing read also works while sharing is OFF and while the
+selected membership is Removing, through the explicit reviewed read-only metadata.
+It neither changes current account preference nor propagates a new user action.
+It returns no root nonce, generation, key, token, or refreshed deadline. `none`
+means only that this snapshot requests no closing action; it is never evidence of
+an unlocked client or permission to install/use keys. Responses are no-store.
+Clients must bind replies to their exact current session/document, discard late
+results after login/unlock/refresh/navigation, and obtain their own authenticated
+session before this read. A browser hint alone cannot close a new session.
+
+Integration tests exercise all three actions and link-null variants through HTTP,
+wire field shape, own/foreign account and organization, current token rotation,
+revocation/expiry/version checks, OFF/Removing, fresh login, reactivation after
+logout, and unchanged persisted roots/deadlines/tokens/link state. Client adapters
+and native browser acceptance remain separate work; this endpoint alone does not
+prove restart repair or MK/Entry E2E.

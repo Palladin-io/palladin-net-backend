@@ -181,7 +181,7 @@ public sealed class EmailTemplateRendererTests
     }
 
     [Fact]
-    public void When_LogoConfigured_Then_HeaderUsesNavbarSizedDecorativeImage()
+    public void When_LogoConfigured_Then_HeaderUsesLargerDecorativeImage()
     {
         // Given
         var renderer = CreateRenderer("https://palladin.io/logo.png");
@@ -191,8 +191,8 @@ public sealed class EmailTemplateRendererTests
 
         // Then
         rendered.HtmlBody.ShouldContain("src=\"https://palladin.io/logo.png\"");
-        rendered.HtmlBody.ShouldContain("alt=\"\" role=\"presentation\" width=\"26\" height=\"26\"");
-        rendered.HtmlBody.ShouldContain("font-size:17px;font-weight:800");
+        rendered.HtmlBody.ShouldContain("alt=\"\" role=\"presentation\" width=\"64\" height=\"64\"");
+        rendered.HtmlBody.ShouldContain("font-size:28px;font-weight:800");
     }
 
     [Fact]

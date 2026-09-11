@@ -11,10 +11,10 @@
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden">
           <tr>
             <td style="background:#F8FAFC;padding:17px 32px;border-bottom:1px solid #E7E9ED">
-              <table role="presentation" cellpadding="0" cellspacing="0">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%">
                 <tr>
-                  {% if logoUrl %}<td width="26" style="width:26px;vertical-align:middle"><img src="{{ logoUrl }}" alt="" role="presentation" width="26" height="26" style="display:block;border:0;width:26px;height:26px"></td><td width="10" style="width:10px"></td>{% endif %}
-                  <td style="vertical-align:middle"><div style="font-size:17px;font-weight:800;letter-spacing:-0.01em;line-height:26px;color:#0C0E12">{{ appName }}<span style="color:#EB4747">.io</span></div></td>
+                  <td style="vertical-align:middle{% if logoUrl %};padding-right:12px{% endif %}"><div style="font-size:28px;font-weight:800;letter-spacing:-0.01em;line-height:32px;color:#0C0E12">{{ appName }}<span style="color:#E54645">.io</span></div></td>
+                  {% if logoUrl %}<td align="right" width="64" style="width:64px;vertical-align:middle"><img src="{{ logoUrl }}" alt="" role="presentation" width="64" height="64" style="display:block;border:0;width:64px;height:64px"></td>{% endif %}
                 </tr>
               </table>
             </td>

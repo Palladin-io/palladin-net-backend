@@ -13,7 +13,8 @@ internal sealed class WaitlistEntryConfiguration : IEntityTypeConfiguration<Wait
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Email).IsRequired().HasMaxLength(320);
         builder.Property(x => x.Language).IsRequired().HasMaxLength(2);
-        builder.Property(x => x.TokenHash).IsRequired().HasMaxLength(64);
+        builder.Property(x => x.TokenHash).IsRequired().HasMaxLength(64).IsConcurrencyToken();
+        builder.Property(x => x.VerifiedAt).IsConcurrencyToken();
 
         // Normalized email is the business key; token hash is the verification lookup.
         builder.HasIndex(x => x.Email).IsUnique();

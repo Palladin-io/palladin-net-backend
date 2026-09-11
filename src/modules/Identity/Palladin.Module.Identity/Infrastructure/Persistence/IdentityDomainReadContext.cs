@@ -6,6 +6,8 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence;
 internal sealed class IdentityDomainReadContext(IdentityDbReadContext readContext) : DomainReadContextBase(readContext)
 {
     public IQueryable<User> Users => Query<User>();
+    public IQueryable<UserConsent> UserConsents => Query<UserConsent>();
+    public IQueryable<UserConsentHistory> UserConsentHistory => Query<UserConsentHistory>();
     public IQueryable<Organization> Organizations => Query<Organization>();
     public IQueryable<Role> Roles => Query<Role>();
     public IQueryable<OrganizationMember> OrganizationMembers => Query<OrganizationMember>();

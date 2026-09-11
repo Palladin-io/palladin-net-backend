@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using NSubstitute;
 using Shouldly;
+using System.Net.Http.Json;
 
 namespace Palladin.Tests.Integrations.Features.Identity;
 
@@ -251,6 +252,49 @@ public sealed class WaitlistTests(ApiFactory apiFactory) : TestBase
         entry.DeveloperBenefitUserId.ShouldBe(user.Id);
         entry.DeveloperBenefitEndsAt.ShouldBe(TruncateToMicroseconds(expectedEndsAt));
         persistedUser.WaitlistDeveloperBenefitEndsAt.ShouldBe(TruncateToMicroseconds(expectedEndsAt));
+    }
+
+    [Fact]
+    public async Task When_TwoInitialJoinsRace_Then_BothReceiveAcceptedAndOneEntryExists()
+    {
+        // Given
+        var email = $"waitlist-join-race-{Guid.NewGuid():N}@example.com";
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var client = apiFactory.CreateClient();
+
+        // When
+        var responses = await Task.WhenAll(
+            client.PostAsJsonAsync("api/waitlist", new JoinWaitlistRequest { Email = email }),
+            client.PostAsJsonAsync("api/waitlist", new JoinWaitlistRequest { Email = email }));
+
+        // Then
+        responses.ShouldAllBe(response => response.StatusCode == System.Net.HttpStatusCode.Accepted);
+        var bodies = await Task.WhenAll(responses.Select(response => response.Content.ReadAsStringAsync()));
+        bodies.Distinct().Count().ShouldBe(1);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().WaitlistEntries.CountAsync(value => value.Email == email)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task When_TwoVerifiersLoadedOnePendingEntry_Then_DatabaseRejectsSecondOutcome()
+    {
+        // Given
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var id = await SeedEntryAsync($"token-{Guid.NewGuid():N}", now);
+        await using var firstScope = apiFactory.Services.CreateAsyncScope();
+        await using var secondScope = apiFactory.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IdentityDomainWriteContext>();
+        var firstEntry = await first.WaitlistEntries.SingleAsync(value => value.Id == id);
+        var secondEntry = await second.WaitlistEntries.SingleAsync(value => value.Id == id);
+
+        // When
+        firstEntry.Verify(now);
+        secondEntry.Verify(now);
+        await first.CommitAsync();
+
+        // Then
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(() => second.CommitAsync());
     }
 
     [Fact]

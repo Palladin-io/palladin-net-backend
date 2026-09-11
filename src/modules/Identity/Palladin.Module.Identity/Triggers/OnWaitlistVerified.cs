@@ -17,7 +17,10 @@ internal sealed class OnWaitlistVerified(IAnalyticsService analyticsService) : I
 {
     public Task Consume(ConsumeContext<WaitlistVerifiedEvent> context)
     {
-        analyticsService.CaptureEvent(context.Message.EntryId.ToString(), "identity", "waitlist-verified");
+        analyticsService.CaptureEvent(context.Message.EntryId.ToString(), "identity", "waitlist-verified", new Dictionary<string, object>
+        {
+            ["occurred_at"] = context.Message.OccurredAt.ToString(),
+        });
         return Task.CompletedTask;
     }
 }

@@ -28,8 +28,9 @@ public sealed class OAuthAuthenticateTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         apiFactory.MockId(Guid.NewGuid());
+        var externalIdentity = Guid.NewGuid().ToString("N");
         apiFactory.GoogleOAuthProvider.ValidateTokenAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new ExternalUserInfo("google-sub-123", "newuser@example.com", true, "New User", "https://avatar.url/pic.jpg"));
+            .Returns(new ExternalUserInfo($"google-new-{externalIdentity}", $"new-{externalIdentity}@example.com", true, "New User", "https://avatar.url/pic.jpg"));
 
         var client = apiFactory.CreateClient();
 
@@ -45,6 +46,7 @@ public sealed class OAuthAuthenticateTests(ApiFactory apiFactory) : TestBase
         result.RefreshToken.ShouldNotBeNullOrWhiteSpace();
         result.IsOnboarded.ShouldBeFalse();
         var accessTokenClaims = new JwtSecurityTokenHandler().ReadJwtToken(result.AccessToken).Claims;
+        result.IsNewUser.ShouldBeTrue();
         accessTokenClaims.Single(claim => claim.Type == JwtClaimNames.OrganizationOfflineAccessPolicy)
             .Value.ShouldBe(((ushort)OrganizationOfflineAccessPolicy.TwentyFourHours).ToString());
         accessTokenClaims.Single(claim => claim.Type == JwtClaimNames.OrganizationOfflineAccessPolicyVersion)
@@ -84,6 +86,7 @@ public sealed class OAuthAuthenticateTests(ApiFactory apiFactory) : TestBase
         result.RefreshToken.ShouldNotBeNullOrWhiteSpace();
         result.UserId.ShouldBe(user.Id);
         result.IsOnboarded.ShouldBeFalse();
+        result.IsNewUser.ShouldBeFalse();
     }
 
     [Fact]

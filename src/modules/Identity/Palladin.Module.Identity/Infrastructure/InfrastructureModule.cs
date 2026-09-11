@@ -1,3 +1,4 @@
+using Palladin.Module.Identity.Infrastructure.Consents;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Invitations;
 using Palladin.Module.Identity.Infrastructure.Login;
@@ -20,6 +21,11 @@ internal static class InfrastructureModule
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddSingleton<ConsentNoticeCatalog>();
+        services.AddOptions<ConsentOptions>()
+            .Bind(configuration.GetSection(ConsentOptions.Position))
+            .Validate(options => options.MaxAgeSeconds is > 0 and <= 300, "Consent freshness must be between 1 and 300 seconds.")
+            .ValidateOnStart();
         services.AddIdentityPersistence(configuration);
         services.AddIdentityOAuth(configuration);
         services.AddIdentityJwt(configuration);

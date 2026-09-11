@@ -464,3 +464,7 @@ revocation/expiry/version checks, OFF/Removing, fresh login, reactivation after
 logout, and unchanged persisted roots/deadlines/tokens/link state. Client adapters
 and native browser acceptance remain separate work; this endpoint alone does not
 prove restart repair or MK/Entry E2E.
+
+## Account consent register
+
+Identity owns the account-wide `UserConsents` current state and `UserConsentHistory` provenance for optional product analytics and email marketing. GET/PUT `/api/account/consents` and the per-purpose history export use the authenticated user, per-purpose revision fencing and idempotency. No client consent gates backend business events. See [consent and analytics](../../../docs/architecture/consent-and-analytics.md) for the API, release gates and the `WaitlistUpsertedEvent` created/reissued classifier.

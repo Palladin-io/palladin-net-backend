@@ -10,6 +10,8 @@ internal sealed class IdentityDomainWriteContext(
     : DomainWriteContextBase(writeContext, eventPublishers)
 {
     public IQueryable<User> Users => Track<User>();
+    public IQueryable<UserConsent> UserConsents => Track<UserConsent>();
+    public IQueryable<UserConsentHistory> UserConsentHistory => Track<UserConsentHistory>();
     public IQueryable<Organization> Organizations => Track<Organization>();
     public IQueryable<Role> Roles => Track<Role>();
     public IQueryable<OrganizationMember> OrganizationMembers => Track<OrganizationMember>();

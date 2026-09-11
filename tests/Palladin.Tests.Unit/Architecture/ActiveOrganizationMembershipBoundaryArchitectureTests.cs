@@ -28,6 +28,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "SetupAccountEndpoint",
         "SwitchOrganizationEndpoint",
         "UpdateNotificationPreferencesEndpoint",
+        "UpdateUserConsentEndpoint",
     ];
 
     [Fact]

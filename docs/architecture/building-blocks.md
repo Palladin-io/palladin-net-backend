@@ -69,8 +69,8 @@ Shared enums and exceptions referenced across module boundaries (see `CLAUDE.MD`
 
 | Building block | File | Purpose | How a feature consumes it |
 |---|---|---|---|
-| `IAnalyticsService` | `Palladin.Core.Analytics/IAnalyticsService.cs` | `CaptureEvent(distinctId, module, eventName, props)` → fires `be:{module}:{eventName}`; `IdentifyUser` | Called from triggers (analytics consumers), never inline in endpoints — see `CLAUDE.MD` analytics rule |
-| `PostHogAnalyticsService` | `Palladin.Core.Analytics/PostHogAnalyticsService.cs` | Concrete impl; prepends `be:`, enriches with `ITransportContext` (session/correlation id, feature flags) | Registered in IoC; do not new it up |
+| `IAnalyticsService` | `Palladin.Core.Analytics/IAnalyticsService.cs` | `CaptureEvent(distinctId, module, eventName, props)` → fires `be:{module}:{eventName}` | Called from triggers (analytics consumers), never inline in endpoints — see `CLAUDE.MD` analytics rule |
+| `PostHogAnalyticsService` | `Palladin.Core.Analytics/PostHogAnalyticsService.cs` | Concrete impl; prepends `be:`, permits only reviewed business properties, disables person profiles/GeoIP and adds server time; no transport-context enrichment | Registered in IoC; do not new it up |
 
 ## `Palladin.Core.MassTransit`
 

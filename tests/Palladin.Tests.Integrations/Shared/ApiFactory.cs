@@ -1,3 +1,5 @@
+using Palladin.Module.Identity.Domain;
+using Palladin.Module.Identity.Infrastructure.Consents;
 using Palladin.Module.Vault.Infrastructure.Purge;
 using Palladin.Module.Vault.Infrastructure.Assets;
 using Palladin.Module.Audit.Infrastructure.Exports;
@@ -37,6 +39,10 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddMassTransitTestHarness();
+        services.Replace(ServiceDescriptor.Singleton(new ConsentNoticeCatalog([
+            new ConsentNotice(ConsentPurpose.ProductAnalytics, ConsentPurpose.Scope(ConsentPurpose.ProductAnalytics), "test-v1", "en", "Test analytics consent."),
+            new ConsentNotice(ConsentPurpose.EmailMarketing, ConsentPurpose.Scope(ConsentPurpose.EmailMarketing), "test-v1", "en", "Test email marketing consent."),
+        ])));
         services.Replace(ServiceDescriptor.Singleton<IClock>(FakeClock));
         services.Replace(ServiceDescriptor.Singleton(GuidProvider));
         services.Replace(ServiceDescriptor.Singleton(Logger));

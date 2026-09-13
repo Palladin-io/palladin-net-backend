@@ -8,6 +8,30 @@ effective_date: null
 
 Requires qualified-counsel review before publication. This is not a law-firm opinion or production approval. Only `notices.json` is embedded by Identity; it remains empty. Draft and archived notices must not be used as runtime-approved notices.
 
+## 2026-09-13 — draft.3 — CVT-609
+
+The owner explicitly shortens each PL/EN detail notice to three sentences (maximum60 words). Analytics retains purpose, PostHog EU, vault/form/password/key exclusions, no recordings and withdrawal. Marketing retains Palladin news/offers, independent essential transactional/account/security mail and withdrawal. All other detailed scope, local activation, rights, controller/contact, recipient and message classifications remain in unchanged Privacy/Cookie policies and Terms; the short copy does not expand processing or approve publication. GDPR Articles7,12–13 and Polish Electronic Communications Law Articles398–399 continue to apply.
+
+Both purposes advance from `2026-09-13-draft.2` to `2026-09-13-draft.3`, preserving scope/draft/counsel/effectiveDate:null. `notices.json` stays empty; no runtime or delivery change. The previous draft.1 history/archive remains intact.
+
+Exact prior catalogue: `archive/notices-2026-09-13-draft.2.json`; SHA-256 `45c26140af922c4248d3cc1c9b40f4669d3e296565fd01b83208f30a4913bdde`.
+
+### product_analytics — PL — product-analytics-2026-09-13-draft.3
+
+Za zgodą mierzymy w PostHog EU korzystanie z funkcji Palladin, aby ulepszać aplikację. Nie zbieramy treści sejfu ani formularzy, haseł lub kluczy i nie nagrywamy sesji. Zgodę możesz wycofać w ustawieniach prywatności.
+
+### product_analytics — EN — product-analytics-2026-09-13-draft.3
+
+With your consent, we use PostHog EU to measure how Palladin features are used and improve the app. We do not collect vault or form contents, passwords or keys, or record sessions. You can withdraw consent in Privacy settings.
+
+### email_marketing — PL — email-marketing-2026-09-13-draft.3
+
+Za zgodą wyślemy Ci e-maile z nowościami i ofertami Palladin. Niezbędne wiadomości transakcyjne, dotyczące konta i bezpieczeństwa wysyłamy niezależnie od tej zgody. Zgodę możesz wycofać w ustawieniach prywatności.
+
+### email_marketing — EN — email-marketing-2026-09-13-draft.3
+
+With your consent, we will send you emails with Palladin news and offers. Essential transactional, account and security messages are sent independently of this consent. You can withdraw consent in Privacy settings.
+
 ## 2026-09-13 — draft.2 — CVT-609
 
 At the owner's explicit request, remove the controller's name from both notice bodies and the contact email from the marketing body. Controller identity/address/contact remain in the Privacy Policy and Terms. Analytics retains all scope, PostHog EU, exclusions, per-install activation, withdrawal and backend-objection wording after its opening sentence. Marketing is specifically Palladin news/offers, independent of account, service, analytics and waitlist; refusal/withdrawal does not block necessary transactional/security/account/service or legally required messages sent on their own appropriate legal bases. This is a purpose distinction, not a new delivery pipeline or a way to label promotional messages as transactional.

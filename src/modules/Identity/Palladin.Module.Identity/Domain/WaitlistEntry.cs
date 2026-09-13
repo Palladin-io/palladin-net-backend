@@ -1,11 +1,12 @@
 using Palladin.Core.Events;
+using Palladin.Core.Types;
 using Palladin.Module.Identity.Contracts.Events;
 using NodaTime;
 
 namespace Palladin.Module.Identity.Domain;
 
 // A landing-page waitlist signup (double opt-in). Only the token HASH is stored — the plaintext
-// token exists in the verification link and, transiently, in the WaitlistJoinedEvent that carries
+// token exists in the verification link and, transiently, in the WaitlistUpsertedEvent that carries
 // it to the email trigger.
 internal sealed class WaitlistEntry : EventEntityBase
 {
@@ -44,7 +45,7 @@ internal sealed class WaitlistEntry : EventEntityBase
             TokenExpiresAt = now + tokenTtl,
             CreatedAt = now,
         };
-        entry.EmitJoined(token);
+        entry.EmitUpserted(token, EntityChange.Created);
         return entry;
     }
 
@@ -56,13 +57,18 @@ internal sealed class WaitlistEntry : EventEntityBase
         TokenHash = tokenHash;
         TokenIssuedAt = now;
         TokenExpiresAt = now + tokenTtl;
-        EmitJoined(token);
+        EmitUpserted(token, EntityChange.Updated);
     }
 
     internal bool CanVerify(Instant now) => VerifiedAt is null && now <= TokenExpiresAt;
 
     internal void Verify(Instant now)
     {
+        if (!CanVerify(now))
+        {
+            return;
+        }
+
         VerifiedAt = now;
         EmitVerified(now);
     }
@@ -86,9 +92,9 @@ internal sealed class WaitlistEntry : EventEntityBase
         return endsAt;
     }
 
-    private void EmitJoined(string token) =>
-        AddOrReplaceEvent(new WaitlistJoinedEvent(
-            Id, Email, Language, token, (int)(TokenExpiresAt - TokenIssuedAt).TotalHours, TokenIssuedAt));
+    private void EmitUpserted(string token, EntityChange change) =>
+        AddOrReplaceEvent(new WaitlistUpsertedEvent(
+            Id, Email, Language, token, (int)(TokenExpiresAt - TokenIssuedAt).TotalHours, TokenIssuedAt, change));
 
     private void EmitVerified(Instant now) => AddEvent(new WaitlistVerifiedEvent(Id, now));
 }

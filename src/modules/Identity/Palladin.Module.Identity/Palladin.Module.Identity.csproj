@@ -32,4 +32,8 @@
         <ProjectReference Include="..\..\Vault\Palladin.Module.Vault.Contracts\Palladin.Module.Vault.Contracts.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <EmbeddedResource Include="Infrastructure/Consents/notices.json" />
+    </ItemGroup>
+
 </Project>

@@ -1,0 +1,42 @@
+[
+  {
+    "purpose": "product_analytics",
+    "scope": "palladin_web_mobile",
+    "version": "product-analytics-2026-09-13-draft.2",
+    "locale": "pl",
+    "text": "Zgadzam się na używanie PostHog EU do analizy korzystania z panelu webowego i aplikacji mobilnej Palladin w celu poprawy ich działania. Zdarzenia obejmują identyfikator mojego konta, identyfikator sesji w pamięci i wybrane czynności oraz szablony ekranów, bez treści Wpisów, formularzy, haseł i kluczy. Nie obejmują nagrywania sesji, automatycznego przechwytywania treści ani profili osoby w PostHog. Zgoda jest dobrowolna, wymaga osobnej aktywacji w każdej przeglądarce lub instalacji i może być cofnięta w ustawieniach prywatności bez ograniczenia usługi. Nie jest zgodą marketingową ani sprzeciwem wobec odrębnej analityki backendowej. Szczegóły retencji i prawa sprzeciwu: Polityka Prywatności.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  },
+  {
+    "purpose": "product_analytics",
+    "scope": "palladin_web_mobile",
+    "version": "product-analytics-2026-09-13-draft.2",
+    "locale": "en",
+    "text": "I agree to the use of PostHog EU to analyse use of the Palladin web panel and mobile app to improve them. Events include my account identifier, an in-memory session identifier, selected interactions and screen templates, without Entry or form contents, passwords or keys. They do not include session recording, content autocapture or PostHog person profiles. Consent is optional, requires separate activation in each browser or installation, and can be withdrawn in privacy settings without restricting the service. It is neither marketing consent nor an objection to separate backend analytics. Retention and objection details: Privacy Policy.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  },
+  {
+    "purpose": "email_marketing",
+    "scope": "palladin_email_news_and_offers",
+    "version": "email-marketing-2026-09-13-draft.2",
+    "locale": "pl",
+    "text": "Zgadzam się na otrzymywanie na adres e-mail mojego konta wiadomości marketingowych z nowościami i ofertami Palladin. Zgoda jest dobrowolna i niezależna od analityki, utworzenia konta, korzystania z usługi oraz listy oczekujących. Mogę ją cofnąć w ustawieniach prywatności, bez wpływu na korzystanie z usługi. Ten wybór nie dotyczy niezbędnych wiadomości transakcyjnych, dotyczących bezpieczeństwa, konta lub świadczenia usługi ani wiadomości wymaganych prawem. Odmowa lub cofnięcie zgody marketingowej nie blokuje tych wiadomości, wysyłanych niezależnie na właściwych odrębnych podstawach prawnych. Nie obejmuje udostępnienia adresu innym podmiotom do ich własnego marketingu.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  },
+  {
+    "purpose": "email_marketing",
+    "scope": "palladin_email_news_and_offers",
+    "version": "email-marketing-2026-09-13-draft.2",
+    "locale": "en",
+    "text": "I agree to receive marketing emails with Palladin news and offers at my account email address. Consent is optional and separate from analytics, account creation, use of the service and the waitlist. I can withdraw it in Privacy settings without affecting use of the service. This choice does not cover essential transactional, security, account or service messages, or messages required by law. Refusing or withdrawing marketing consent does not block those messages, which are sent independently on appropriate separate legal bases. It does not cover sharing my address with other parties for their own marketing.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  }
+]

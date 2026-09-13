@@ -10,16 +10,16 @@ using Microsoft.Extensions.Options;
 namespace Palladin.Module.Identity.Triggers;
 
 [UsedImplicitly]
-internal sealed class OnWaitlistJoinedEmailDefinition : ConsumerDefinition<OnWaitlistJoinedEmail>
+internal sealed class OnWaitlistUpsertedEmailDefinition : ConsumerDefinition<OnWaitlistUpsertedEmail>
 {
-    public OnWaitlistJoinedEmailDefinition() => EndpointName = IdentityEndpoints.Self;
+    public OnWaitlistUpsertedEmailDefinition() => EndpointName = IdentityEndpoints.Self;
 }
 
 // Event → command conversion: Identity owns the signup, Notification owns email delivery.
 [UsedImplicitly]
-internal sealed class OnWaitlistJoinedEmail(IOptions<WaitlistOptions> options) : IConsumer<WaitlistJoinedEvent>
+internal sealed class OnWaitlistUpsertedEmail(IOptions<WaitlistOptions> options) : IConsumer<WaitlistUpsertedEvent>
 {
-    public Task Consume(ConsumeContext<WaitlistJoinedEvent> context)
+    public Task Consume(ConsumeContext<WaitlistUpsertedEvent> context)
     {
         var msg = context.Message;
         var verificationUrl = $"{options.Value.VerificationUrlBase}?token={msg.Token}";

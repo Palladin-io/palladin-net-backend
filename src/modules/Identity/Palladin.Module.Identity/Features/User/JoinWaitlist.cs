@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NodaTime;
+using Npgsql;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -76,13 +77,28 @@ internal sealed class JoinWaitlistEndpoint(
             domainWriteContext.Add(WaitlistEntry.Join(
                 guidProvider.Generate(), email, language, token, tokenHash,
                 Duration.FromHours(opts.TokenTtlHours), now));
-            await domainWriteContext.CommitAsync(ct);
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+                { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_WaitlistEntries_Email" })
+            {
+                domainWriteContext.Clear();
+            }
         }
         else if (existing.CanReissueToken(Duration.FromMinutes(opts.ResendCooldownMinutes), now))
         {
             var (token, tokenHash) = GenerateToken();
             existing.ReissueToken(token, tokenHash, Duration.FromHours(opts.TokenTtlHours), now);
-            await domainWriteContext.CommitAsync(ct);
+            try
+            {
+                await domainWriteContext.CommitAsync(ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                domainWriteContext.Clear();
+            }
         }
 
         // Verified, cooldown-limited and brand-new signups all answer identically (no enumeration).

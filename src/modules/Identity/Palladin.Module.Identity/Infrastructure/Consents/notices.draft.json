@@ -1,0 +1,42 @@
+[
+  {
+    "purpose": "product_analytics",
+    "scope": "palladin_web_mobile",
+    "version": "product-analytics-2026-09-13-draft.3",
+    "locale": "pl",
+    "text": "Za zgodą mierzymy w PostHog EU korzystanie z funkcji Palladin, aby ulepszać aplikację. Nie zbieramy treści sejfu ani formularzy, haseł lub kluczy i nie nagrywamy sesji. Zgodę możesz wycofać w ustawieniach prywatności.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  },
+  {
+    "purpose": "product_analytics",
+    "scope": "palladin_web_mobile",
+    "version": "product-analytics-2026-09-13-draft.3",
+    "locale": "en",
+    "text": "With your consent, we use PostHog EU to measure how Palladin features are used and improve the app. We do not collect vault or form contents, passwords or keys, or record sessions. You can withdraw consent in Privacy settings.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  },
+  {
+    "purpose": "email_marketing",
+    "scope": "palladin_email_news_and_offers",
+    "version": "email-marketing-2026-09-13-draft.3",
+    "locale": "pl",
+    "text": "Za zgodą wyślemy Ci e-maile z nowościami i ofertami Palladin. Niezbędne wiadomości transakcyjne, dotyczące konta i bezpieczeństwa wysyłamy niezależnie od tej zgody. Zgodę możesz wycofać w ustawieniach prywatności.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  },
+  {
+    "purpose": "email_marketing",
+    "scope": "palladin_email_news_and_offers",
+    "version": "email-marketing-2026-09-13-draft.3",
+    "locale": "en",
+    "text": "With your consent, we will send you emails with Palladin news and offers. Essential transactional, account and security messages are sent independently of this consent. You can withdraw consent in Privacy settings.",
+    "status": "draft",
+    "requiresCounselReview": true,
+    "effectiveDate": null
+  }
+]

@@ -7,6 +7,8 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence;
 internal sealed class IdentityDbReadContext(DbContextOptions<IdentityDbReadContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserConsent> UserConsents => Set<UserConsent>();
+    public DbSet<UserConsentHistory> UserConsentHistory => Set<UserConsentHistory>();
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();

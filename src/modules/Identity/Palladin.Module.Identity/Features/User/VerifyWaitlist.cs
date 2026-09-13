@@ -68,7 +68,17 @@ internal sealed class VerifyWaitlistEndpoint(
 
         entry.Verify(now);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(entry, now, ct);
-        await domainWriteContext.CommitAsync(transaction, ct);
+        try
+        {
+            await domainWriteContext.CommitAsync(transaction, ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(ct);
+            domainWriteContext.Clear();
+            await Send.RedirectAsync(opts.FailedRedirectUrl, allowRemoteRedirects: true);
+            return;
+        }
 
         await Send.RedirectAsync(opts.VerifiedRedirectUrl, allowRemoteRedirects: true);
     }

@@ -34,7 +34,8 @@ public sealed record OAuthAuthenticateResponse(
     bool IsOnboarded,
     bool EmailVerified,
     Instant? WaitlistDeveloperBenefitStartedAt,
-    Instant? WaitlistDeveloperBenefitEndsAt);
+    Instant? WaitlistDeveloperBenefitEndsAt,
+    bool IsNewUser = false);
 
 [UsedImplicitly]
 internal sealed class OAuthAuthenticateValidator : Validator<OAuthAuthenticateRequest>
@@ -189,7 +190,8 @@ internal sealed class OAuthAuthenticateEndpoint(
             user.IsOnboarded,
             user.EmailVerified,
             user.ActiveWaitlistDeveloperBenefitStartedAt(now),
-            user.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
+            user.ActiveWaitlistDeveloperBenefitEndsAt(now),
+            isNewUser), ct);
     }
 
     private (User User, Organization Organization) CreateNewUser(

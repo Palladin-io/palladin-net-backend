@@ -45,6 +45,7 @@ internal abstract record CredentialDeliveryResult
     public sealed record Granted(
         ulong GrantEnvelopeRevision,
         ulong EntryRevision,
+        ulong? AgentDiscoveryRevision,
         ushort ProtocolVersion,
         string CryptoSuiteId,
         uint GrantKeyVersion,
@@ -76,7 +77,6 @@ internal abstract record CredentialDeliveryResult
 // caller owns the HTTP shape and the post-response publish.
 [UsedImplicitly]
 internal sealed class CredentialDeliveryService(
-    VaultDomainReadContext domainReadContext,
     VaultDomainWriteContext domainWriteContext)
 {
     public async Task<CredentialDeliveryResult> ExecuteAsync(
@@ -90,12 +90,12 @@ internal sealed class CredentialDeliveryService(
 
         // Validate the complete tenant scope before reading grant material or incrementing a use.
         // Entry metadata is encrypted client-side and is never interpreted by this service.
-        var activeEntry = await domainReadContext.Entries
+        var activeEntry = await domainWriteContext.Entries
             .Where(e => e.OrganizationId == input.OrganizationId
                         && e.VaultId == input.VaultId
                         && e.Id == input.EntryId
                         && e.State == EntryState.Active)
-            .Select(e => new { e.CurrentRevision, e.CurrentKeyVersion, e.DeliveryPolicy })
+            .Select(e => new { e.CurrentRevision, e.CurrentKeyVersion, e.DeliveryPolicy, e.AgentDiscoveryRevision })
             .FirstOrDefaultAsync(ct);
         if (activeEntry is null)
         {
@@ -103,7 +103,7 @@ internal sealed class CredentialDeliveryService(
         }
 
         var material = input.Type == GrantType.Granular
-            ? await domainReadContext.GrantEntryScopes
+            ? await domainWriteContext.GrantEntryScopes
                 .Where(scope => scope.OrganizationId == input.OrganizationId
                             && scope.VaultId == input.VaultId
                             && scope.GrantId == input.GrantId
@@ -144,18 +144,18 @@ internal sealed class CredentialDeliveryService(
         EntryKeyWrapperRevision? fullMaterialEntryKeyWrapperRevision = null;
         if (input.Type == GrantType.Full)
         {
-            var fullWrap = await domainReadContext.AgentWrappedVaultKeys
+            var fullWrap = await domainWriteContext.AgentWrappedVaultKeys.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.OrganizationId == input.OrganizationId
                     && x.VaultId == input.VaultId
                     && x.GrantId == input.GrantId
                     && x.AgentId == input.AgentId
                     && x.AgentAccessEpoch == input.AgentAccessEpoch, ct);
-            var currentEntryKey = await domainReadContext.EntryKeys
+            var currentEntryKey = await domainWriteContext.EntryKeys.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.OrganizationId == input.OrganizationId
                     && x.VaultId == input.VaultId
                     && x.EntryId == input.EntryId
                     && x.KeyVersion == activeEntry.CurrentKeyVersion, ct);
-            var currentVersion = await domainReadContext.EntryVersions
+            var currentVersion = await domainWriteContext.EntryVersions.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.OrganizationId == input.OrganizationId
                     && x.VaultId == input.VaultId
                     && x.EntryId == input.EntryId
@@ -181,7 +181,7 @@ internal sealed class CredentialDeliveryService(
                 && (agentWrappedVaultKey is null || entryKey is null || memberSecret is null)))
         {
             if (input.QueryLimit is not null
-                && await domainReadContext.Grants.AnyAsync(grant =>
+                && await domainWriteContext.Grants.AnyAsync(grant =>
                     grant.Id == input.GrantId
                     && grant.OrganizationId == input.OrganizationId
                     && grant.AgentId == input.AgentId
@@ -224,7 +224,7 @@ internal sealed class CredentialDeliveryService(
         // BUG#2 fix: read denormalized names BEFORE the atomic increment / Consumed flip. A DB hiccup
         // on either FirstOrDefaultAsync after the increment would burn the use without delivering the
         // secret. Reading them upfront isolates the increment path from name-resolution failures.
-        var agentName = await domainReadContext.Agents
+        var agentName = await domainWriteContext.Agents
             .Where(a => a.Id == input.AgentId && a.OrganizationId == input.OrganizationId)
             .Select(a => a.Name)
             .FirstOrDefaultAsync(ct);
@@ -331,14 +331,14 @@ internal sealed class CredentialDeliveryService(
 
             if (newCount.Count == 0)
             {
-                var currentEpochGrant = await domainReadContext.Grants
+                var currentEpochGrant = await domainWriteContext.Grants
                     .Where(grant =>
                         grant.Id == input.GrantId
                         && grant.OrganizationId == input.OrganizationId
                         && grant.AgentId == input.AgentId
                         && grant.VaultId == input.VaultId
                         && grant.AgentAccessEpoch == input.AgentAccessEpoch
-                        && domainReadContext.Agents.Any(agent =>
+                        && domainWriteContext.Agents.Any(agent =>
                             agent.Id == input.AgentId
                             && agent.OrganizationId == input.OrganizationId
                             && agent.Status == AgentStatus.Active
@@ -355,21 +355,21 @@ internal sealed class CredentialDeliveryService(
                 if (currentEpochGrant.Status == GrantStatus.Active)
                 {
                     var materialStillCurrent = input.Type == GrantType.Full
-                        ? await domainReadContext.AgentWrappedVaultKeys.AnyAsync(wrapped =>
+                        ? await domainWriteContext.AgentWrappedVaultKeys.AnyAsync(wrapped =>
                             wrapped.OrganizationId == input.OrganizationId
                             && wrapped.VaultId == input.VaultId
                             && wrapped.GrantId == input.GrantId
                             && wrapped.AgentId == input.AgentId
                             && wrapped.AgentAccessEpoch == input.AgentAccessEpoch
                             && wrapped.VaultKeyVersion == expectedFullVaultKeyVersion
-                            && domainReadContext.EntryKeys.Any(key =>
+                            && domainWriteContext.EntryKeys.Any(key =>
                                 key.OrganizationId == input.OrganizationId
                                 && key.VaultId == input.VaultId
                                 && key.EntryId == input.EntryId
                                 && key.KeyVersion == activeEntry.CurrentKeyVersion
                                 && key.WrapperRevision == expectedFullEntryKeyWrapperRevision
                                 && key.WrappingKeyVersion == wrapped.VaultKeyVersion), ct)
-                        : await domainReadContext.GrantEntryEnvelopes.AnyAsync(
+                        : await domainWriteContext.GrantEntryEnvelopes.AnyAsync(
                             envelope =>
                                 envelope.OrganizationId == input.OrganizationId
                                 && envelope.VaultId == input.VaultId
@@ -377,7 +377,7 @@ internal sealed class CredentialDeliveryService(
                                 && envelope.EntryId == input.EntryId
                                 && envelope.EntryRevision == materialEntryRevision
                                 && envelope.GrantEnvelopeRevision == materialGrantEnvelopeRevision
-                                && domainReadContext.Entries.Any(entry =>
+                                && domainWriteContext.Entries.Any(entry =>
                                     entry.OrganizationId == input.OrganizationId
                                     && entry.VaultId == input.VaultId
                                     && entry.Id == input.EntryId
@@ -459,7 +459,7 @@ internal sealed class CredentialDeliveryService(
                 ct);
             if (updated == 0)
             {
-                var activeGrantStillExists = await domainReadContext.Grants.AnyAsync(
+                var activeGrantStillExists = await domainWriteContext.Grants.AnyAsync(
                     grant =>
                         grant.Id == input.GrantId
                         && grant.OrganizationId == input.OrganizationId
@@ -467,7 +467,7 @@ internal sealed class CredentialDeliveryService(
                         && grant.VaultId == input.VaultId
                         && grant.Status == GrantStatus.Active
                         && grant.AgentAccessEpoch == input.AgentAccessEpoch
-                        && domainReadContext.Agents.Any(agent =>
+                        && domainWriteContext.Agents.Any(agent =>
                             agent.Id == input.AgentId
                             && agent.OrganizationId == input.OrganizationId
                             && agent.Status == AgentStatus.Active
@@ -485,6 +485,7 @@ internal sealed class CredentialDeliveryService(
         return new CredentialDeliveryResult.Granted(
             material?.GrantEnvelopeRevision ?? 0,
             materialEntryRevision,
+            activeEntry.AgentDiscoveryRevision?.Value,
             material?.ProtocolVersion ?? VaultProtocol.CurrentVersion,
             material?.CryptoSuiteId ?? string.Empty,
             material?.GrantKeyVersion ?? 0,

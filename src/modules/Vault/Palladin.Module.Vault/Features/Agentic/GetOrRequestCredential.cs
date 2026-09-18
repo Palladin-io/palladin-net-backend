@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Palladin.Core.Events;
 using System.Security.Cryptography;
 using Palladin.Core.Types;
@@ -35,6 +36,7 @@ public sealed record GetOrRequestCredentialRequest
     // Methods to put on the Pending grant when this call has to create one. Defaults to the
     // delivery method above so a plain `exec` call requests exec access.
     public GrantMethods? RequestedMethods { get; init; }
+    public bool IncludeDiscoveryBinding { get; init; }
 }
 
 // Discriminated union over `access`. Only the "granted" variant carries ciphertext — and it is the
@@ -61,7 +63,12 @@ public sealed record GetOrRequestCredentialResponse(
     Guid? GrantId = null,
     bool? Created = null,
     int? PollIntervalMs = null,
-    int? MaxWaitMs = null);
+    int? MaxWaitMs = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    InjectDiscoveryBindingContract? InjectDiscoveryBinding = null);
+
+[PublicAPI]
+public sealed record InjectDiscoveryBindingContract(string EntryRevision, string? AgentDiscoveryRevision);
 
 // Organization approval-wait policy surfaced on `pending` so the agent CLI knows how long, and how
 // often, to long-poll for approval — used only when the operator passes no explicit --wait /
@@ -91,7 +98,6 @@ internal sealed class GetOrRequestCredentialValidator : Validator<GetOrRequestCr
 
 [PublicAPI]
 internal sealed class GetOrRequestCredentialEndpoint(
-    VaultDomainReadContext domainReadContext,
     VaultDomainWriteContext domainWriteContext,
     CredentialDeliveryService deliveryService,
     IEnumerable<IEventPublisher> eventPublishers,
@@ -136,11 +142,11 @@ internal sealed class GetOrRequestCredentialEndpoint(
 
         var now = clock.GetCurrentInstant();
 
-        var agent = await domainReadContext.Agents
+        var agent = await domainWriteContext.Agents
             .Where(a => a.Id == agentId.Value
                         && a.OrganizationId == organizationId.Value
                         && a.AccessEpoch == accessEpoch.Value)
-            .Select(a => new { a.OrganizationId, a.Status, a.PublicKey, a.SigningPublicKey, a.AccessEpoch })
+            .Select(a => new { a.OrganizationId, a.Status, a.PublicKey, a.SigningPublicKey, a.AccessEpoch, a.Name })
             .FirstOrDefaultAsync(ct);
         if (agent is null || agent.Status != AgentStatus.Active)
         {
@@ -150,13 +156,13 @@ internal sealed class GetOrRequestCredentialEndpoint(
 
         // Org isolation: the entry must live in a vault of the agent's organization. 404 otherwise so
         // a foreign entry is indistinguishable from a non-existent one.
-        var entry = await domainReadContext.Entries
+        var entry = await domainWriteContext.Entries
             .Where(e => e.OrganizationId == agent.OrganizationId
                         && e.VaultId == req.VaultId
                         && e.Id == req.EntryId)
             .Select(e => new { e.State, CurrentRevision = e.CurrentRevision.Value })
             .SingleOrDefaultAsync(ct);
-        var vault = await domainReadContext.Vaults
+        var vault = await domainWriteContext.Vaults
             .Where(v => v.OrganizationId == agent.OrganizationId && v.Id == req.VaultId)
             .Select(v => new { v.OrganizationId, AgentMessageKeyVersion = v.CurrentAgentMessageKeyVersion.Value,
                 v.AgentMessageKeyFingerprint })
@@ -181,7 +187,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         // EntryId; FULL covers any entry of the vault. Over the lifetime of an (agent, entry) pair there
         // may be several rows (re-requests after a terminal state never overwrite the old one — they add
         // a new row). The re-access rule is resolved over the whole set, not a single pick.
-        var grants = await domainReadContext.Grants
+        var grants = await domainWriteContext.Grants
             .Where(g => g.OrganizationId == agent.OrganizationId
                         && g.AgentId == agentId.Value
                         && g.AgentAccessEpoch == agent.AccessEpoch
@@ -241,7 +247,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         // is Revoked / Consumed / Expired / Superseded) — create a fresh Pending re-request. The old terminal row
         // stays for history/audit.
         await RequestNewGrantAsync(req, agentId.Value, accessEpoch.Value, agent.OrganizationId,
-            agent.PublicKey, agent.SigningPublicKey, vault.AgentMessageKeyVersion,
+            agent.PublicKey, agent.Name ?? GrantNames.UnknownAgent, agent.SigningPublicKey, vault.AgentMessageKeyVersion,
             vault.AgentMessageKeyFingerprint!, now, ct);
     }
 
@@ -336,7 +342,12 @@ internal sealed class GetOrRequestCredentialEndpoint(
                     AgentWrappedVaultKey: granted.AgentWrappedVaultKey,
                     EntryKey: granted.EntryKey,
                     MemberSecret: granted.MemberSecret,
-                    GrantId: grantId),
+                    GrantId: grantId,
+                    InjectDiscoveryBinding: req.IncludeDiscoveryBinding && req.Method == GrantMethods.Inject
+                        ? new InjectDiscoveryBindingContract(
+                            granted.EntryRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            granted.AgentDiscoveryRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                        : null),
                     ct);
 
                 await PublishPostResponseAsync(
@@ -365,6 +376,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         uint agentAccessEpoch,
         Guid organizationId,
         string agentPublicKey,
+        string agentName,
         string agentSigningPublicKey,
         uint agentMessageKeyVersion,
         byte[] agentMessageKeyFingerprint,
@@ -402,14 +414,14 @@ internal sealed class GetOrRequestCredentialEndpoint(
             return;
         }
 
-        if (await domainReadContext.Grants.AnyAsync(
+        if (await domainWriteContext.Grants.AnyAsync(
                 g => g.Id == req.EncryptedReason.GrantRequestId, ct))
         {
             await SendAccessAsync(409, new GetOrRequestCredentialResponse(AccessUnavailable), ct);
             return;
         }
 
-        var names = await domainReadContext.ResolveAsync(agentId, req.EntryId, req.VaultId, actorUserId: null, ct);
+        var names = new GrantNames(agentName, null, string.Empty, null);
         var grant = GranularGrant.RequestAccess(
             req.EncryptedReason.GrantRequestId,
             req.VaultId,

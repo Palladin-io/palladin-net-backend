@@ -475,3 +475,5 @@ prove restart repair or MK/Entry E2E.
 ## Account consent register
 
 Identity owns the account-wide `UserConsents` current state and `UserConsentHistory` provenance for optional product analytics and email marketing. GET/PUT `/api/account/consents` and the per-purpose history export use the authenticated user, per-purpose revision fencing and idempotency. No client consent gates backend business events. See [consent and analytics](../../../docs/architecture/consent-and-analytics.md) for the API, release gates and the `WaitlistUpsertedEvent` created/reissued classifier.
+
+Consent text is owned and immutably archived by web/mobile. Identity validates only the submitted purpose/locale/version metadata, records the server UTC receipt and preserves history/idempotency; it never infers the displayed version from acceptance time. See [versioned consent receipts](../../../docs/architecture/consent-version-receipts.md).

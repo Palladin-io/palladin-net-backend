@@ -1,0 +1,25 @@
+{
+  "consents": [
+    {
+      "purpose": "product_analytics",
+      "scope": "palladin_web_mobile",
+      "status": "granted",
+      "revision": 3,
+      "activationRevision": 1,
+      "recordedAt": "2026-09-11T12:00:00Z",
+      "noticeVersion": "2026-09-10T00:00:00Z",
+      "noticeLocale": "en"
+    },
+    {
+      "purpose": "email_marketing",
+      "scope": "palladin_email_news_and_offers",
+      "status": "unknown",
+      "revision": 0,
+      "activationRevision": 0,
+      "recordedAt": null,
+      "noticeVersion": null,
+      "noticeLocale": null
+    }
+  ],
+  "maxAgeSeconds": 60
+}

@@ -40,8 +40,8 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
     {
         services.AddMassTransitTestHarness();
         services.Replace(ServiceDescriptor.Singleton(new ConsentNoticeCatalog([
-            new ConsentNotice(ConsentPurpose.ProductAnalytics, ConsentPurpose.Scope(ConsentPurpose.ProductAnalytics), "test-v1", "en", "Test analytics consent."),
-            new ConsentNotice(ConsentPurpose.EmailMarketing, ConsentPurpose.Scope(ConsentPurpose.EmailMarketing), "test-v1", "en", "Test email marketing consent."),
+            new ConsentNotice(ConsentPurpose.ProductAnalytics, ConsentPurpose.Scope(ConsentPurpose.ProductAnalytics), "2026-09-10T00:00:00Z", "en"),
+            new ConsentNotice(ConsentPurpose.EmailMarketing, ConsentPurpose.Scope(ConsentPurpose.EmailMarketing), "2026-09-10T00:00:00Z", "en"),
         ])));
         services.Replace(ServiceDescriptor.Singleton<IClock>(FakeClock));
         services.Replace(ServiceDescriptor.Singleton(GuidProvider));

@@ -1,0 +1,26 @@
+[
+  {
+    "purpose": "product_analytics",
+    "scope": "palladin_web_mobile",
+    "locale": "pl",
+    "version": "2026-09-18T00:00:00Z"
+  },
+  {
+    "purpose": "product_analytics",
+    "scope": "palladin_web_mobile",
+    "locale": "en",
+    "version": "2026-09-18T00:00:00Z"
+  },
+  {
+    "purpose": "email_marketing",
+    "scope": "palladin_email_news_and_offers",
+    "locale": "pl",
+    "version": "2026-09-18T00:00:00Z"
+  },
+  {
+    "purpose": "email_marketing",
+    "scope": "palladin_email_news_and_offers",
+    "locale": "en",
+    "version": "2026-09-18T00:00:00Z"
+  }
+]

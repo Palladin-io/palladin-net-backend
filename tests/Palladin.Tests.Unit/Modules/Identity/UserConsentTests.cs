@@ -8,7 +8,7 @@ public sealed class UserConsentTests
 {
     private static readonly Instant Now = Instant.FromUtc(2026, 9, 11, 12, 0);
     private static ConsentNotice Notice(string purpose = ConsentPurpose.ProductAnalytics) =>
-        new(purpose, ConsentPurpose.Scope(purpose), "test-v1", "en", "Test consent notice.");
+        new(purpose, ConsentPurpose.Scope(purpose), "2026-09-10T00:00:00Z", "en");
 
     [Fact]
     public void When_NoDecisionExists_Then_ConsentIsUnknown()
@@ -38,7 +38,8 @@ public sealed class UserConsentTests
         history.ShouldNotBeNull();
         history.Status.ShouldBe("withdrawn");
         history.RecordedAt.ShouldBe(Now + Duration.FromMinutes(1));
-        history.NoticeText.ShouldBe(Notice().Text);
+        history.NoticeVersion.ShouldBe(Notice().Version);
+        history.NoticeText.ShouldBeEmpty();
         history.Source.ShouldBe("mobile_settings");
         history.RequestId.ShouldBe(requestId);
         history.UserId.ShouldBe(consent.UserId);
@@ -120,11 +121,11 @@ public sealed class UserConsentTests
         var history = consent.TryDecide(true, 0, Guid.NewGuid(), Notice(), "web_settings", Now)!;
 
         // Then
-        history.Matches(true, 0, "test-v1", "en", "web_settings").ShouldBeTrue();
-        history.Matches(false, 0, "test-v1", "en", "web_settings").ShouldBeFalse();
-        history.Matches(true, 1, "test-v1", "en", "web_settings").ShouldBeFalse();
+        history.Matches(true, 0, "2026-09-10T00:00:00Z", "en", "web_settings").ShouldBeTrue();
+        history.Matches(false, 0, "2026-09-10T00:00:00Z", "en", "web_settings").ShouldBeFalse();
+        history.Matches(true, 1, "2026-09-10T00:00:00Z", "en", "web_settings").ShouldBeFalse();
         history.Matches(true, 0, "test-v2", "en", "web_settings").ShouldBeFalse();
-        history.Matches(true, 0, "test-v1", "pl", "web_settings").ShouldBeFalse();
-        history.Matches(true, 0, "test-v1", "en", "mobile_settings").ShouldBeFalse();
+        history.Matches(true, 0, "2026-09-10T00:00:00Z", "pl", "web_settings").ShouldBeFalse();
+        history.Matches(true, 0, "2026-09-10T00:00:00Z", "en", "mobile_settings").ShouldBeFalse();
     }
 }

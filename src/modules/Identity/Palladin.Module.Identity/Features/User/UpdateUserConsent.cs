@@ -81,16 +81,15 @@ internal sealed class UpdateUserConsentEndpoint(IdentityDomainWriteContext conte
             return;
         }
 
-        var notice = notices.Current(req.Purpose, req.Locale);
-        if (notice?.Version != req.NoticeVersion)
+        var notice = notices.Find(req.Purpose, req.Locale, req.NoticeVersion, clock.GetCurrentInstant());
+        if (notice is null)
         {
-            notice = null;
             if (req.Granted == false && consent is not null)
             {
                 notice = await context.UserConsentHistory
                     .Where(value => value.UserId == userId.Value && value.Purpose == req.Purpose
                         && value.Revision == consent.Revision && value.NoticeVersion == req.NoticeVersion && value.Locale == req.Locale)
-                    .Select(value => new ConsentNotice(value.Purpose, value.Scope, value.NoticeVersion, value.Locale, value.NoticeText))
+                    .Select(value => new ConsentNotice(value.Purpose, value.Scope, value.NoticeVersion, value.Locale))
                     .SingleOrDefaultAsync(ct);
             }
         }
@@ -141,7 +140,7 @@ internal sealed class UpdateUserConsentEndpoint(IdentityDomainWriteContext conte
             return;
         }
 
-        await Send.OkAsync(UserConsentResponses.Create(req.Purpose, consent, notices.Current(req.Purpose, req.Locale)), ct);
+        await Send.OkAsync(UserConsentResponses.Create(req.Purpose, consent), ct);
     }
 
     private async Task<bool> TryReplayAsync(Guid userId, UpdateUserConsentRequest req, CancellationToken ct)
@@ -161,7 +160,7 @@ internal sealed class UpdateUserConsentEndpoint(IdentityDomainWriteContext conte
 
         var current = await context.UserConsents.AsNoTracking().SingleAsync(
             value => value.UserId == userId && value.Purpose == req.Purpose, ct);
-        await Send.OkAsync(UserConsentResponses.Create(req.Purpose, current, notices.Current(req.Purpose, req.Locale)), ct);
+        await Send.OkAsync(UserConsentResponses.Create(req.Purpose, current), ct);
         return true;
     }
 

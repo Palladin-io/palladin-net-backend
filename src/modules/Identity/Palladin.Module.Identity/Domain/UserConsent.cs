@@ -51,7 +51,7 @@ internal sealed class UserConsent
         }
 
         if (requestId == Guid.Empty || notice.Purpose != Purpose || notice.Scope != Scope
-            || string.IsNullOrWhiteSpace(notice.Version) || string.IsNullOrWhiteSpace(notice.Text)
+            || string.IsNullOrWhiteSpace(notice.Version)
             || notice.Locale is not ("pl" or "en")
             || source is not ("web_onboarding" or "web_settings" or "mobile_onboarding" or "mobile_settings"))
         {
@@ -73,8 +73,8 @@ internal sealed class UserConsent
         NoticeVersion = notice.Version;
         Locale = notice.Locale;
         Source = source;
-        return UserConsentHistory.Record(this, requestId, expectedRevision, notice.Text);
+        return UserConsentHistory.Record(this, requestId, expectedRevision);
     }
 }
 
-internal sealed record ConsentNotice(string Purpose, string Scope, string Version, string Locale, string Text);
+internal sealed record ConsentNotice(string Purpose, string Scope, string Version, string Locale);

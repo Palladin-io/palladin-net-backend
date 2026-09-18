@@ -11,24 +11,38 @@ Identity owns account-level optional decisions. They do not depend on organizati
 | `product_analytics` | `palladin_web_mobile` |
 | `email_marketing` | `palladin_email_news_and_offers` |
 
-`UserConsentHistory` has key `(UserId, Purpose, Revision)` and unique `(UserId, Purpose, RequestId)`. Every accepted explicit decision updates current state and appends history in one domain commit. History includes the original expected revision, server time, bounded source and locale, notice version and the exact server-owned notice text. An unchanged off decision advances the revision to reject concurrent stale grants. Retrying the same request ID/payload appends nothing and returns the current state, including any later withdrawal; reusing the ID with a different payload returns 409. Exact PK/unique races and optimistic conflicts roll back the entire pair.
+`UserConsentHistory` has key `(UserId, Purpose, Revision)` and unique `(UserId, Purpose, RequestId)`. Every accepted explicit decision updates current state and appends history in one domain commit. History includes the original expected revision, server time, bounded source and locale, and the exact client-displayed notice version. Historical `NoticeText` values remain unchanged; new decisions store an empty string in that legacy field, with text evidence held in the immutable client archive. An unchanged off decision advances the revision to reject concurrent stale grants. Retrying the same request ID/payload appends nothing and returns the current state, including any later withdrawal; reusing the ID with a different payload returns 409. Exact PK/unique races and optimistic conflicts roll back the entire pair.
 
 API:
 
-- `GET /api/account/consents?locale=en|pl`: both decisions, available localized notices and `maxAgeSeconds` (default 60, configurable range 1–300).
+- `GET /api/account/consents?locale=en|pl`: both decision receipts without notice text, and `maxAgeSeconds` (default 60, configurable range 1–300).
 - `PUT /api/account/consents/{purpose}`: `granted`, `expectedRevision`, `requestId`, `noticeVersion`, `locale`, `source`. Source is `web_onboarding`, `web_settings`, `mobile_onboarding` or `mobile_settings`. User identity always comes from JWT.
 - `GET /api/account/consents/{purpose}/history?beforeRevision=...`: at most 50 decisions, descending revision, with the next revision cursor. This supports bounded self-service export; it does not invent a separate full-account export feature.
 
-All responses use `Cache-Control: no-store`. No consent endpoint calls PostHog. FK deletion cascades from User through current decisions to history; account deletion itself is outside this change. A legally approved retention schedule and the final legal review remain release gates.
+All responses use `Cache-Control: no-store`. No consent endpoint calls PostHog. FK deletion cascades from User through current decisions to history; account deletion itself is outside this change. The earlier publication process recorded retention and final-review conditions for the draft notices. These are project release conditions, not a statutory requirement for a lawyer's sign-off on this receipt implementation; this change does not claim to resolve retention or publish the linked draft policies.
 
-The embedded `Infrastructure/Consents/notices.json` catalogue contains only approved, immutable versioned text; it remains empty and grants are unavailable. The owner reopened CVT-624/625 on 2026-09-12; `notices.draft.json` holds versioned PL/EN candidates after the scoped legal audit. It is deliberately not an embedded resource and the runtime catalog never reads it. Draft status is not approval, and adding it to the active catalog requires completion of legal, retention and objection release gates. Integration-test notices are injected only by the test fixture. When publishing versions, retain prior texts; never rewrite text under an existing version. A known previous decision can still be withdrawn when its notice is no longer current.
+The owner decision of 2026-09-18 replaces the server-owned text catalogue with
+client-owned immutable PL/EN notices. Identity embeds the text-free
+`Infrastructure/Consents/notice-versions.json` registry: purpose, scope, locale and
+an exact UTC version/effective-from value. It accepts a submitted version only
+when that exact tuple is registered and already effective; it never infers the
+shown version from the time of acceptance. Clients attach their local notice to
+the receipt state and submit that displayed version. Historical drafts remain
+source evidence, not runtime text. The earlier server-text requirement was an
+architecture decision, not a legal requirement to duplicate text in every row.
+See [Versioned consent receipts](consent-version-receipts.md) for the archive and
+proof model. Known previous decisions remain withdrawable when their versions
+are no longer registered. The owner has authorized this implementation; it adds
+no further approval workflow. It does not enable analytics or marketing, certify
+legal clearance of the linked policies, or change retention obligations.
 
 Client activation additionally needs an explicit local choice for that browser/application installation and fresh account consent. The API grant alone must not initialize an SDK on another installation. Anonymous landing localStorage decisions are separate and must not silently become account grants. Client denial does not disable backend business metrics.
 
 ### Deployment verification
 
-Merging the consent API and publishing active notices are separate operations.
-The API can be deployed while the active catalogue remains empty.
+Deploying the version-aware API, releasing matching client notice archives and
+enabling optional processing are separate operations. Deploy registry support
+before clients submit the corresponding versions.
 
 - Verify the merged source revision completed the main test, release-artifact and
   staging-deployment jobs. A CI skip directive retained in a squash commit body
@@ -37,9 +51,10 @@ The API can be deployed while the active catalogue remains empty.
   the expected source revision after deployment.
 - An unauthenticated `GET /api/account/consents` must return 401, not 404.
   This checks route availability without extracting or logging a user's token.
-- An empty active catalogue yields no current notices. Automatic client prompts
-  require an available notice; deploying the API does not activate draft texts,
-  analytics capture or marketing delivery.
+- Verify the deployed clients display the archived version they submit, and the
+  API returns that receipt version with server time. Unregistered/future versions
+  must fail without fabricating consent. Existing grant withdrawal must still
+  work. This deployment does not enable analytics capture or marketing delivery.
 
 `ActivationRevision` identifies one continuous grant epoch. A repeat grant for
 the same notice retains that epoch, allowing another installation to activate
@@ -48,10 +63,10 @@ version starts a new epoch. Clients store that value and notice version locally,
 and require both to match fresh server state. Withdrawal followed by regrant must
 never revive an installation activated under the old epoch.
 
-OAuth login responses include `isNewUser`, computed from the actual registration
-outcome. New accounts enter the optional privacy choices flow; existing logins do
-not. Password registration selects the same flow on the client. Skipping choices
-does not grant either purpose or prevent account access.
+The clients offer optional choices on eligible authenticated application entry,
+after setup, verification and unlock, rather than during registration. Unknown
+purposes are not grants. Refusal does not prevent account access; receipt and
+archive changes do not redefine the existing client presentation flow.
 
 ## Backend analytics
 

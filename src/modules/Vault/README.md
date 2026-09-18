@@ -176,3 +176,26 @@ The canonical Entry head/key/version model, snapshot/delta synchronization, life
 - Publishes Vault, Entry, grant, credential, import, and export domain events.
 - Consumes Agent and Identity replica events.
 - Uses EF Core/Postgres, MassTransit, Hangfire for grant expiry, and `ICdnService` for existing asset flows.
+
+## Inject metadata revision binding
+
+`POST /api/agent/vaults/{vaultId}/entries/{entryId}/credential` accepts
+`includeDiscoveryBinding: true` from current native Inject clients. Only a granted
+Inject response to that opt-in contains `injectDiscoveryBinding` with the
+server-owned `entryRevision` and nullable `agentDiscoveryRevision`. Both come from
+the selected current Entry/material in the delivery operation; the existing
+revision and grant-use fences still apply. This is structural authority, not
+plaintext metadata. No new database column or encryption key is introduced.
+
+Entry and Discovery revisions are independent. A secret-only edit can advance the
+Entry to revision 2 while Discovery stays at 1. The native runtime verifies the
+binding's Entry revision against its decrypted grant and the Discovery revision
+against its authenticated live projection before sourcing an Inject username.
+Missing authority, mismatched revisions and removed projections fail closed.
+Existing clients do not opt in, so the extra property is omitted rather than
+serialized as null. Get/Exec and non-granted responses retain their wire shape.
+
+The unified credential endpoint and its delivery helper use one DomainWriteContext
+throughout reads and grant-use writes; read-only material entities are explicitly
+no-tracking. This repair requires backend plus native runtime rollout, not a
+browser-extension update. Local tests do not constitute staging AWS/TOTP acceptance.

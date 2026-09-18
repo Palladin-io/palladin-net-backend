@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +10,7 @@ using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
 using Palladin.Tests.Integrations.Shared.Fakers;
@@ -232,6 +235,122 @@ public sealed class GetOrRequestCredentialTests(ApiFactory apiFactory) : TestBas
         await using var scopeForAssertion = apiFactory.Services.CreateAsyncScope();
         var db = scopeForAssertion.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await db.Grants.SingleAsync(x => x.Id == grantId)).QueryCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(GrantType.Granular, 1)]
+    [InlineData(GrantType.Granular, null)]
+    [InlineData(GrantType.Full, 1)]
+    [InlineData(GrantType.Full, null)]
+    public async Task When_InjectUsesNewerEntryRevision_Then_ReturnsIndependentDiscoveryBinding(
+        GrantType grantType, int? discoveryRevision)
+    {
+        // Given
+        var setup = await ArrangeAsync();
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            await db.Entries.Where(entry => entry.Id == setup.EntryId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(entry => entry.CurrentRevision, new EntryRevision(2))
+                    .SetProperty(entry => entry.AgentDiscoveryRevision,
+                        discoveryRevision == null ? null : new AgentDiscoveryRevision((ulong)discoveryRevision.Value)),
+                    TestContext.Current.CancellationToken);
+            var secret = VaultEnvelopeContractMapper.ToDomain(EntryEnvelopeFaker.CreateMemberSecret(
+                setup.OrganizationId, setup.VaultId, setup.EntryId, 2, EntryOperation.Updated));
+            db.EntryVersions.Add(VaultEntryVersion.Create(secret,
+                new AllocatedVaultSequences(new MemberSequence(2), null), false,
+                apiFactory.FakeClock.GetCurrentInstant(), ActorType.Member, setup.UserId));
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        if (grantType == GrantType.Full)
+        {
+            await apiFactory.Services.SeedFullGrantAsync(GrantFaker.CreateFull(vaultId: setup.VaultId,
+                organizationId: setup.OrganizationId, agentId: setup.AgentId).Generate());
+        }
+        else
+        {
+            var grant = GrantFaker.CreateGranular(vaultId: setup.VaultId,
+                organizationId: setup.OrganizationId, agentId: setup.AgentId, entryId: setup.EntryId).Generate();
+            grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(setup.OrganizationId, setup.VaultId,
+                grant.Id, setup.EntryId, grant.Methods, entryRevision: 2));
+            await apiFactory.Services.SeedGranularGrantAsync(grant);
+        }
+        var payload = JsonSerializer.SerializeToNode(NewRequest(setup) with
+        {
+            Method = GrantMethods.Inject,
+            RequestedMethods = null,
+            EncryptedReason = null,
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+        payload["includeDiscoveryBinding"] = true;
+
+        // When
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/entries/{setup.EntryId}/credential", payload,
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("access").GetString().ShouldBe("granted");
+        var binding = body.RootElement.GetProperty("injectDiscoveryBinding");
+        binding.GetProperty("entryRevision").GetString().ShouldBe("2");
+        binding.GetProperty("agentDiscoveryRevision").GetString().ShouldBe(discoveryRevision?.ToString());
+
+        payload.Remove("includeDiscoveryBinding");
+        var legacyResponse = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/entries/{setup.EntryId}/credential", payload,
+            TestContext.Current.CancellationToken);
+        legacyResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var legacyBody = JsonDocument.Parse(await legacyResponse.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        legacyBody.RootElement.TryGetProperty("injectDiscoveryBinding", out _).ShouldBeFalse();
+
+        foreach (var method in new[] { GrantMethods.Get, GrantMethods.Exec })
+        {
+            payload["includeDiscoveryBinding"] = true;
+            payload["method"] = (int)method;
+            var nonInjectResponse = await setup.Client.PostAsJsonAsync(
+                $"api/agent/vaults/{setup.VaultId}/entries/{setup.EntryId}/credential", payload,
+                TestContext.Current.CancellationToken);
+            nonInjectResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using var nonInjectBody = JsonDocument.Parse(await nonInjectResponse.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            nonInjectBody.RootElement.GetProperty("access").GetString().ShouldBe("granted");
+            nonInjectBody.RootElement.TryGetProperty("injectDiscoveryBinding", out _).ShouldBeFalse();
+        }
+    }
+
+    [Theory]
+    [InlineData(GrantStatus.Pending, HttpStatusCode.Accepted, "pending")]
+    [InlineData(GrantStatus.Denied, HttpStatusCode.Forbidden, "denied")]
+    public async Task When_OptedInInjectIsNotGranted_Then_OmitsDiscoveryBinding(
+        GrantStatus status, HttpStatusCode expectedStatus, string expectedAccess)
+    {
+        // Given
+        var setup = await ArrangeAsync();
+        await apiFactory.Services.SeedGranularGrantAsync(GrantFaker.CreateGranular(
+            vaultId: setup.VaultId, organizationId: setup.OrganizationId,
+            agentId: setup.AgentId, entryId: setup.EntryId, status: status).Generate());
+        var request = NewRequest(setup) with
+        {
+            Method = GrantMethods.Inject,
+            IncludeDiscoveryBinding = true,
+            RequestedMethods = null,
+            EncryptedReason = null,
+        };
+
+        // When
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/entries/{setup.EntryId}/credential", request,
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(expectedStatus);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        body.RootElement.GetProperty("access").GetString().ShouldBe(expectedAccess);
+        body.RootElement.TryGetProperty("injectDiscoveryBinding", out _).ShouldBeFalse();
     }
 
     private async Task<Setup> ArrangeAsync()

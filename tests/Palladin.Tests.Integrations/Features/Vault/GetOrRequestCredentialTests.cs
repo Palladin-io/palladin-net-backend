@@ -305,6 +305,52 @@ public sealed class GetOrRequestCredentialTests(ApiFactory apiFactory) : TestBas
         using var legacyBody = JsonDocument.Parse(await legacyResponse.Content.ReadAsStringAsync(
             TestContext.Current.CancellationToken));
         legacyBody.RootElement.TryGetProperty("injectDiscoveryBinding", out _).ShouldBeFalse();
+
+        foreach (var method in new[] { GrantMethods.Get, GrantMethods.Exec })
+        {
+            payload["includeDiscoveryBinding"] = true;
+            payload["method"] = (int)method;
+            var nonInjectResponse = await setup.Client.PostAsJsonAsync(
+                $"api/agent/vaults/{setup.VaultId}/entries/{setup.EntryId}/credential", payload,
+                TestContext.Current.CancellationToken);
+            nonInjectResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using var nonInjectBody = JsonDocument.Parse(await nonInjectResponse.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            nonInjectBody.RootElement.GetProperty("access").GetString().ShouldBe("granted");
+            nonInjectBody.RootElement.TryGetProperty("injectDiscoveryBinding", out _).ShouldBeFalse();
+        }
+    }
+
+    [Theory]
+    [InlineData(GrantStatus.Pending, HttpStatusCode.Accepted, "pending")]
+    [InlineData(GrantStatus.Denied, HttpStatusCode.Forbidden, "denied")]
+    public async Task When_OptedInInjectIsNotGranted_Then_OmitsDiscoveryBinding(
+        GrantStatus status, HttpStatusCode expectedStatus, string expectedAccess)
+    {
+        // Given
+        var setup = await ArrangeAsync();
+        await apiFactory.Services.SeedGranularGrantAsync(GrantFaker.CreateGranular(
+            vaultId: setup.VaultId, organizationId: setup.OrganizationId,
+            agentId: setup.AgentId, entryId: setup.EntryId, status: status).Generate());
+        var request = NewRequest(setup) with
+        {
+            Method = GrantMethods.Inject,
+            IncludeDiscoveryBinding = true,
+            RequestedMethods = null,
+            EncryptedReason = null,
+        };
+
+        // When
+        var response = await setup.Client.PostAsJsonAsync(
+            $"api/agent/vaults/{setup.VaultId}/entries/{setup.EntryId}/credential", request,
+            TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(expectedStatus);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        body.RootElement.GetProperty("access").GetString().ShouldBe(expectedAccess);
+        body.RootElement.TryGetProperty("injectDiscoveryBinding", out _).ShouldBeFalse();
     }
 
     private async Task<Setup> ArrangeAsync()

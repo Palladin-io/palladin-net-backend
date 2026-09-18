@@ -53,6 +53,10 @@ outcome. New accounts enter the optional privacy choices flow; existing logins d
 not. Password registration selects the same flow on the client. Skipping choices
 does not grant either purpose or prevent account access.
 
+## Publication preparation
+
+The [consent publication package](consent-publication-package.md) collects the exact PL/EN candidates, the outstanding evidence for each release stage and the activation/rollback procedure. It is preparation only: the active catalogue remains empty. Recording account decisions, client analytics, backend metrics and marketing delivery require separate readiness decisions; this package does not approve any of them.
+
 ## Backend analytics
 
 The path remains domain event → successful commit → MassTransit trigger → `IAnalyticsService`. Analytics has no transport-context dependency or consent lookup. `PostHogAnalyticsService` copies only its explicit allowlist of business properties, drops arbitrary properties including client/session headers and per-resource IDs, disables person-profile processing and GeoIP, and adds server send time. Pseudonymous distinct IDs remain personal data; they are not advertised as anonymous. The unused person-identification API was removed.

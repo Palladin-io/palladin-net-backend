@@ -25,6 +25,22 @@ The embedded `Infrastructure/Consents/notices.json` catalogue contains only appr
 
 Client activation additionally needs an explicit local choice for that browser/application installation and fresh account consent. The API grant alone must not initialize an SDK on another installation. Anonymous landing localStorage decisions are separate and must not silently become account grants. Client denial does not disable backend business metrics.
 
+### Deployment verification
+
+Merging the consent API and publishing active notices are separate operations.
+The API can be deployed while the active catalogue remains empty.
+
+- Verify the merged source revision completed the main test, release-artifact and
+  staging-deployment jobs. A CI skip directive retained in a squash commit body
+  also skips the push pipeline; a merged PR alone does not prove deployment.
+- Confirm `/api/health` returns 200 and the API container remains running with
+  the expected source revision after deployment.
+- An unauthenticated `GET /api/account/consents` must return 401, not 404.
+  This checks route availability without extracting or logging a user's token.
+- An empty active catalogue yields no current notices. Automatic client prompts
+  require an available notice; deploying the API does not activate draft texts,
+  analytics capture or marketing delivery.
+
 `ActivationRevision` identifies one continuous grant epoch. A repeat grant for
 the same notice retains that epoch, allowing another installation to activate
 without disabling the first. A denial sets it to zero; a new grant or notice

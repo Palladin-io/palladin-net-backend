@@ -19,7 +19,7 @@ internal sealed class UserConsentHistory
 
     private UserConsentHistory() { }
 
-    internal static UserConsentHistory Record(UserConsent consent, Guid requestId, uint expectedRevision, string noticeText) => new()
+    internal static UserConsentHistory Record(UserConsent consent, Guid requestId, uint expectedRevision) => new()
     {
         UserId = consent.UserId,
         Purpose = consent.Purpose,
@@ -30,7 +30,6 @@ internal sealed class UserConsentHistory
         Status = consent.Status,
         RecordedAt = consent.RecordedAt,
         NoticeVersion = consent.NoticeVersion,
-        NoticeText = noticeText,
         Locale = consent.Locale,
         Source = consent.Source,
     };

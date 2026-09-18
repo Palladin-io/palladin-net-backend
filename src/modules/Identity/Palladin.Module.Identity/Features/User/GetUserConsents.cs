@@ -25,27 +25,23 @@ internal sealed class GetUserConsentsValidator : Validator<GetUserConsentsReques
 }
 
 [PublicAPI]
-public sealed record UserConsentNoticeResponse(string Version, string Locale, string Text);
-
-[PublicAPI]
 public sealed record UserConsentResponse(
     string Purpose, string Scope, string Status, uint Revision, uint ActivationRevision, Instant? RecordedAt,
-    string? NoticeVersion, string? NoticeLocale, UserConsentNoticeResponse? CurrentNotice);
+    string? NoticeVersion, string? NoticeLocale);
 
 [PublicAPI]
 public sealed record UserConsentsResponse(UserConsentResponse[] Consents, int MaxAgeSeconds);
 
 internal static class UserConsentResponses
 {
-    internal static UserConsentResponse Create(string purpose, UserConsent? consent, ConsentNotice? notice) => new(
+    internal static UserConsentResponse Create(string purpose, UserConsent? consent) => new(
         purpose, ConsentPurpose.Scope(purpose), consent?.Status ?? "unknown", consent?.Revision ?? 0,
-        consent?.ActivationRevision ?? 0, consent?.RecordedAt, consent?.NoticeVersion, consent?.Locale,
-        notice is null ? null : new UserConsentNoticeResponse(notice.Version, notice.Locale, notice.Text));
+        consent?.ActivationRevision ?? 0, consent?.RecordedAt, consent?.NoticeVersion, consent?.Locale);
 }
 
 [PublicAPI]
 internal sealed class GetUserConsentsEndpoint(
-    IdentityDomainReadContext context, ConsentNoticeCatalog notices, IOptions<ConsentOptions> options)
+    IdentityDomainReadContext context, IOptions<ConsentOptions> options)
     : Endpoint<GetUserConsentsRequest, UserConsentsResponse>
 {
     public override void Configure()
@@ -53,7 +49,7 @@ internal sealed class GetUserConsentsEndpoint(
         Get("api/account/consents");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
         Tags("Identity/Account");
-        Summary(summary => summary.Summary = "Get the current user's optional consent decisions and available notices");
+        Summary(summary => summary.Summary = "Get the current user's optional consent decisions and their displayed notice versions");
     }
 
     public override async Task HandleAsync(GetUserConsentsRequest req, CancellationToken ct)
@@ -69,7 +65,7 @@ internal sealed class GetUserConsentsEndpoint(
         var consents = await context.UserConsents.Where(consent => consent.UserId == userId.Value).ToListAsync(ct);
         string[] purposes = [ConsentPurpose.ProductAnalytics, ConsentPurpose.EmailMarketing];
         await Send.OkAsync(new UserConsentsResponse(purposes.Select(purpose => UserConsentResponses.Create(
-            purpose, consents.SingleOrDefault(consent => consent.Purpose == purpose), notices.Current(purpose, req.Locale)))
+            purpose, consents.SingleOrDefault(consent => consent.Purpose == purpose)))
             .ToArray(), options.Value.MaxAgeSeconds), ct);
     }
 }

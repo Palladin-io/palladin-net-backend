@@ -21,7 +21,7 @@ public sealed class UserConsentTests(ApiFactory apiFactory) : TestBase
     private static UpdateUserConsentRequest Decision(bool granted, uint revision) => new()
     {
         Purpose = "product_analytics", Granted = granted, ExpectedRevision = revision,
-        RequestId = Guid.NewGuid(), NoticeVersion = "test-v1", Locale = "en", Source = "web_settings",
+        RequestId = Guid.NewGuid(), NoticeVersion = "2026-09-10T00:00:00Z", Locale = "en", Source = "web_settings",
     };
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class UserConsentTests(ApiFactory apiFactory) : TestBase
         history.Count.ShouldBe(2);
         history[0].Status.ShouldBe("granted");
         history[1].Status.ShouldBe("withdrawn");
-        history.ShouldAllBe(value => value.NoticeText == "Test analytics consent." && value.Locale == "en" && value.Source == "web_settings");
+        history.ShouldAllBe(value => value.NoticeText == string.Empty && value.NoticeVersion == "2026-09-10T00:00:00Z" && value.Locale == "en" && value.Source == "web_settings");
         var expectedRecordedAtTicks = apiFactory.FakeClock.GetCurrentInstant().ToUnixTimeTicks();
         history[1].RecordedAt.ShouldBe(Instant.FromUnixTimeTicks(
             expectedRecordedAtTicks - expectedRecordedAtTicks % TimeSpan.TicksPerMicrosecond));
@@ -134,7 +134,7 @@ public sealed class UserConsentTests(ApiFactory apiFactory) : TestBase
         // When
         var write = await client.PutAsJsonAsync(Path, new
         {
-            granted = false, expectedRevision = 0, requestId = Guid.NewGuid(), noticeVersion = "test-v1",
+            granted = false, expectedRevision = 0, requestId = Guid.NewGuid(), noticeVersion = "2026-09-10T00:00:00Z",
             locale = "en", source = "web_settings", userId = other.Id,
         });
         var export = await client.GetFromJsonAsync<UserConsentHistoryResponse>($"{Path}/history?userId={other.Id}", PalladinJsonSerializationSettings.DefaultOptions);
@@ -219,7 +219,7 @@ public sealed class UserConsentTests(ApiFactory apiFactory) : TestBase
         var context = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
         var consent = UserConsent.Create(user.Id, "product_analytics");
         context.UserConsents.Add(consent);
-        var notice = new ConsentNotice("product_analytics", "palladin_web_mobile", "test-v1", "en", "Test analytics consent.");
+        var notice = new ConsentNotice("product_analytics", "palladin_web_mobile", "2026-09-10T00:00:00Z", "en");
         for (uint revision = 0; revision < 51; revision++)
         {
             context.UserConsentHistory.Add(consent.TryDecide(revision % 2 == 0, revision, Guid.NewGuid(), notice,
@@ -252,5 +252,49 @@ public sealed class UserConsentTests(ApiFactory apiFactory) : TestBase
         (await client.GetAsync("api/account/consents")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await client.GetAsync($"{Path}/history")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await client.PutAsJsonAsync(Path, Decision(true, 0))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Theory]
+    [InlineData("2026-09-09T00:00:00Z")]
+    [InlineData("2099-01-01T00:00:00Z")]
+    public async Task When_UnpublishedVersionIsSubmitted_Then_NoDecisionOrHistoryIsWritten(string version)
+    {
+        // Given
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var response = await client.PutAsJsonAsync(Path, Decision(true, 0) with { NoticeVersion = version });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var history = await client.GetFromJsonAsync<UserConsentHistoryResponse>($"{Path}/history", PalladinJsonSerializationSettings.DefaultOptions);
+        history!.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task When_OldNoticeIsNoLongerRegistered_Then_ItsRecordedGrantCanStillBeWithdrawn()
+    {
+        // Given
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+        var consent = UserConsent.Create(user.Id, "product_analytics");
+        context.UserConsents.Add(consent);
+        context.UserConsentHistory.Add(consent.TryDecide(true, 0, Guid.NewGuid(),
+            new ConsentNotice("product_analytics", "palladin_web_mobile", "old-version", "pl"),
+            "mobile_settings", apiFactory.FakeClock.GetCurrentInstant())!);
+        await context.SaveChangesAsync();
+
+        // When
+        var response = await client.PutAsJsonAsync(Path, Decision(false, 1) with { NoticeVersion = "old-version", Locale = "pl" });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var result = await response.Content.ReadFromJsonAsync<UserConsentResponse>(PalladinJsonSerializationSettings.DefaultOptions);
+        result!.Status.ShouldBe("withdrawn");
+        result.NoticeVersion.ShouldBe("old-version");
+        result.NoticeLocale.ShouldBe("pl");
     }
 }

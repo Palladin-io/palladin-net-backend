@@ -14,12 +14,11 @@ public sealed class UserConsentContractTests
         // Given: a continuous grant can have a newer decision revision than activation epoch.
         var response = new UserConsentsResponse([
             new UserConsentResponse("product_analytics", "palladin_web_mobile", "granted", 3, 1,
-                Instant.FromUtc(2026, 9, 11, 12, 0), "test-v1", "en",
-                new UserConsentNoticeResponse("test-v1", "en", "Test analytics consent.")),
+                Instant.FromUtc(2026, 9, 11, 12, 0), "2026-09-10T00:00:00Z", "en"),
             new UserConsentResponse("email_marketing", "palladin_email_news_and_offers", "unknown", 0, 0,
-                null, null, null, null),
+                null, null, null),
         ], 60);
-        var expected = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Consents", "v1.json")));
+        var expected = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Consents", "v2.json")));
 
         // When
         var actual = JsonSerializer.SerializeToNode(response, PalladinJsonSerializationSettings.DefaultOptions);

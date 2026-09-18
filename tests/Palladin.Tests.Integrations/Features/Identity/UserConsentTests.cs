@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 using Palladin.Core.Json;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Domain;
@@ -68,7 +69,9 @@ public sealed class UserConsentTests(ApiFactory apiFactory) : TestBase
         history[0].Status.ShouldBe("granted");
         history[1].Status.ShouldBe("withdrawn");
         history.ShouldAllBe(value => value.NoticeText == "Test analytics consent." && value.Locale == "en" && value.Source == "web_settings");
-        history[1].RecordedAt.ShouldBe(apiFactory.FakeClock.GetCurrentInstant());
+        var expectedRecordedAtTicks = apiFactory.FakeClock.GetCurrentInstant().ToUnixTimeTicks();
+        history[1].RecordedAt.ShouldBe(Instant.FromUnixTimeTicks(
+            expectedRecordedAtTicks - expectedRecordedAtTicks % TimeSpan.TicksPerMicrosecond));
     }
 
     [Theory]

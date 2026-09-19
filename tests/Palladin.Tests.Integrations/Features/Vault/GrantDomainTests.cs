@@ -296,7 +296,7 @@ public sealed class GrantDomainTests
     }
 
     [Fact]
-    public void RefreshScope_AllowsOwnerClientToReplaceAuthenticatedFieldSet()
+    public void RefreshScope_WhenAllFields_IncludesNewFieldsWithoutChangingSelectionMode()
     {
         var organizationId = Guid.NewGuid();
         var vaultId = Guid.NewGuid();
@@ -304,6 +304,7 @@ public sealed class GrantDomainTests
         var entryId = Guid.NewGuid();
         var scope = GrantEnvelopeTestData.Scope(
             organizationId, vaultId, grantId, entryId, fieldIds: ["password", "totp"]);
+        scope.SetFieldSelectionMode(GrantFieldSelectionMode.All);
         var narrowed = GrantEnvelopeTestData.Scope(
             organizationId, vaultId, grantId, entryId,
             entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2, fieldIds: ["password"]);
@@ -316,6 +317,59 @@ public sealed class GrantDomainTests
             entryRevision: 3, envelopeRevision: 3, grantKeyVersion: 3, fieldIds: ["password", "notes"]);
         scope.RefreshScope(broadened);
         scope.FieldIds.ShouldBe("notes\npassword");
+        scope.FieldSelectionMode.ShouldBe(GrantFieldSelectionMode.All);
+    }
+
+    [Fact]
+    public void RefreshScope_WhenSelectedFields_RejectsAddingUnapprovedTotp()
+    {
+        // Given
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
+        var scope = GrantEnvelopeTestData.Scope(
+            organizationId, vaultId, grantId, entryId, fieldIds: ["password"]);
+        var expanded = GrantEnvelopeTestData.Scope(
+            organizationId, vaultId, grantId, entryId,
+            entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
+            fieldIds: ["password", "totp"]);
+
+        // When
+        var action = () => scope.RefreshScope(expanded);
+
+        // Then
+        Should.Throw<DomainException>(action);
+        scope.FieldIds.ShouldBe("password");
+        scope.Envelope!.EntryRevision.ShouldBe(1UL);
+    }
+
+    [Fact]
+    public void RefreshScope_WhenSelectedFields_RetainsSelectionAcrossPolicyRemoval()
+    {
+        // Given
+        var organizationId = Guid.NewGuid();
+        var vaultId = Guid.NewGuid();
+        var grantId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
+        var scope = GrantEnvelopeTestData.Scope(
+            organizationId, vaultId, grantId, entryId, fieldIds: ["password", "totp"]);
+        var narrowed = GrantEnvelopeTestData.Scope(
+            organizationId, vaultId, grantId, entryId,
+            entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2, fieldIds: ["password"]);
+
+        // When
+        scope.RefreshScope(narrowed);
+        var restored = GrantEnvelopeTestData.Scope(
+            organizationId, vaultId, grantId, entryId,
+            entryRevision: 3, envelopeRevision: 3, grantKeyVersion: 3, fieldIds: ["password", "totp"]);
+        scope.RefreshScope(restored);
+
+        // Then
+        scope.FieldIds.ShouldBe("password\ntotp");
+        scope.SelectedFieldIds.ShouldBe("password\ntotp");
+        scope.FieldSelectionMode.ShouldBe(GrantFieldSelectionMode.Selected);
+        Should.Throw<DomainException>(() => scope.SetFieldSelectionMode(GrantFieldSelectionMode.All));
     }
 
     [Fact]

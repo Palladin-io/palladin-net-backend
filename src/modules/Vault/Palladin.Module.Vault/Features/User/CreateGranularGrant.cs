@@ -24,6 +24,7 @@ public sealed record CreateGranularGrantRequest : IRequiresVaultMembership
     public GrantEntryEnvelopeContract GrantEntry { get; init; } = null!;
     public Instant? ExpiresAt { get; init; }
     public int? QueryLimit { get; init; }
+    public GrantFieldSelectionMode FieldSelectionMode { get; init; } = GrantFieldSelectionMode.All;
     public GrantMethods Methods { get; init; } = GrantMethods.Get;
 }
 
@@ -36,6 +37,7 @@ internal sealed class CreateGranularGrantValidator : Validator<CreateGranularGra
     public CreateGranularGrantValidator()
     {
         RuleFor(x => x.GrantId).NotEmpty();
+        RuleFor(x => x.FieldSelectionMode).IsInEnum();
         RuleFor(x => x.VaultId).NotEmpty();
         RuleFor(x => x.EntryId).NotEmpty();
         RuleFor(x => x.AgentId).NotEmpty();
@@ -55,7 +57,6 @@ internal sealed class CreateGranularGrantValidator : Validator<CreateGranularGra
 
 [PublicAPI]
 internal sealed class CreateGranularGrantEndpoint(
-    VaultDomainReadContext domainReadContext,
     VaultDomainWriteContext domainWriteContext,
     IClock clock) : Endpoint<CreateGranularGrantRequest, CreateGranularGrantResponse>
 {
@@ -94,7 +95,7 @@ internal sealed class CreateGranularGrantEndpoint(
             return;
         }
 
-        if (await domainReadContext.VaultPrincipalDeprovisionings.AnyAsync(x =>
+        if (await domainWriteContext.VaultPrincipalDeprovisionings.AnyAsync(x =>
                 x.OrganizationId == organizationId
                 && x.PrincipalType == VaultPrincipalType.Agent
                 && x.PrincipalId == req.AgentId
@@ -122,7 +123,7 @@ internal sealed class CreateGranularGrantEndpoint(
             return;
         }
 
-        if (await domainReadContext.HasActiveEntryCoverageAsync(
+        if (await domainWriteContext.HasActiveEntryCoverageAsync(
                 req.AgentId, agent.AccessEpoch, req.VaultId, req.EntryId, excludingGrantId: null, ct))
         {
             throw new AgentAlreadyHasActiveAccessException("entry");
@@ -130,7 +131,7 @@ internal sealed class CreateGranularGrantEndpoint(
 
         var now = clock.GetCurrentInstant();
         var expirySource = ExpirySource.From(req.ExpiresAt, req.QueryLimit);
-        var names = await domainReadContext.ResolveAsync(req.AgentId, req.EntryId, req.VaultId, userId, ct);
+        var names = await domainWriteContext.ResolveAsync(req.AgentId, req.EntryId, req.VaultId, userId, ct);
         GrantEntryScope scope;
         try
         {
@@ -231,6 +232,7 @@ internal sealed class CreateGranularGrantEndpoint(
         {
             throw new Palladin.Core.Types.Exceptions.DomainException("Grant envelope Agent key fingerprint is invalid.");
         }
+        scope.SetFieldSelectionMode(req.FieldSelectionMode);
         return scope;
     }
 

@@ -23,6 +23,7 @@ public sealed record ApproveGrantRequest : IRequiresVaultMembership
     public ScriptExecutionPackageContract? ScriptPackage { get; init; }
     public Instant? ExpiresAt { get; init; }
     public int? QueryLimit { get; init; }
+    public GrantFieldSelectionMode FieldSelectionMode { get; init; } = GrantFieldSelectionMode.All;
 
     // Final methods decision. The approver may narrow or widen what the agent requested;
     // null keeps the requested set unchanged.
@@ -36,6 +37,7 @@ internal sealed class ApproveGrantValidator : Validator<ApproveGrantRequest>
     {
         RuleFor(x => x.VaultId).NotEmpty();
         RuleFor(x => x.GrantId).NotEmpty();
+        RuleFor(x => x.FieldSelectionMode).IsInEnum();
 
         // At most one expiry policy: time-based (ExpiresAt), use-based (QueryLimit), or neither
         // (Lifetime = never expires). Both at once is invalid.
@@ -58,7 +60,6 @@ internal sealed class ApproveGrantValidator : Validator<ApproveGrantRequest>
 
 [PublicAPI]
 internal sealed class ApproveGrantEndpoint(
-    VaultDomainReadContext domainReadContext,
     VaultDomainWriteContext domainWriteContext,
     IClock clock) : Endpoint<ApproveGrantRequest>
 {
@@ -160,7 +161,7 @@ internal sealed class ApproveGrantEndpoint(
 
         // Coverage invariant: refuse to activate if the agent already has active coverage of this entry
         // through another grant (active GRANULAR on the entry, or active FULL on the vault) — 409.
-        if (await domainReadContext.HasActiveEntryCoverageAsync(
+        if (await domainWriteContext.HasActiveEntryCoverageAsync(
                 granularGrant.AgentId,
                 granularGrant.AgentAccessEpoch,
                 granularGrant.VaultId,
@@ -196,6 +197,7 @@ internal sealed class ApproveGrantEndpoint(
         try
         {
             scope = GrantEnvelopeContractMapper.ToDomain(grantEntry, finalMethods, granularGrant.AgentId);
+            scope.SetFieldSelectionMode(req.FieldSelectionMode);
             var expectedFingerprint = VaultKeyFingerprint.Compute(
                 Convert.FromBase64String(currentAgent.PublicKey), VaultKeyKind.AgentX25519);
             if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(expectedFingerprint))
@@ -210,7 +212,7 @@ internal sealed class ApproveGrantEndpoint(
             return;
         }
 
-        var names = await domainReadContext.ResolveAsync(
+        var names = await domainWriteContext.ResolveAsync(
             granularGrant.AgentId,
             granularGrant.EntryId,
             granularGrant.VaultId,
@@ -255,7 +257,7 @@ internal sealed class ApproveGrantEndpoint(
             return;
         }
 
-        var hasActiveCoverage = await domainReadContext.Grants.AnyAsync(candidate =>
+        var hasActiveCoverage = await domainWriteContext.Grants.AnyAsync(candidate =>
             candidate.Id != grant.Id
             && candidate.AgentId == grant.AgentId
             && candidate.AgentAccessEpoch == grant.AgentAccessEpoch
@@ -335,7 +337,7 @@ internal sealed class ApproveGrantEndpoint(
             return;
         }
 
-        var names = await domainReadContext.ResolveAsync(
+        var names = await domainWriteContext.ResolveAsync(
             grant.AgentId,
             grant.ScriptEntryId,
             grant.VaultId,

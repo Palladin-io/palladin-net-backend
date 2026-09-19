@@ -85,7 +85,9 @@ public sealed record GrantEntryScopeResponse(
     uint? GrantKeyVersion,
     uint? MemberKeyGeneration,
     uint? RecipientAgentKeyVersion,
-    [property: JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] byte[]? AgentKeyFingerprint);
+    [property: JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] byte[]? AgentKeyFingerprint,
+    GrantFieldSelectionMode FieldSelectionMode = GrantFieldSelectionMode.Selected,
+    string[]? SelectedFieldIds = null);
 
 [PublicAPI]
 public sealed record ScriptExecutionScopeResponse(
@@ -253,7 +255,9 @@ internal static class GrantProjection
                 scope.Envelope == null ? null : scope.Envelope.GrantKeyVersion,
                 scope.Envelope == null ? null : scope.Envelope.MemberKeyGeneration.Value,
                 scope.Envelope == null ? null : scope.Envelope.RecipientAgentKeyVersion.Value,
-                scope.Envelope == null ? null : scope.Envelope.AgentKeyFingerprint)).ToArray(),
+                scope.Envelope == null ? null : scope.Envelope.AgentKeyFingerprint,
+                scope.FieldSelectionMode,
+                EF.Functions.StringToArray(scope.SelectedFieldIds, "\n"))).ToArray(),
             g.ScriptExecutionScopes.Select(scope => new ScriptExecutionScopeResponse(
                 scope.EntryId,
                 scope.EntryRevision.ToString(),

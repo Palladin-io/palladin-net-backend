@@ -788,8 +788,10 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
         envelope.GrantKeyVersion.ShouldBe(2U);
     }
 
-    [Fact]
-    public async Task When_GrantRefreshBroadensFieldScope_Then_UpdateRollsBackAtomically()
+    [Theory]
+    [InlineData(GrantFieldSelectionMode.All)]
+    [InlineData(GrantFieldSelectionMode.Selected)]
+    public async Task When_NewTotpIsAdded_Then_GrantRefreshFollowsOwnerFieldSelection(GrantFieldSelectionMode selectionMode)
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -804,7 +806,8 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
             createdBy: user.Id).Generate();
         grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(
             organization.Id, vault.Id, grant.Id, entryId, grant.Methods,
-            grant.ExpiresAt, grant.QueryLimit));
+            grant.ExpiresAt, grant.QueryLimit, agentId: agent.Id, agentPublicKey: agent.PublicKey));
+        grant.GrantEntryScopes.Single().SetFieldSelectionMode(selectionMode);
         await apiFactory.Services.SeedGranularGrantAsync(grant);
         var request = EntryEnvelopeFaker.CreateUpdateRequest(
             organization.Id,
@@ -826,24 +829,25 @@ public sealed class EntryTests(ApiFactory apiFactory) : TestBase
                     envelopeRevision: 2,
                     grantKeyVersion: 2,
                     fieldIds: ["username", "password", "totp"],
-                    agentId: agent.Id),
+                    agentId: agent.Id, methods: grant.Methods),
             ],
         };
 
         var (response, _) = await client
             .PUTAsync<UpdateEntryEndpoint, UpdateEntryRequest, UpdateEntryResponse>(request);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.StatusCode.ShouldBe(selectionMode == GrantFieldSelectionMode.All ? HttpStatusCode.OK : HttpStatusCode.Conflict);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         (await db.EntryVersions.CountAsync(x => x.OrganizationId == organization.Id
                                                 && x.VaultId == vault.Id
-                                                && x.EntryId == entryId)).ShouldBe(1);
+                                                && x.EntryId == entryId)).ShouldBe(selectionMode == GrantFieldSelectionMode.All ? 2 : 1);
         var persistedScope = await db.GrantEntryScopes
             .Include(x => x.Envelope)
             .SingleAsync(x => x.GrantId == grant.Id && x.EntryId == entryId);
-        persistedScope.FieldIds.ShouldBe("password\nusername");
-        persistedScope.Envelope!.EntryRevision.ShouldBe(1UL);
+        persistedScope.FieldIds.ShouldBe(selectionMode == GrantFieldSelectionMode.All ? "password\ntotp\nusername" : "password\nusername");
+        persistedScope.Envelope!.EntryRevision.ShouldBe(selectionMode == GrantFieldSelectionMode.All ? 2UL : 1UL);
+        persistedScope.FieldSelectionMode.ShouldBe(selectionMode);
     }
 
     [Fact]

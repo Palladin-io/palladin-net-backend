@@ -12,16 +12,24 @@ internal static class GrantCoverageQueries
 {
     // True if the agent already has an active grant covering the entry (active GRANULAR on the entry,
     // or active FULL on the vault). Optionally ignore a specific grant id (e.g. the one being approved).
-    public static async Task<bool> HasActiveEntryCoverageAsync(
-        this VaultDomainReadContext ctx,
-        Guid agentId,
-        uint agentAccessEpoch,
-        Guid vaultId,
-        Guid entryId,
-        Guid? excludingGrantId,
-        CancellationToken ct)
+    public static Task<bool> HasActiveEntryCoverageAsync(
+        this VaultDomainReadContext ctx, Guid agentId, uint agentAccessEpoch,
+        Guid vaultId, Guid entryId, Guid? excludingGrantId, CancellationToken ct) =>
+        HasActiveEntryCoverageAsync(ctx.Entries, ctx.Grants, agentId, agentAccessEpoch,
+            vaultId, entryId, excludingGrantId, ct);
+
+    public static Task<bool> HasActiveEntryCoverageAsync(
+        this VaultDomainWriteContext ctx, Guid agentId, uint agentAccessEpoch,
+        Guid vaultId, Guid entryId, Guid? excludingGrantId, CancellationToken ct) =>
+        HasActiveEntryCoverageAsync(ctx.Entries, ctx.Grants, agentId, agentAccessEpoch,
+            vaultId, entryId, excludingGrantId, ct);
+
+    private static async Task<bool> HasActiveEntryCoverageAsync(
+        IQueryable<VaultEntry> entries, IQueryable<Grant> grants,
+        Guid agentId, uint agentAccessEpoch, Guid vaultId,
+        Guid entryId, Guid? excludingGrantId, CancellationToken ct)
     {
-        var currentRevision = await ctx.Entries
+        var currentRevision = await entries
             .Where(entry => entry.VaultId == vaultId
                             && entry.Id == entryId
                             && entry.State == EntryState.Active)
@@ -33,7 +41,7 @@ internal static class GrantCoverageQueries
             return false;
         }
 
-        return await ctx.Grants.AnyAsync(g =>
+        return await grants.AnyAsync(g =>
             g.AgentId == agentId
             && g.AgentAccessEpoch == agentAccessEpoch
             && g.VaultId == vaultId

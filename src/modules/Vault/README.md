@@ -199,3 +199,24 @@ The unified credential endpoint and its delivery helper use one DomainWriteConte
 throughout reads and grant-use writes; read-only material entities are explicitly
 no-tracking. This repair requires backend plus native runtime rollout, not a
 browser-extension update. Local tests do not constitute staging AWS/TOTP acceptance.
+
+## Per-Entry grant field selection
+
+Create/approve accepts `fieldSelectionMode` (`all`, default; or `selected`).
+The persisted Entry scope retains the selection separately from the current
+`fieldIds` ciphertext projection. `selectedFieldIds` preserves the owner's
+original choice across temporary policy exclusion. Refresh rejects any field
+outside that selected allowlist; all-grants permit new fields when a Member
+re-encrypts the Entry and Grant together. Methods, recipient, expiry, use limit
+and revision fences retain their existing authority. The server never derives
+field values or decrypts MemberSecret. Actual field IDs remain authenticated by
+the existing envelope field-set commitment; selection intent is authoritative
+server-owned grant state returned by the authenticated Member API.
+
+Migration `AddGrantFieldSelection` adds two columns and marks pre-existing
+grants as selected with their current field list. It does not silently expand
+old approvals. Changing an existing grant's intent requires an explicit new
+owner approval/re-grant. Deploy compatible Member writers with this additive
+backend contract; older writers cannot add newly grantable fields themselves.
+This change does not provide fresh TOTP at operation time: the current derived
+payload's code-at-envelope-construction limitation remains a separate gate.

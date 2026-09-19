@@ -258,8 +258,15 @@ public sealed class GetOrRequestCredentialTests(ApiFactory apiFactory) : TestBas
                     TestContext.Current.CancellationToken);
             var secret = VaultEnvelopeContractMapper.ToDomain(EntryEnvelopeFaker.CreateMemberSecret(
                 setup.OrganizationId, setup.VaultId, setup.EntryId, 2, EntryOperation.Updated));
+            var vault = await db.Vaults.SingleAsync(x => x.Id == setup.VaultId,
+                TestContext.Current.CancellationToken);
+            while (vault.MemberSequence.Value < 1)
+            {
+                vault.AllocateSequences(false, setup.UserId, apiFactory.FakeClock.GetCurrentInstant());
+            }
+            var sequences = vault.AllocateSequences(false, setup.UserId, apiFactory.FakeClock.GetCurrentInstant());
             db.EntryVersions.Add(VaultEntryVersion.Create(secret,
-                new AllocatedVaultSequences(new MemberSequence(2), null), false,
+                sequences, false,
                 apiFactory.FakeClock.GetCurrentInstant(), ActorType.Member, setup.UserId));
             await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }

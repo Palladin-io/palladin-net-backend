@@ -12,6 +12,8 @@ internal sealed class GrantEntryScope
     internal GrantMethods Methods { get; private set; }
     internal GrantDeliveryPolicy DeliveryPolicy { get; private set; }
     internal string FieldIds { get; private set; } = string.Empty;
+    internal GrantFieldSelectionMode FieldSelectionMode { get; private set; }
+    internal string SelectedFieldIds { get; private set; } = string.Empty;
     internal GrantEntryEnvelope? Envelope { get; private set; }
 
     private GrantEntryScope() { }
@@ -60,8 +62,20 @@ internal sealed class GrantEntryScope
             Methods = methods,
             DeliveryPolicy = deliveryPolicy,
             FieldIds = serializedFields,
+            SelectedFieldIds = serializedFields,
             Envelope = envelope,
         };
+    }
+
+    internal void SetFieldSelectionMode(GrantFieldSelectionMode mode)
+    {
+        if (!Enum.IsDefined(mode) || Envelope is null || Envelope.GrantEnvelopeRevision != 1)
+        {
+            throw new DomainException("Grant field selection can only be set at approval.");
+        }
+
+        FieldSelectionMode = mode;
+        SelectedFieldIds = mode == GrantFieldSelectionMode.Selected ? FieldIds : string.Empty;
     }
 
     internal void DeleteEnvelope() => Envelope = null;
@@ -88,6 +102,12 @@ internal sealed class GrantEntryScope
             || refreshed.Envelope is null)
         {
             throw new DomainException("Grant refresh scope is invalid.");
+        }
+
+        if (FieldSelectionMode == GrantFieldSelectionMode.Selected
+            && refreshed.FieldIds.Split('\n').Except(SelectedFieldIds.Split('\n'), StringComparer.Ordinal).Any())
+        {
+            throw new DomainException("Grant refresh exceeds the owner's selected fields.");
         }
 
         Refresh(refreshed.Envelope);

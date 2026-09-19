@@ -19,11 +19,13 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 [Collection<ApiFactoryCollection>]
 public sealed class GrantTests(ApiFactory apiFactory) : TestBase
 {
-    [Fact]
-    public async Task ProactiveGranularGrant_PersistsDurableScopeAndSecretEnvelope()
+    [Theory]
+    [InlineData(GrantFieldSelectionMode.All)]
+    [InlineData(GrantFieldSelectionMode.Selected)]
+    public async Task ProactiveGranularGrant_PersistsDurableScopeAndSecretEnvelope(GrantFieldSelectionMode selectionMode)
     {
         var setup = await ArrangeAsync();
-        var request = Request(setup);
+        var request = Request(setup) with { FieldSelectionMode = selectionMode };
 
         var (response, result) = await setup.Client
             .POSTAsync<CreateGranularGrantEndpoint, CreateGranularGrantRequest, CreateGranularGrantResponse>(request);
@@ -46,6 +48,9 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         var exposedScope = contract.EntryScopes.Single();
         exposedScope.EntryId.ShouldBe(setup.EntryId);
         exposedScope.FieldIds.ShouldBe(["password", "username"]);
+        exposedScope.FieldSelectionMode.ShouldBe(selectionMode);
+        exposedScope.SelectedFieldIds.ShouldBe(selectionMode == GrantFieldSelectionMode.Selected
+            ? ["password", "username"] : []);
         exposedScope.GrantEnvelopeRevision.ShouldBe("1");
         exposedScope.EntryRevision.ShouldBe("1");
         exposedScope.MemberKeyGeneration.ShouldBe(1u);

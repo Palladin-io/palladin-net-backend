@@ -260,8 +260,10 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
 
-    [Fact]
-    public async Task Approval_StoresRevisionBoundEnvelopeAndRetainsEncryptedReason()
+    [Theory]
+    [InlineData(GrantFieldSelectionMode.All)]
+    [InlineData(GrantFieldSelectionMode.Selected)]
+    public async Task Approval_StoresRevisionBoundEnvelopeAndRetainsEncryptedReason(GrantFieldSelectionMode mode)
     {
         var setup = await ArrangeAsync();
         var request = Request(setup);
@@ -280,6 +282,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
                 GrantId = pending.GrantId,
                 GrantEntry = envelope,
                 ExpiresAt = expiresAt,
+                FieldSelectionMode = mode,
             });
 
         response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
@@ -290,6 +293,9 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             .Include(g => g.GrantEntryScopes).ThenInclude(s => s.Envelope)
             .SingleAsync(g => g.Id == pending.GrantId);
         grant.Status.ShouldBe(GrantStatus.Active);
+        grant.GrantEntryScopes.Single().FieldSelectionMode.ShouldBe(mode);
+        grant.GrantEntryScopes.Single().SelectedFieldIds.ShouldBe(
+            mode == GrantFieldSelectionMode.All ? string.Empty : grant.GrantEntryScopes.Single().FieldIds);
         grant.EncryptedReason.ShouldNotBeNull();
         grant.EncryptedReason!.GrantRequestId.ShouldBe(pending.GrantId);
         grant.GrantEntryScopes.Single().Envelope!.EntryRevision.ShouldBe(1UL);

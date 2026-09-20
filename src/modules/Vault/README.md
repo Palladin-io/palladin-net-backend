@@ -176,7 +176,7 @@ The canonical Entry head/key/version model, snapshot/delta synchronization, life
 membership. The current increment implements the domain, storage, server-side
 gate primitives and authenticated sender creation-challenge/create/list/revoke/
 protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
-Anonymous receiver endpoints, Identity revocation callers, mail, Audit and Inbox
+Anonymous receiver endpoints, mail, Audit and Inbox
 consumers remain outstanding; the feature is not ready for deployment.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
@@ -210,8 +210,9 @@ the first confirmation can carry the sender's explicit notification request;
 later confirmations still produce structural audit activity. Delivery/revocation
 atomicity uses the share/session stamps plus tracked source and authority fences.
 PostgreSQL tests cover the final-receipt race, fresh-context retries, organization
-and sender revocation, and equal-timestamp purge. This does not yet prove the
-end-to-end Identity permission-removal flow: its command callers are outstanding.
+and sender revocation, and equal-timestamp purge. Identity integration tests also
+cover Member removal and both effective-permission-loss paths, including lost
+acknowledgement and exact retry. Anonymous HTTP delivery remains outstanding.
 
 Sender creation captures the authenticated Identity authorization version and
 the independently loaded Vault membership timestamp. A per-organization/Member
@@ -219,11 +220,15 @@ the independently loaded Vault membership timestamp. A per-organization/Member
 `VaultOrganizationLifecycle.SharingDisabled` blocks organization-wide sharing.
 Vault-owned `RevokeMemberEntrySharingCommand` and
 `RevokeOrganizationEntrySharingCommand` consumers persist those fences before
-acknowledging. Identity must await that acknowledgement before committing an
+acknowledging. Identity awaits the Member acknowledgement before committing an
 access-losing transition, without holding a database transaction across messaging.
-That integration is not implemented yet and remains a security release gate.
-An interrupted Identity transition must remain fail-closed; it cannot restore an
-old share merely because the command is retried or delivered out of order.
+Member removal, member-role replacement and custom-role definition changes are
+wired. Changes that preserve effective `VaultManage` do not revoke links.
+An interrupted Identity transition remains fail-closed: a committed Vault revoke
+is not rolled back even if the acknowledgement or later Identity commit fails.
+Exact retry can complete the operation. Regained permission uses a new Identity
+authorization version and cannot restore old shares. Organization-wide command
+support does not introduce a new Identity organization-deletion endpoint.
 
 Recipient source authorization fences the same authority and organization rows,
 Vault mutation stamp and Entry lifecycle. `IsPurging` and `CurrentRevision` are

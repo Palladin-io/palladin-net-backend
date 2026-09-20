@@ -11,6 +11,7 @@ using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Shared;
+using Palladin.Module.Identity.Infrastructure.Sharing;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -39,6 +40,7 @@ internal sealed class UpdateOrganizationRoleValidator : Validator<UpdateOrganiza
 [PublicAPI]
 internal sealed class UpdateOrganizationRoleEndpoint(
     IdentityDomainWriteContext domainWriteContext,
+    EntrySharingRevocation sharingRevocation,
     IClock clock) : Endpoint<UpdateOrganizationRoleRequest, OrganizationRoleItem>
 {
     public override void Configure()
@@ -156,6 +158,14 @@ internal sealed class UpdateOrganizationRoleEndpoint(
         }
 
         var now = clock.GetCurrentInstant();
+        foreach (var change in authorizationChanges.Where(change =>
+                     change.Current.HasFlag(Permission.VaultManage)
+                     && !change.Proposed.HasFlag(Permission.VaultManage)))
+        {
+            await sharingRevocation.RevokeMemberAsync(
+                organizationId.Value, change.Member.UserId, change.Member.AuthorizationVersion, now, ct);
+        }
+
         role.UpdateCustom(req.Name, requestedPermissions, now);
         foreach (var change in authorizationChanges)
         {

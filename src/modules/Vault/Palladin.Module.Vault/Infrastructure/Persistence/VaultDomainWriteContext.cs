@@ -23,6 +23,8 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<MemberKeyDirectoryEntry> MemberKeyDirectory => Track<MemberKeyDirectoryEntry>();
     public IQueryable<VaultEntry> Entries => Track<VaultEntry>();
     public IQueryable<EntryShare> EntryShares => Track<EntryShare>();
+    public IQueryable<EntryShareSenderAuthority> EntryShareSenderAuthorities => Track<EntryShareSenderAuthority>();
+    public IQueryable<EntryShareCreationChallenge> EntryShareCreationChallenges => Track<EntryShareCreationChallenge>();
     public IQueryable<EntryShareSession> EntryShareSessions => Track<EntryShareSession>();
     public IQueryable<EntryShareActivity> EntryShareActivities => Track<EntryShareActivity>();
     public IQueryable<VaultEntryKey> EntryKeys => Track<VaultEntryKey>();

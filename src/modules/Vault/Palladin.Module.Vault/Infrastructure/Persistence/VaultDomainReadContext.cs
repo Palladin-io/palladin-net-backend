@@ -20,6 +20,7 @@ internal sealed class VaultDomainReadContext(VaultDbReadContext readContext) : D
     public IQueryable<MemberKeyDirectoryEntry> MemberKeyDirectory => Query<MemberKeyDirectoryEntry>();
     public IQueryable<VaultEntry> Entries => Query<VaultEntry>();
     public IQueryable<EntryShare> EntryShares => Query<EntryShare>();
+    public IQueryable<EntryShareSenderAuthority> EntryShareSenderAuthorities => Query<EntryShareSenderAuthority>();
     public IQueryable<VaultEntryKey> EntryKeys => Query<VaultEntryKey>();
     public IQueryable<VaultEntryVersion> EntryVersions => Query<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Query<AgentVaultDiscoveryEnvelope>();

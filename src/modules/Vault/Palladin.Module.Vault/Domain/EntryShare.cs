@@ -15,6 +15,8 @@ internal sealed class EntryShare : EventEntityBase
     public Guid VaultId { get; private set; }
     public Guid EntryId { get; private set; }
     public Guid CreatedBy { get; private set; }
+    public uint SenderAuthorizationVersion { get; private set; }
+    public Instant SenderVaultMembershipAddedAt { get; private set; }
     internal EntryRevision SourceRevision { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant ExpiresAt { get; private set; }
@@ -59,10 +61,12 @@ internal sealed class EntryShare : EventEntityBase
         byte[] accessTokenHash,
         byte[] nonce,
         byte[] ciphertext,
-        bool notifyOnFirstReceipt)
+        bool notifyOnFirstReceipt,
+        uint senderAuthorizationVersion,
+        Instant senderVaultMembershipAddedAt)
     {
         source.Validate();
-        if (id == Guid.Empty || createdBy == Guid.Empty || sourceRevision.Value == 0
+        if (id == Guid.Empty || createdBy == Guid.Empty || sourceRevision.Value == 0 || senderAuthorizationVersion == 0
             || expiresAt <= now || maximumReceipts < 1
             || accessTokenHash.Length != 32 || nonce.Length != NonceBytes
             || ciphertext.Length is < 16 or > MaximumCiphertextBytes)
@@ -87,6 +91,8 @@ internal sealed class EntryShare : EventEntityBase
             EntryId = source.EntryId,
             SourceRevision = sourceRevision,
             CreatedBy = createdBy,
+            SenderAuthorizationVersion = senderAuthorizationVersion,
+            SenderVaultMembershipAddedAt = senderVaultMembershipAddedAt,
             CreatedAt = now,
             ExpiresAt = expiresAt,
             MaximumReceipts = maximumReceipts,

@@ -10,6 +10,29 @@ namespace Palladin.Tests.Unit.Modules.Vault;
 public sealed class EntrySharePersistenceTests
 {
     [Fact]
+    public void When_SourceAuthorityIsChecked_Then_RevocationAndEqualTimestampPurgeAreConcurrencyFenced()
+    {
+        // Given
+        using var context = CreateContext();
+
+        // When
+        var sender = context.Model.FindEntityType(typeof(EntryShareSenderAuthority))!;
+        var organization = context.Model.FindEntityType(typeof(VaultOrganizationLifecycle))!;
+        var source = context.Model.FindEntityType(typeof(VaultEntry))!;
+        var challenge = context.Model.FindEntityType(typeof(EntryShareCreationChallenge))!;
+
+        // Then
+        sender.FindProperty(nameof(EntryShareSenderAuthority.MutationVersion))!.IsConcurrencyToken.ShouldBeTrue();
+        organization.FindProperty(nameof(VaultOrganizationLifecycle.MutationVersion))!.IsConcurrencyToken.ShouldBeTrue();
+        source.FindProperty(nameof(VaultEntry.CurrentRevision))!.IsConcurrencyToken.ShouldBeTrue();
+        source.FindProperty(nameof(VaultEntry.IsPurging))!.IsConcurrencyToken.ShouldBeTrue();
+        challenge.FindProperty(nameof(EntryShareCreationChallenge.MutationVersion))!.IsConcurrencyToken.ShouldBeTrue();
+        challenge.FindPrimaryKey()!.Properties.Select(x => x.Name).ShouldBe([
+            nameof(EntryShareCreationChallenge.OrganizationId), nameof(EntryShareCreationChallenge.VaultId),
+            nameof(EntryShareCreationChallenge.EntryId), nameof(EntryShareCreationChallenge.RequestedBy)]);
+    }
+
+    [Fact]
     public void When_TheModelIsBuilt_Then_ShareAndSessionWritesAreConcurrencyFenced()
     {
         // Given
@@ -57,7 +80,7 @@ public sealed class EntrySharePersistenceTests
             new EntryScope(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()), new EntryRevision(1),
             Guid.NewGuid(), now, now + Duration.FromHours(1), 1,
             EntryShareRecipientMode.AnyoneWithLink, null, EntryShareProtection.None, null,
-            new byte[32], new byte[24], new byte[16], true);
+            new byte[32], new byte[24], new byte[16], true, 1, now);
         domain.Add(share);
 
         // When

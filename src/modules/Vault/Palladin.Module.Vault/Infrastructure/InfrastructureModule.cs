@@ -32,6 +32,7 @@ internal static class InfrastructureModule
             .Validate(options => options.IsValid(), "Entry sharing requires bounded security limits.")
             .ValidateOnStart();
         services.AddSingleton<EntryShareSecurity>();
+        services.AddScoped<EntryShareAuthority>();
         services.AddOptions<VaultCreationOptions>()
             .Bind(configuration.GetSection(VaultCreationOptions.Position))
             .Validate(options => options.ChallengeTtlSeconds is > 0 and <= 3600,

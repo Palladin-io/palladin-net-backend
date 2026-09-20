@@ -1,5 +1,7 @@
 using Palladin.Module.Vault.Domain;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using PostgresErrorCodes = Palladin.Core.Persistence.PostgresErrorCodes;
 
 namespace Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -18,6 +20,8 @@ internal sealed class VaultDbWriteContext(DbContextOptions<VaultDbWriteContext> 
     public DbSet<MemberKeyDirectoryEntry> MemberKeyDirectory => Set<MemberKeyDirectoryEntry>();
     public DbSet<VaultEntry> Entries => Set<VaultEntry>();
     public DbSet<EntryShare> EntryShares => Set<EntryShare>();
+    public DbSet<EntryShareSenderAuthority> EntryShareSenderAuthorities => Set<EntryShareSenderAuthority>();
+    public DbSet<EntryShareCreationChallenge> EntryShareCreationChallenges => Set<EntryShareCreationChallenge>();
     public DbSet<EntryShareSession> EntryShareSessions => Set<EntryShareSession>();
     public DbSet<EntryShareActivity> EntryShareActivities => Set<EntryShareActivity>();
     public DbSet<VaultEntryKey> EntryKeys => Set<VaultEntryKey>();
@@ -35,6 +39,19 @@ internal sealed class VaultDbWriteContext(DbContextOptions<VaultDbWriteContext> 
     public DbSet<CredentialFailureReport> CredentialFailureReports => Set<CredentialFailureReport>();
     public DbSet<EncryptedPresentationAsset> EncryptedPresentationAssets => Set<EncryptedPresentationAsset>();
     public DbSet<VaultPresentationAssetCutoverState> VaultPresentationAssetCutoverStates => Set<VaultPresentationAssetCutoverState>();
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+               { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "PK_EntryShareActivities" })
+        {
+            throw new DbUpdateConcurrencyException("The sharing activity sequence has changed.", exception);
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

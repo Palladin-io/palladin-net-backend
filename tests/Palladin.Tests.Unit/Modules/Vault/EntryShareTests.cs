@@ -374,7 +374,7 @@ public sealed class EntryShareTests
         // When
         var action = () => EntryShare.Create(Guid.NewGuid(), source, new EntryRevision(1), Guid.NewGuid(),
             Now, Now, 1, EntryShareRecipientMode.AnyoneWithLink, null, EntryShareProtection.None, null,
-            new byte[32], new byte[24], new byte[16], false);
+            new byte[32], new byte[24], new byte[16], false, 1, Now);
 
         // Then
         action.ShouldThrow<DomainException>();
@@ -392,5 +392,5 @@ public sealed class EntryShareTests
         Guid.NewGuid(), Now, Now + Duration.FromHours(1), maximumReceipts, recipientMode,
         recipientMode == EntryShareRecipientMode.NamedRecipient ? "protected-address" : null,
         protection, protection == EntryShareProtection.None ? null : "secret-verifier",
-        new byte[32], new byte[24], new byte[16], notifications);
+        new byte[32], new byte[24], new byte[16], notifications, 1, Now);
 }

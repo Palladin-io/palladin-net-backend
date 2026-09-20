@@ -173,9 +173,11 @@ The canonical Entry head/key/version model, snapshot/delta synchronization, life
 ## Individual Entry sharing (CVT-644, implementation in progress)
 
 `EntryShare` is an independent encrypted snapshot, not an Agent grant or a Vault
-membership. The current increment introduces the domain, storage and server-side
-gate primitives only; public and sender endpoints, source-authority enforcement,
-mail, Audit and Inbox consumers are not yet implemented in this branch.
+membership. The current increment implements the domain, storage, server-side
+gate primitives and authenticated sender creation-challenge/create/list/revoke/
+protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
+Anonymous receiver endpoints, Identity revocation callers, mail, Audit and Inbox
+consumers remain outstanding; the feature is not ready for deployment.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
 scope/revision, finite expiry, receipt budget, optional recipient policy and
@@ -206,8 +208,38 @@ does not consume a second receipt but still advances the optimistic share fence.
 Client confirmation is a separate occurrence and cannot refund a receipt. Only
 the first confirmation can carry the sender's explicit notification request;
 later confirmations still produce structural audit activity. Delivery/revocation
-atomicity against source and Identity authority remains a required integration
-gate, not something the domain-only tests prove.
+atomicity uses the share/session stamps plus tracked source and authority fences.
+PostgreSQL tests cover the final-receipt race, fresh-context retries, organization
+and sender revocation, and equal-timestamp purge. This does not yet prove the
+end-to-end Identity permission-removal flow: its command callers are outstanding.
+
+Sender creation captures the authenticated Identity authorization version and
+the independently loaded Vault membership timestamp. A per-organization/Member
+`EntryShareSenderAuthority` monotonically revokes old authorization versions;
+`VaultOrganizationLifecycle.SharingDisabled` blocks organization-wide sharing.
+Vault-owned `RevokeMemberEntrySharingCommand` and
+`RevokeOrganizationEntrySharingCommand` consumers persist those fences before
+acknowledging. Identity must await that acknowledgement before committing an
+access-losing transition, without holding a database transaction across messaging.
+That integration is not implemented yet and remains a security release gate.
+An interrupted Identity transition must remain fail-closed; it cannot restore an
+old share merely because the command is retried or delivered out of order.
+
+Recipient source authorization fences the same authority and organization rows,
+Vault mutation stamp and Entry lifecycle. `IsPurging` and `CurrentRevision` are
+concurrency tokens alongside `UpdatedAt`, preventing equal-clock purge/delete
+races. Deleting an Entry advances a permanent sharing-revocation revision floor;
+restoring it does not clear that floor. Archive suspends snapshots while archived.
+Creating a new share after restoration binds the new revision. HTTP tests cover
+delete/restore and show the original snapshot remains revoked.
+
+Creation reserves a server-owned share ID scoped to organization, Vault, Entry
+and Member, bounded to one reservation per Member/Entry. Exact create retries
+match the original policy, ciphertext and verifiers and do not append another
+share or activity. The Vault mutation stamp serializes the active-link cap.
+The sender list projects policy, usage and status only, never ciphertext or token
+verifiers. It may decrypt the intended recipient address only for that sender.
+Sender responses carry `Cache-Control: no-store`.
 
 `EntryShareActivities` is the durable dispatch journal, keyed by share ID plus
 monotonic activity sequence. The Vault domain context stages new activity rows
@@ -219,8 +251,17 @@ not erase pending audit. It stores only structural IDs, kind, notification choic
 and timestamps. `SenderId` is the notification recipient, not the actor of an
 external recipient's delivery/confirmation/termination.
 
+EF may insert the activity before updating the share's optimistic stamp. A race
+can therefore first hit `PK_EntryShareActivities`; the Vault persistence boundary
+maps exactly that PostgreSQL unique violation to a concurrency conflict. The
+whole save rolls back and no delivery/audit occurrence survives the losing write.
+Unrelated uniqueness violations retain their original behavior.
+
 The incremental `AddEntrySharing` migration adds three tables without changing
-old migrations. Sender lists use the tenant/Vault/Entry/creation-time index;
+old migrations. `AddEntrySharingSourceAuthority` is a second incremental migration
+for the authority rows, reservations, source revocation floor and captured sender
+authority. Both apply successfully in isolated PostgreSQL integration tests.
+Sender lists use the tenant/Vault/Entry/creation-time index;
 expiry, expired-session cleanup and pending dispatch each have an index matching
 their bounded deterministic order. `ExpireEntrySharesJob` erases delivery data
 at expiry and removes expired sessions. `DispatchEntryShareActivityJob` marks

@@ -13,6 +13,24 @@ namespace Palladin.Tests.Integrations.Features.Notification;
 public sealed class NotificationPreferencesEndpointsTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
+    public async Task When_ChangingThePerShareReceiptChoiceThroughGlobalPreferences_Then_TheRequestIsRejected()
+    {
+        // Given
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var response = await client.PUTAsync<UpdateNotificationPreferencesEndpoint, UpdateNotificationPreferencesRequest>(
+            new UpdateNotificationPreferencesRequest
+            {
+                Items = [new UpdateNotificationPreferenceItem { Type = NotificationType.EntryShareReceived }],
+            });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task When_GettingPreferences_Then_ReturnsOneItemPerTypeWithDefaults()
     {
         // Given
@@ -25,10 +43,11 @@ public sealed class NotificationPreferencesEndpointsTests(ApiFactory apiFactory)
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        var userFacingCount = Enum.GetValues<NotificationType>().Length - 2;
+        var userFacingCount = Enum.GetValues<NotificationType>().Length - 3;
         result!.Items.Count.ShouldBe(userFacingCount);
         result.Items.ShouldNotContain(i => i.Type == NotificationType.AgentResolved);
         result.Items.ShouldNotContain(i => i.Type == NotificationType.AgentApproved);
+        result.Items.ShouldNotContain(i => i.Type == NotificationType.EntryShareReceived);
 
         var grantPending = result.Items.Single(i => i.Type == NotificationType.GrantPending);
         grantPending.Mandatory.ShouldBeTrue();

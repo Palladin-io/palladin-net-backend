@@ -178,8 +178,9 @@ gate primitives and authenticated sender creation-challenge/create/list/revoke/
 protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
 Guest session, OTP issuance/verification, optional-secret verification, delivery,
 confirmation and recipient termination now exist under
-`/api/entry-shares/{shareId}/sessions`. Audit and Inbox consumers and client flows
-remain outstanding; the feature is not ready for deployment.
+`/api/entry-shares/{shareId}/sessions`. Audit and first-receipt Inbox consumers
+are connected. Client flows and operational acceptance remain outstanding;
+the feature is not ready for deployment.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
 scope/revision, finite expiry, receipt budget, optional recipient policy and
@@ -273,7 +274,8 @@ durable activity, PIN/password gates, required OTP not bypassed by a correct PIN
 shared failed-attempt budgets, foreign session proof, policy/sender revocation,
 recipient termination, scanner GETs, session caps and bounded request bodies.
 The mail path is tested through the real bus, renderer and durable deduplication
-with a substituted email provider. Real SES delivery and downstream Inbox delivery
+with a substituted email provider. HTTP confirmation now reaches the real test
+bus and downstream Audit/Inbox; real SES delivery and deployed client rendering
 are not yet accepted.
 
 Sender creation captures the authenticated Identity authorization version and
@@ -318,6 +320,17 @@ not erase pending audit. It stores only structural IDs, kind, notification choic
 and timestamps. `SenderId` is the notification recipient, not the actor of an
 external recipient's delivery/confirmation/termination.
 
+`OnEntryShareActivityAudit` maps each occurrence to Audit's append command,
+independently of the notification choice. The stable UUIDv8 derives from a
+domain-separated SHA-256 share-ID/sequence digest; timestamps cannot collapse
+distinct simultaneous receipts. Sender, System and ExternalRecipient are explicit
+actor types. Audit metadata contains only share ID and sequence alongside opaque
+subject columns. `OnEntryShareActivityReceipt` sends Notification's separate
+sender-only command only for an opted-in first confirmation. The Inbox identity
+is stable per share. Reordered/repeated activities, a concurrent first-confirmation
+race, and the HTTP-to-test-bus-to-Audit/Inbox path are covered. No generic fan-out
+or global preference may silently override the per-share checkbox.
+
 EF may insert the activity before updating the share's optimistic stamp. A race
 can therefore first hit `PK_EntryShareActivities`; the Vault persistence boundary
 maps exactly that PostgreSQL unique violation to a concurrency conflict. The
@@ -332,8 +345,12 @@ Sender lists use the tenant/Vault/Entry/creation-time index;
 expiry, expired-session cleanup and pending dispatch each have an index matching
 their bounded deterministic order. `ExpireEntrySharesJob` erases delivery data
 at expiry and removes expired sessions. `DispatchEntryShareActivityJob` marks
-an occurrence published only after broker success. Long-term structural-journal
-retention and source-deletion cleanup remain pending in the lifecycle increment.
+an occurrence published only after broker success. PostgreSQL tests prove failed
+publication retains the pending occurrence even without its source, and a fresh
+job can publish/mark it. Expiry-job retries erase delivery material and expired
+sessions once, preserve the activity journal and leave an active share untouched.
+Long-term structural-journal retention and source-deletion cleanup remain pending
+in the lifecycle increment.
 
 ## Dependencies
 

@@ -8,6 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NodaTime;
 using Palladin.Core.Types;
+using Palladin.Module.Audit.Contracts.ValueObjects;
+using Palladin.Module.Audit.Infrastructure.Persistence;
+using Palladin.Module.Notification.Infrastructure.Persistence;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -59,6 +62,34 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
         var consumed = await client.POSTAsync<OpenEntryShareSessionEndpoint, OpenEntryShareSessionRequest>(
             new OpenEntryShareSessionRequest { ShareId = share.Id, AccessToken = seeded.AccessToken });
         consumed.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        await AssertReceiptConsumersAsync(share, notify);
+    }
+
+    private async Task AssertReceiptConsumersAsync(EntryShare share, bool notify)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var audit = scope.ServiceProvider.GetRequiredService<AuditDbReadContext>();
+            var rows = await audit.AuditLogEntries.Where(x => x.OrganizationId == share.OrganizationId
+                && x.EntryId == share.EntryId && x.EventType.StartsWith("entry-share."))
+                .ToListAsync(deadline.Token);
+            var notification = scope.ServiceProvider.GetRequiredService<NotificationDbReadContext>();
+            var inbox = await notification.InboxItems.Where(x => x.OrganizationId == share.OrganizationId
+                && x.SubjectId == share.Id).ToListAsync(deadline.Token);
+            if (rows.Count >= 3 && (!notify || inbox.Count > 0))
+            {
+                rows.Count.ShouldBe(3);
+                rows.Single(x => x.EventType == AuditEventType.EntryShareConfirmed)
+                    .ActorType.ShouldBe(AuditActorType.ExternalRecipient);
+                inbox.Count.ShouldBe(notify ? 1 : 0);
+                inbox.ShouldAllBe(x => x.UserId == share.CreatedBy && x.Type == NotificationType.EntryShareReceived);
+                return;
+            }
+
+            await Task.Delay(25, deadline.Token);
+        }
     }
 
     [Theory]

@@ -15,6 +15,53 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class EntrySharingConcurrencyTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
+    public async Task When_TwoConfirmationsRace_Then_OnlyOneCommittedOccurrenceRequestsInbox()
+    {
+        // Given
+        var seeded = await SeedShareAsync(sessionCount: 2, maximumReceipts: 2);
+        await using (var deliveryScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var delivery = deliveryScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+            var share = await delivery.EntryShares.SingleAsync(x => x.Id == seeded.ShareId);
+            foreach (var session in await delivery.EntryShareSessions.Where(x => x.ShareId == share.Id).ToListAsync())
+            {
+                share.Deliver(session, seeded.Now);
+            }
+            await delivery.CommitAsync();
+        }
+        await using var firstScope = apiFactory.Services.CreateAsyncScope();
+        await using var secondScope = apiFactory.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        var second = secondScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        var firstShare = await first.EntryShares.SingleAsync(x => x.Id == seeded.ShareId);
+        var secondShare = await second.EntryShares.SingleAsync(x => x.Id == seeded.ShareId);
+        var sessions = await first.EntryShareSessions.Where(x => x.ShareId == seeded.ShareId).OrderBy(x => x.Id).ToListAsync();
+        var secondSession = await second.EntryShareSessions.SingleAsync(x => x.ShareId == seeded.ShareId && x.Id == sessions[1].Id);
+
+        // When
+        firstShare.ConfirmReceipt(sessions[0], seeded.Now);
+        secondShare.ConfirmReceipt(secondSession, seeded.Now);
+        await first.CommitAsync();
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(() => second.CommitAsync());
+        await using (var retryScope = apiFactory.Services.CreateAsyncScope())
+        {
+            var retry = retryScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+            var share = await retry.EntryShares.SingleAsync(x => x.Id == seeded.ShareId);
+            var session = await retry.EntryShareSessions.SingleAsync(x => x.ShareId == seeded.ShareId && x.Id == secondSession.Id);
+            share.ConfirmReceipt(session, seeded.Now);
+            await retry.CommitAsync();
+        }
+
+        // Then
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var database = verificationScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        var confirmations = await database.EntryShareActivities.Where(x => x.ShareId == seeded.ShareId
+            && x.Kind == EntryShareActivityKind.Confirmed).ToListAsync();
+        confirmations.Count.ShouldBe(2);
+        confirmations.Count(x => x.NotifySender).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task When_TwoSessionOpeningsReadTheSameCapacity_Then_OnlyOneCanCommit()
     {
         // Given
@@ -168,7 +215,7 @@ public sealed class EntrySharingConcurrencyTests(ApiFactory apiFactory) : TestBa
             && x.Kind == EntryShareActivityKind.Delivered, TestContext.Current.CancellationToken)).ShouldBe(1);
     }
 
-    private async Task<(Guid ShareId, Instant Now)> SeedShareAsync(int sessionCount = 1)
+    private async Task<(Guid ShareId, Instant Now)> SeedShareAsync(int sessionCount = 1, int maximumReceipts = 1)
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -179,7 +226,7 @@ public sealed class EntrySharingConcurrencyTests(ApiFactory apiFactory) : TestBa
         var source = await scope.ServiceProvider.GetRequiredService<EntryShareAuthority>()
             .LoadSenderSourceAsync(new EntryScope(organization.Id, vault.Id, entryId), user.Id, 1, TestContext.Current.CancellationToken);
         var share = EntryShare.Create(Guid.NewGuid(), new EntryScope(organization.Id, vault.Id, entryId),
-            source.Entry.CurrentRevision, user.Id, now, now + Duration.FromHours(1), 1,
+            source.Entry.CurrentRevision, user.Id, now, now + Duration.FromHours(1), maximumReceipts,
             EntryShareRecipientMode.AnyoneWithLink, null, EntryShareProtection.None, null,
             new byte[32], new byte[24], new byte[16], true, 1, source.Member.AddedAt);
         context.Add(share);

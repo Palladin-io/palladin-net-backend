@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Palladin.Module.Audit.Infrastructure.Persistence;
 namespace Palladin.Module.Audit.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AuditDbWriteContext))]
-    partial class AuditDbWriteContextModelSnapshot : ModelSnapshot
+    [Migration("20260920170439_AddExplicitAuditOccurrenceIdentity")]
+    partial class AddExplicitAuditOccurrenceIdentity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

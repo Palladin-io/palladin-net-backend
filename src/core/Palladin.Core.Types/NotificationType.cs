@@ -30,4 +30,7 @@ public enum NotificationType
 
     [JsonStringEnumMemberName("agent_deactivated")]
     AgentDeactivated = 9,
+
+    [JsonStringEnumMemberName("entry_share_received")]
+    EntryShareReceived = 10,
 }

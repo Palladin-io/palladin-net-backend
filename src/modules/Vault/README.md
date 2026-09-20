@@ -176,8 +176,11 @@ The canonical Entry head/key/version model, snapshot/delta synchronization, life
 membership. The current increment implements the domain, storage, server-side
 gate primitives and authenticated sender creation-challenge/create/list/revoke/
 protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
-Anonymous receiver endpoints, mail, Audit and Inbox
-consumers remain outstanding; the feature is not ready for deployment.
+Guest session, optional-secret verification, delivery, confirmation and recipient
+termination now exist under `/api/entry-shares/{shareId}/sessions`. OTP issuance,
+email verification and durable mail, Audit and Inbox consumers remain outstanding;
+named-recipient links deliberately cannot deliver until that email gate is wired.
+The feature is not ready for deployment.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
 scope/revision, finite expiry, receipt budget, optional recipient policy and
@@ -194,14 +197,23 @@ and stored using the versioned, randomly salted ASP.NET Identity PBKDF2 verifier
 The default iteration count is 600,000. PIN validation requires at least six ASCII
 digits. OTPs use secure random six-digit values and a separate session-bound
 server HMAC. No code, password/PIN, address, bearer or verifier is logged or put
-into events. HTTP/logging enforcement still belongs to the pending API increment.
+into events. Public request/response records suppress sensitive `ToString()`
+output. The receiver route has `no-store` headers even on errors and a 4 KiB
+body ceiling enforced before deserialization, including chunked requests. The
+bounded request buffer is memory-only and cleared after processing.
 
 Every receiver session binds the exact share and security version. Email and
 optional-secret verification are independent. A policy change invalidates all
 existing sessions. Failed attempts and resend cooldown are share-wide; periodic
 lockout never resets the lifetime failed-attempt budget. Reaching that budget
 locks the link through expiry. Limits are configured under
-`Modules:Vault:EntrySharing` and validated at startup.
+`Modules:Vault:EntrySharing` and validated at startup. Opening a session requires
+the independent access bearer, returns a newly generated session bearer once,
+and stores only its verifier. The active-session cap defaults to 128; opening
+advances the share's optimistic fence, so racing capacity reads cannot both
+commit. The session query uses the share-first composite PK. An outer per-IP
+in-memory rate limit covers the entire guest route; it is an abuse boundary, not
+recipient IP history. GET has no receiver mutation or ciphertext endpoint.
 
 `Deliver` consumes one receipt for one authorized session. An exact session retry
 does not consume a second receipt but still advances the optimistic share fence.
@@ -212,7 +224,16 @@ atomicity uses the share/session stamps plus tracked source and authority fences
 PostgreSQL tests cover the final-receipt race, fresh-context retries, organization
 and sender revocation, and equal-timestamp purge. Identity integration tests also
 cover Member removal and both effective-permission-loss paths, including lost
-acknowledgement and exact retry. Anonymous HTTP delivery remains outstanding.
+acknowledgement and exact retry. Each anonymous mutation resolves the exact
+share/session bearer and checks current source authority in the same write
+context as its commit. Absent, unauthorized, expired, consumed, revoked and
+concurrently invalidated attempts use the same empty 404 response. Validation
+and body-size failures are request-shape errors independent of resource state.
+HTTP tests cover idempotent delivery/confirmation, notification choice in the
+durable activity, PIN/password gates, required OTP not bypassed by a correct PIN,
+shared failed-attempt budgets, foreign session proof, policy/sender revocation,
+recipient termination, scanner GETs, session caps and bounded request bodies.
+These tests do not yet prove mail or downstream Inbox delivery.
 
 Sender creation captures the authenticated Identity authorization version and
 the independently loaded Vault membership timestamp. A per-organization/Member

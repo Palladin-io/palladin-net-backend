@@ -14,6 +14,33 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 [Collection<ApiFactoryCollection>]
 public sealed class EntrySharingConcurrencyTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_TwoSessionOpeningsReadTheSameCapacity_Then_OnlyOneCanCommit()
+    {
+        // Given
+        var seeded = await SeedShareAsync(sessionCount: 0);
+        await using var firstScope = apiFactory.Services.CreateAsyncScope();
+        await using var secondScope = apiFactory.Services.CreateAsyncScope();
+        var first = firstScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        var second = secondScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+        var firstShare = await first.EntryShares.SingleAsync(x => x.Id == seeded.ShareId, TestContext.Current.CancellationToken);
+        var secondShare = await second.EntryShares.SingleAsync(x => x.Id == seeded.ShareId, TestContext.Current.CancellationToken);
+        (await first.EntryShareSessions.CountAsync(x => x.ShareId == seeded.ShareId, TestContext.Current.CancellationToken)).ShouldBe(0);
+        (await second.EntryShareSessions.CountAsync(x => x.ShareId == seeded.ShareId, TestContext.Current.CancellationToken)).ShouldBe(0);
+
+        // When
+        first.Add(firstShare.OpenSession(Guid.NewGuid(), new byte[32], seeded.Now, Duration.FromMinutes(15)));
+        second.Add(secondShare.OpenSession(Guid.NewGuid(), new byte[32], seeded.Now, Duration.FromMinutes(15)));
+        await first.CommitAsync(TestContext.Current.CancellationToken);
+
+        // Then
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(() => second.CommitAsync(TestContext.Current.CancellationToken));
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var verification = verificationScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        (await verification.EntryShareSessions.CountAsync(x => x.ShareId == seeded.ShareId, TestContext.Current.CancellationToken)).ShouldBe(1);
+        (await verification.EntryShares.SingleAsync(x => x.Id == seeded.ShareId, TestContext.Current.CancellationToken)).DeliveryCount.ShouldBe(0);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

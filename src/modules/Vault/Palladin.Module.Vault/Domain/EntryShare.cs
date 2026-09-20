@@ -120,6 +120,7 @@ internal sealed class EntryShare : EventEntityBase
         }
 
         var end = now + lifetime;
+        AdvanceMutation();
         return EntryShareSession.Create(Id, sessionId, tokenHash, SecurityVersion, now,
             end < ExpiresAt ? end : ExpiresAt);
     }
@@ -287,7 +288,7 @@ internal sealed class EntryShare : EventEntityBase
         return activities;
     }
 
-    private void EnsureSession(EntryShareSession session, Instant now)
+    internal void EnsureSession(EntryShareSession session, Instant now)
     {
         EnsureAvailable(now);
         if (session.ShareId != Id || session.SecurityVersion != SecurityVersion

@@ -43,6 +43,8 @@ internal sealed class EntryShareSecurity
     internal byte[] HashAccessToken(Guid shareId, string token) =>
         HashToken(accessKey, shareId, token);
 
+    internal string GenerateSessionToken() => WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+
     internal byte[] HashSessionToken(Guid sessionId, string token) =>
         HashToken(sessionKey, sessionId, token);
 

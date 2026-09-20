@@ -33,6 +33,7 @@ internal static class InfrastructureModule
             .ValidateOnStart();
         services.AddSingleton<EntryShareSecurity>();
         services.AddScoped<EntryShareAuthority>();
+        services.AddScoped<EntryShareReceiver>();
         services.AddOptions<VaultCreationOptions>()
             .Bind(configuration.GetSection(VaultCreationOptions.Position))
             .Validate(options => options.ChallengeTtlSeconds is > 0 and <= 3600,

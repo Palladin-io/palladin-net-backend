@@ -16,6 +16,7 @@ internal sealed class EntrySharingOptions
     public int MinimumPasswordLength { get; init; } = 8;
     public int MaximumSecretLength { get; init; } = 128;
     public int MaximumActiveLinksPerEntry { get; init; } = 100;
+    public int MaximumActiveSessionsPerShare { get; init; } = 128;
 
     internal bool IsValid() => MaximumLifetimeHours is > 0 and <= 720
                               && MaximumReceipts is > 0 and <= 1_000
@@ -31,5 +32,6 @@ internal sealed class EntrySharingOptions
                               && MinimumPasswordLength is >= 8 and <= 32
                               && MaximumSecretLength >= MinimumPasswordLength
                               && MaximumSecretLength <= 256
-                              && MaximumActiveLinksPerEntry is >= 1 and <= 500;
+                              && MaximumActiveLinksPerEntry is >= 1 and <= 500
+                              && MaximumActiveSessionsPerShare is >= 1 and <= 1_000;
 }

@@ -170,6 +170,63 @@ Vault and Entry Search publishers, consumers, endpoint registrations, and the Se
 
 The canonical Entry head/key/version model, snapshot/delta synchronization, lifecycle, history, rollback-resistant purge, encrypted reasons, split revision-bound grant scope/envelope lifecycle, staged key rotation, encrypted assets, and opaque Search/Audit cutover are active. Transitional grant event contracts keep plaintext Vault/Entry presentation slots empty until those contracts are replaced; no backend code may resolve or persist a Vault or Entry name.
 
+## Individual Entry sharing (CVT-644, implementation in progress)
+
+`EntryShare` is an independent encrypted snapshot, not an Agent grant or a Vault
+membership. The current increment introduces the domain, storage and server-side
+gate primitives only; public and sender endpoints, source-authority enforcement,
+mail, Audit and Inbox consumers are not yet implemented in this branch.
+
+The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
+scope/revision, finite expiry, receipt budget, optional recipient policy and
+optional password/PIN verifier. No EntryDEK, VK, link encryption key or Entry
+plaintext is accepted. Access and session bearers are independent high-entropy
+values; their purpose-separated, scope-bound HMAC verifiers are stored instead
+of bearer values. Named-recipient email is encrypted with a separate server key
+and share-ID associated data because the server must be able to send an OTP.
+That server-readable address is not zero-knowledge Entry content.
+
+The extra sharing password/PIN is an online gate, never the snapshot encryption
+key. It is processed only transiently, peppered with a share-bound server HMAC,
+and stored using the versioned, randomly salted ASP.NET Identity PBKDF2 verifier.
+The default iteration count is 600,000. PIN validation requires at least six ASCII
+digits. OTPs use secure random six-digit values and a separate session-bound
+server HMAC. No code, password/PIN, address, bearer or verifier is logged or put
+into events. HTTP/logging enforcement still belongs to the pending API increment.
+
+Every receiver session binds the exact share and security version. Email and
+optional-secret verification are independent. A policy change invalidates all
+existing sessions. Failed attempts and resend cooldown are share-wide; periodic
+lockout never resets the lifetime failed-attempt budget. Reaching that budget
+locks the link through expiry. Limits are configured under
+`Modules:Vault:EntrySharing` and validated at startup.
+
+`Deliver` consumes one receipt for one authorized session. An exact session retry
+does not consume a second receipt but still advances the optimistic share fence.
+Client confirmation is a separate occurrence and cannot refund a receipt. Only
+the first confirmation can carry the sender's explicit notification request;
+later confirmations still produce structural audit activity. Delivery/revocation
+atomicity against source and Identity authority remains a required integration
+gate, not something the domain-only tests prove.
+
+`EntryShareActivities` is the durable dispatch journal, keyed by share ID plus
+monotonic activity sequence. The Vault domain context stages new activity rows
+through `PrepareEventsAsync` before the same save as the share/session mutation.
+Immediate event dispatch and the recovery job are at-least-once; consumers must
+deduplicate that stable occurrence identity. The journal deliberately has no FK
+to the share: physical source purge may remove ciphertext and sessions but must
+not erase pending audit. It stores only structural IDs, kind, notification choice
+and timestamps. `SenderId` is the notification recipient, not the actor of an
+external recipient's delivery/confirmation/termination.
+
+The incremental `AddEntrySharing` migration adds three tables without changing
+old migrations. Sender lists use the tenant/Vault/Entry/creation-time index;
+expiry, expired-session cleanup and pending dispatch each have an index matching
+their bounded deterministic order. `ExpireEntrySharesJob` erases delivery data
+at expiry and removes expired sessions. `DispatchEntryShareActivityJob` marks
+an occurrence published only after broker success. Long-term structural-journal
+retention and source-deletion cleanup remain pending in the lifecycle increment.
+
 ## Dependencies
 
 - Project references: Agents, Identity, Notification.Events, Audit.Events, and shared core libraries.

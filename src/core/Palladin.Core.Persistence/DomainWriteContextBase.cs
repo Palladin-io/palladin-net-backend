@@ -57,6 +57,7 @@ public abstract class DomainWriteContextBase(
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
+        await PrepareEventsAsync(cancellationToken);
         var changes = writeContext.ChangeTracker.Entries().ToList();
         await writeContext.SaveChangesAsync(cancellationToken);
         var events = DrainEvents(changes);
@@ -68,6 +69,7 @@ public abstract class DomainWriteContextBase(
         IDbContextTransaction transaction,
         CancellationToken cancellationToken = default)
     {
+        await PrepareEventsAsync(cancellationToken);
         var changes = writeContext.ChangeTracker.Entries().ToList();
         await writeContext.SaveChangesAsync(cancellationToken);
         var events = DrainEvents(changes);
@@ -78,6 +80,7 @@ public abstract class DomainWriteContextBase(
 
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
+        await PrepareEventsAsync(cancellationToken);
         var changes = writeContext.ChangeTracker.Entries().ToList();
         await writeContext.SaveChangesAsync(cancellationToken);
         _pendingEvents.AddRange(GetEvents(changes));
@@ -114,6 +117,8 @@ public abstract class DomainWriteContextBase(
         _pendingEvents.Clear();
         return events;
     }
+
+    protected virtual Task PrepareEventsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     protected virtual async Task HandleEventAsync(IEvent @event, CancellationToken cancellationToken = default)
     {

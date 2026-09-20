@@ -17,6 +17,9 @@ internal sealed class VaultDbWriteContext(DbContextOptions<VaultDbWriteContext> 
     public DbSet<EntryCreationChallenge> EntryCreationChallenges => Set<EntryCreationChallenge>();
     public DbSet<MemberKeyDirectoryEntry> MemberKeyDirectory => Set<MemberKeyDirectoryEntry>();
     public DbSet<VaultEntry> Entries => Set<VaultEntry>();
+    public DbSet<EntryShare> EntryShares => Set<EntryShare>();
+    public DbSet<EntryShareSession> EntryShareSessions => Set<EntryShareSession>();
+    public DbSet<EntryShareActivity> EntryShareActivities => Set<EntryShareActivity>();
     public DbSet<VaultEntryKey> EntryKeys => Set<VaultEntryKey>();
     public DbSet<VaultEntryVersion> EntryVersions => Set<VaultEntryVersion>();
     public DbSet<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Set<AgentVaultDiscoveryEnvelope>();

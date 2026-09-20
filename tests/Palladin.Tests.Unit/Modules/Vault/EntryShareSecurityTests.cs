@@ -12,6 +12,29 @@ namespace Palladin.Tests.Unit.Modules.Vault;
 
 public sealed class EntryShareSecurityTests
 {
+    [Fact]
+    public void When_AnOtpIsPersistedForDelivery_Then_OnlyItsSessionAndGenerationCanOpenIt()
+    {
+        // Given
+        var security = CreateSecurity();
+        var share = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        const string code = "493827";
+
+        // When
+        var protectedCode = security.ProtectOtp(share, session, 1, code);
+
+        // Then
+        protectedCode.ShouldNotContain(code);
+        security.UnprotectOtp(share, session, 1, protectedCode).ShouldBe(code);
+        Should.Throw<CryptographicException>(() => security.UnprotectOtp(Guid.NewGuid(), session, 1, protectedCode));
+        Should.Throw<CryptographicException>(() => security.UnprotectOtp(share, Guid.NewGuid(), 1, protectedCode));
+        Should.Throw<CryptographicException>(() => security.UnprotectOtp(share, session, 2, protectedCode));
+        var modified = WebEncoders.Base64UrlDecode(protectedCode);
+        modified[^1] ^= 1;
+        Should.Throw<CryptographicException>(() => security.UnprotectOtp(share, session, 1, WebEncoders.Base64UrlEncode(modified)));
+    }
+
     [Theory]
     [InlineData(EntryShareProtection.Pin, "123456")]
     [InlineData(EntryShareProtection.Password, "a strong test passphrase")]

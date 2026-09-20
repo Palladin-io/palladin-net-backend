@@ -34,6 +34,7 @@ internal static class InfrastructureModule
         services.AddSingleton<EntryShareSecurity>();
         services.AddScoped<EntryShareAuthority>();
         services.AddScoped<EntryShareReceiver>();
+        services.AddScoped<EntryShareOtpDispatcher>();
         services.AddOptions<VaultCreationOptions>()
             .Bind(configuration.GetSection(VaultCreationOptions.Position))
             .Validate(options => options.ChallengeTtlSeconds is > 0 and <= 3600,
@@ -83,6 +84,8 @@ internal static class InfrastructureModule
             configuration.GetSection(ExpireEntrySharesJobOptions.Position));
         services.AddScopedCronJob<DispatchEntryShareActivityJob, DispatchEntryShareActivityJobOptions>(
             configuration.GetSection(DispatchEntryShareActivityJobOptions.Position));
+        services.AddScopedCronJob<DispatchEntryShareOtpJob, DispatchEntryShareOtpJobOptions>(
+            configuration.GetSection(DispatchEntryShareOtpJobOptions.Position));
         services.AddScopedCronJob<VaultEntryLifecycleJob, VaultEntryLifecycleOptions>(
             configuration.GetSection(VaultEntryLifecycleOptions.Position));
 

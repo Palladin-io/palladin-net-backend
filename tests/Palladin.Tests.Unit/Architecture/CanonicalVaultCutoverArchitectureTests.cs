@@ -16,6 +16,8 @@ public sealed partial class CanonicalVaultCutoverArchitectureTests
         nameof(DeliverEntryShareEndpoint),
         nameof(ConfirmEntryShareReceiptEndpoint),
         nameof(EndEntryShareEndpoint),
+        nameof(RequestEntryShareOtpEndpoint),
+        nameof(VerifyEntryShareOtpEndpoint),
     ];
 
     [Fact]

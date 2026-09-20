@@ -176,11 +176,10 @@ The canonical Entry head/key/version model, snapshot/delta synchronization, life
 membership. The current increment implements the domain, storage, server-side
 gate primitives and authenticated sender creation-challenge/create/list/revoke/
 protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
-Guest session, optional-secret verification, delivery, confirmation and recipient
-termination now exist under `/api/entry-shares/{shareId}/sessions`. OTP issuance,
-email verification and durable mail, Audit and Inbox consumers remain outstanding;
-named-recipient links deliberately cannot deliver until that email gate is wired.
-The feature is not ready for deployment.
+Guest session, OTP issuance/verification, optional-secret verification, delivery,
+confirmation and recipient termination now exist under
+`/api/entry-shares/{shareId}/sessions`. Audit and Inbox consumers and client flows
+remain outstanding; the feature is not ready for deployment.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
 scope/revision, finite expiry, receipt budget, optional recipient policy and
@@ -197,10 +196,50 @@ and stored using the versioned, randomly salted ASP.NET Identity PBKDF2 verifier
 The default iteration count is 600,000. PIN validation requires at least six ASCII
 digits. OTPs use secure random six-digit values and a separate session-bound
 server HMAC. No code, password/PIN, address, bearer or verifier is logged or put
-into events. Public request/response records suppress sensitive `ToString()`
+into domain/activity events. Public request/response records suppress sensitive `ToString()`
 output. The receiver route has `no-store` headers even on errors and a 4 KiB
 body ceiling enforced before deserialization, including chunked requests. The
 bounded request buffer is memory-only and cleared after processing.
+
+`POST .../otp` accepts a generation starting at one and a language (`en`/`pl`),
+never a recipient address. The address comes only from the sender-selected share.
+An exact generation retry does not generate a new code or bypass the share-wide
+resend cooldown. A resend must use exactly the next generation; stale and skipped
+generations fail closed. `POST .../verify-otp` checks the current generation and
+unexpired code before consuming its verifier. An already verified current session
+can retry the HTTP acknowledgement without retaining or re-consuming the code.
+PIN/password and email gates remain independent and share one failed-attempt
+budget. Verification never consumes a receipt or opens a Palladin account session.
+
+The session stores pending mail as AES-GCM ciphertext under a separate server
+key, with the independently loaded share ID, session ID and generation as associated data.
+`EntryShareOtpRequestedEvent` contains only those structural IDs, the generation
+and timestamp. Its trigger and a bounded recovery job use the same dispatcher.
+Current source/session authority is fenced and committed before publication;
+no database transaction spans the broker call. The dispatcher publishes through
+the root `IBus`, intentionally bypassing the consumer's in-memory outbox, and
+clears the encrypted pending code only after broker acknowledgement. A crash
+before that final marker leaves the same generation recoverable. A later resend
+cannot be cleared by an older dispatch completion. Verified, expired or
+invalidated pending codes are erased without further publication.
+
+Notification owns `SendEntryShareVerificationEmailCommand`, a distinct expiring
+transactional email contract. This restricted server-side email channel receives
+the code and address, never the sharing encryption key, complete link or Entry
+content. It suppresses sensitive `ToString()` output, uses a broker TTL and checks
+expiry again at consumption. The stable share/session/generation occurrence deduplicates
+command redelivery through the existing email-delivery lease. The provider's
+documented acceptance-before-marker duplicate window still applies; this is not
+a promise of exactly-once SMTP delivery. The code's generation and exact UTC
+expiry appear in both localized templates, with no sharing-link CTA.
+
+The incremental `AddEntryShareOtpDelivery` migration adds pending-mail columns
+and an expiry/share/session index filtered to pending rows. HTTP and PostgreSQL
+tests cover both verification gates, request/verification retries, stale/expired
+generations, mixed PIN/OTP guess budgets, cross-session cooldown, failed broker
+publication and recovery-job dispatch. The test bus now uses the production JSON
+configuration and in-memory outbox; a failing transport test exposed default
+`Instant` deserialization to the Unix epoch before that fixture correction.
 
 Every receiver session binds the exact share and security version. Email and
 optional-secret verification are independent. A policy change invalidates all
@@ -233,7 +272,9 @@ HTTP tests cover idempotent delivery/confirmation, notification choice in the
 durable activity, PIN/password gates, required OTP not bypassed by a correct PIN,
 shared failed-attempt budgets, foreign session proof, policy/sender revocation,
 recipient termination, scanner GETs, session caps and bounded request bodies.
-These tests do not yet prove mail or downstream Inbox delivery.
+The mail path is tested through the real bus, renderer and durable deduplication
+with a substituted email provider. Real SES delivery and downstream Inbox delivery
+are not yet accepted.
 
 Sender creation captures the authenticated Identity authorization version and
 the independently loaded Vault membership timestamp. A per-organization/Member

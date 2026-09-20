@@ -1,9 +1,11 @@
 using NodaTime;
+using Palladin.Core.Events;
 using Palladin.Core.Types.Exceptions;
+using Palladin.Module.Vault.Contracts.Events;
 
 namespace Palladin.Module.Vault.Domain;
 
-internal sealed class EntryShareSession
+internal sealed class EntryShareSession : EventEntityBase
 {
     public Guid ShareId { get; private set; }
     public Guid Id { get; private set; }
@@ -17,6 +19,9 @@ internal sealed class EntryShareSession
     public Instant? ConfirmedAt { get; private set; }
     public byte[]? OtpHash { get; private set; }
     public Instant? OtpExpiresAt { get; private set; }
+    public long OtpGeneration { get; private set; }
+    public string? ProtectedOtp { get; private set; }
+    public string? OtpLanguage { get; private set; }
     public long MutationVersion { get; private set; }
 
     private EntryShareSession() { }
@@ -42,16 +47,32 @@ internal sealed class EntryShareSession
         };
     }
 
-    internal void IssueOtp(byte[] hash, Instant expiresAt)
+    internal void IssueOtp(byte[] hash, Instant expiresAt, EntryShareOtpDelivery delivery, Instant now)
     {
-        if (hash.Length != 32 || expiresAt <= CreatedAt || expiresAt > ExpiresAt)
+        if (hash.Length != 32 || expiresAt <= now || expiresAt > ExpiresAt
+            || delivery.Generation != checked(OtpGeneration + 1)
+            || string.IsNullOrWhiteSpace(delivery.ProtectedCode) || delivery.ProtectedCode.Length > 128
+            || delivery.Language is not ("en" or "pl"))
         {
             throw new DomainException("The sharing code must expire within its session.");
         }
 
         OtpHash = hash.ToArray();
         OtpExpiresAt = expiresAt;
+        OtpGeneration = delivery.Generation;
+        ProtectedOtp = delivery.ProtectedCode;
+        OtpLanguage = delivery.Language;
         EmailVerifiedAt = null;
+        MutationVersion = checked(MutationVersion + 1);
+        AddEvent(new EntryShareOtpRequestedEvent(ShareId, Id, OtpGeneration, now));
+    }
+
+    internal void FenceOtpDelivery() => MutationVersion = checked(MutationVersion + 1);
+
+    internal void ClearPendingOtp()
+    {
+        ProtectedOtp = null;
+        OtpLanguage = null;
         MutationVersion = checked(MutationVersion + 1);
     }
 
@@ -65,6 +86,7 @@ internal sealed class EntryShareSession
         EmailVerifiedAt = now;
         OtpHash = null;
         OtpExpiresAt = null;
+        ClearPendingOtp();
         MutationVersion = checked(MutationVersion + 1);
     }
 

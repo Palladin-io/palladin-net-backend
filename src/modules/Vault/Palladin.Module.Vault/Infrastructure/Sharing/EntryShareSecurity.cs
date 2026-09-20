@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Buffers.Binary;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -16,6 +17,7 @@ internal sealed class EntryShareSecurity
     private readonly byte[] otpKey;
     private readonly byte[] secretPepper;
     private readonly byte[] emailKey;
+    private readonly byte[] otpDeliveryKey;
     private readonly EntrySharingOptions options;
     private readonly PasswordHasher<object> secretHasher;
     private static readonly object HashingContext = new();
@@ -33,6 +35,7 @@ internal sealed class EntryShareSecurity
         otpKey = keyDeriver.DeriveHmacKey("PLDN-ENTRY-SHARE-OTP-v1");
         secretPepper = keyDeriver.DeriveHmacKey("PLDN-ENTRY-SHARE-SECRET-v1");
         emailKey = keyDeriver.DeriveHmacKey("PLDN-ENTRY-SHARE-EMAIL-v1");
+        otpDeliveryKey = keyDeriver.DeriveHmacKey("PLDN-ENTRY-SHARE-OTP-DELIVERY-v1");
         secretHasher = new PasswordHasher<object>(Options.Create(new PasswordHasherOptions
         {
             CompatibilityMode = PasswordHasherCompatibilityMode.IdentityV3,
@@ -88,6 +91,65 @@ internal sealed class EntryShareSecurity
     }
 
     internal string GenerateOtp() => RandomNumberGenerator.GetInt32(1_000_000).ToString("D6");
+
+    internal string ProtectOtp(Guid shareId, Guid sessionId, long generation, string otp)
+    {
+        if (otp.Length != 6 || !otp.All(char.IsAsciiDigit))
+        {
+            throw new DomainException("The sharing verification code is invalid.");
+        }
+
+        var plaintext = Encoding.ASCII.GetBytes(otp);
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[6];
+        var tag = new byte[16];
+        try
+        {
+            using var aes = new AesGcm(otpDeliveryKey, 16);
+            aes.Encrypt(nonce, plaintext, ciphertext, tag, OtpDeliveryContext(shareId, sessionId, generation));
+            return WebEncoders.Base64UrlEncode([1, .. nonce, .. tag, .. ciphertext]);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    internal string UnprotectOtp(Guid shareId, Guid sessionId, long generation, string protectedOtp)
+    {
+        var payload = WebEncoders.Base64UrlDecode(protectedOtp);
+        if (payload.Length != 35 || payload[0] != 1)
+        {
+            throw new CryptographicException("Invalid protected sharing code.");
+        }
+
+        var plaintext = new byte[6];
+        try
+        {
+            using var aes = new AesGcm(otpDeliveryKey, 16);
+            aes.Decrypt(payload.AsSpan(1, 12), payload.AsSpan(29), payload.AsSpan(13, 16),
+                plaintext, OtpDeliveryContext(shareId, sessionId, generation));
+            return Encoding.ASCII.GetString(plaintext);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    private static byte[] OtpDeliveryContext(Guid shareId, Guid sessionId, long generation)
+    {
+        if (shareId == Guid.Empty || sessionId == Guid.Empty || generation < 1)
+        {
+            throw new DomainException("The sharing code requires a session and a positive generation.");
+        }
+
+        var context = new byte[40];
+        shareId.TryWriteBytes(context.AsSpan(0, 16), bigEndian: true, out _);
+        sessionId.TryWriteBytes(context.AsSpan(16, 16), bigEndian: true, out _);
+        BinaryPrimitives.WriteInt64BigEndian(context.AsSpan(32), generation);
+        return context;
+    }
 
     internal byte[] HashOtp(Guid sessionId, string otp)
     {

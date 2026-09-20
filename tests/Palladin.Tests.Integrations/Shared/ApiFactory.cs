@@ -5,10 +5,12 @@ using Palladin.Module.Vault.Infrastructure.Assets;
 using Palladin.Module.Audit.Infrastructure.Exports;
 using Palladin.Module.Agents.Infrastructure.PublicAssets;
 using Palladin.Core.Guid;
+using Palladin.Core.Json;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain.Enums;
 using Palladin.Module.Identity.Infrastructure.OAuth;
 using Palladin.Module.Notification.Infrastructure.Push;
+using Palladin.Module.Notification.Infrastructure.Email;
 using Palladin.Tests.Integrations.Shared.Mocks;
 using Hangfire;
 using MassTransit;
@@ -30,6 +32,7 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
     public ILogger Logger { get; } = Substitute.For<ILogger>();
     internal IExternalOAuthProvider GoogleOAuthProvider { get; } = Substitute.For<IExternalOAuthProvider>();
     internal IPushNotificationService PushNotificationService { get; } = Substitute.For<IPushNotificationService>();
+    internal IEmailSender EmailSender { get; } = Substitute.For<IEmailSender>();
     public IBackgroundJobClient BackgroundJobClient { get; } = Substitute.For<IBackgroundJobClient>();
     internal IEntryPurgeLedger EntryPurgeLedger { get; } = Substitute.For<IEntryPurgeLedger>();
     internal IEntryAssetPurger EntryAssetPurger { get; } = Substitute.For<IEntryAssetPurger>();
@@ -38,7 +41,12 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
 
     protected override void ConfigureServices(IServiceCollection services)
     {
-        services.AddMassTransitTestHarness();
+        services.AddMassTransitTestHarness(configurator => configurator.UsingInMemory((context, bus) =>
+        {
+            bus.ConfigureJsonSerializerOptions(options => options.AddPalladinDefaultConfiguration());
+            bus.UseInMemoryOutbox(context);
+            bus.ConfigureEndpoints(context);
+        }));
         services.Replace(ServiceDescriptor.Singleton(new ConsentNoticeCatalog([
             new ConsentNotice(ConsentPurpose.ProductAnalytics, ConsentPurpose.Scope(ConsentPurpose.ProductAnalytics), "2026-09-10T00:00:00Z", "en"),
             new ConsentNotice(ConsentPurpose.EmailMarketing, ConsentPurpose.Scope(ConsentPurpose.EmailMarketing), "2026-09-10T00:00:00Z", "en"),
@@ -50,6 +58,8 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
         services.AddSingleton(GoogleOAuthProvider);
         services.RemoveAll<IPushNotificationService>();
         services.AddScoped(_ => PushNotificationService);
+        services.RemoveAll<IEmailSender>();
+        services.AddSingleton(EmailSender);
         services.Replace(ServiceDescriptor.Singleton(BackgroundJobClient));
         services.Replace(ServiceDescriptor.Singleton(EntryPurgeLedger));
         services.Replace(ServiceDescriptor.Singleton(EntryAssetPurger));

@@ -130,7 +130,7 @@ public sealed class EntryShareTests
         // Given
         var share = CreateShare(recipientMode: EntryShareRecipientMode.NamedRecipient, protection: protection);
         var emailOnly = OpenSession(share);
-        share.IssueOtp(emailOnly, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30));
+        share.IssueOtp(emailOnly, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30), new(1, "protected-code", "en"));
         share.VerifyEmail(emailOnly, Now);
         var secretOnly = OpenSession(share);
         share.VerifySecret(secretOnly, Now);
@@ -153,7 +153,7 @@ public sealed class EntryShareTests
         // Given
         var share = CreateShare(recipientMode: EntryShareRecipientMode.NamedRecipient);
         var session = OpenSession(share);
-        share.IssueOtp(session, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30));
+        share.IssueOtp(session, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30), new(1, "protected-code", "en"));
 
         // When
         share.VerifyEmail(session, Now);
@@ -170,7 +170,7 @@ public sealed class EntryShareTests
         // Given
         var share = CreateShare(recipientMode: EntryShareRecipientMode.NamedRecipient);
         var session = OpenSession(share);
-        share.IssueOtp(session, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30));
+        share.IssueOtp(session, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30), new(1, "protected-code", "en"));
 
         // When
         var action = () => share.VerifyEmail(session, Now + Duration.FromMinutes(3));
@@ -187,11 +187,11 @@ public sealed class EntryShareTests
         var share = CreateShare(recipientMode: EntryShareRecipientMode.NamedRecipient);
         var first = OpenSession(share);
         var second = OpenSession(share);
-        share.IssueOtp(first, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30));
+        share.IssueOtp(first, new byte[32], Now, Duration.FromMinutes(3), Duration.FromSeconds(30), new(1, "protected-code", "en"));
 
         // When
         var action = () => share.IssueOtp(second, new byte[32], Now + Duration.FromSeconds(29),
-            Duration.FromMinutes(3), Duration.FromSeconds(30));
+            Duration.FromMinutes(3), Duration.FromSeconds(30), new(1, "protected-code", "en"));
 
         // Then
         action.ShouldThrow<EntryShareUnavailableException>();

@@ -126,17 +126,18 @@ internal sealed class EntryShare : EventEntityBase
     }
 
     internal void IssueOtp(
-        EntryShareSession session, byte[] otpHash, Instant now, Duration lifetime, Duration cooldown)
+        EntryShareSession session, byte[] otpHash, Instant now, Duration lifetime, Duration cooldown,
+        EntryShareOtpDelivery delivery)
     {
         EnsureSession(session, now);
-        if (RecipientMode != EntryShareRecipientMode.NamedRecipient || lifetime <= Duration.Zero
+        if (RecipientMode != EntryShareRecipientMode.NamedRecipient || DeliveryCount >= MaximumReceipts || lifetime <= Duration.Zero
             || cooldown <= Duration.Zero || (LastOtpSentAt is { } last && now < last + cooldown))
         {
             throw new EntryShareUnavailableException();
         }
 
         var end = now + lifetime;
-        session.IssueOtp(otpHash, end < session.ExpiresAt ? end : session.ExpiresAt);
+        session.IssueOtp(otpHash, end < session.ExpiresAt ? end : session.ExpiresAt, delivery, now);
         LastOtpSentAt = now;
         AdvanceMutation();
     }

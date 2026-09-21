@@ -25,6 +25,7 @@ the bounded raster, re-encodes it as PNG, and publishes exactly once under the r
 - `POST /api/public-assets/website-icons/ensure` (authenticated; at most 500 normalized hostnames)
 - `POST /api/public-assets/by-ids` (at most 200 unique IDs; list hydration without N+1)
 - `GET /api/public-assets/{assetId}?v={revision}`
+- `GET /api/public-assets/{assetId}/revisions/{revision}/content`
 - `POST /api/public-assets/uploads`
 - `POST /api/public-assets/uploads/{uploadSessionId}/complete`
 
@@ -79,3 +80,19 @@ create/edit/import flows, clients may perform bounded batch readiness checks aga
 only returned `Ready` asset `id`, `revision`, and `url` values inside encrypted Vault presentation data.
 Vault list/detail reads never call ensure, resolve, by-id, or get-by-id for Entry icons, and bucket/CDN
 image failures fall back immediately to a local glyph without cache-busting retries.
+
+## Portable client image delivery
+
+The immutable content endpoint anonymously serves only an existing published PNG
+revision of a Ready asset. It reads the storage key from catalog state using the
+asset/revision primary keys, then retrieves bounded bytes through the configured
+object-storage adapter. It never accepts a caller URL or redirects to storage.
+Responses use `image/png`, `nosniff` and one-year immutable public caching, allowing
+a deployment's reverse proxy/CDN to cache image traffic at the API origin.
+Missing revisions or objects return 404 without an image redirect.
+
+Mobile and extension clients use their configured/selected API plus asset ID and
+revision, rather than the delivery URL in encrypted presentation. This supports
+staging and self-hosted storage without client cloud-host allowlists or extra
+catalog metadata calls. Existing direct delivery URLs remain in catalog contracts
+for web consumers. Deploy this endpoint before the updated mobile/extension clients.

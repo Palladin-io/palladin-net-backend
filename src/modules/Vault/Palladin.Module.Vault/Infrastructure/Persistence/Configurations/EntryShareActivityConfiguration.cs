@@ -14,5 +14,7 @@ internal sealed class EntryShareActivityConfiguration : IEntityTypeConfiguration
         builder.HasKey(x => new { x.ShareId, x.Sequence });
         builder.HasIndex(x => new { x.OccurredAt, x.ShareId, x.Sequence })
             .HasFilter("\"PublishedAt\" IS NULL");
+        builder.HasIndex(x => new { x.PublishedAt, x.ShareId, x.Sequence })
+            .HasFilter("\"PublishedAt\" IS NOT NULL");
     }
 }

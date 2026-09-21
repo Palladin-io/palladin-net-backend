@@ -359,8 +359,25 @@ an occurrence published only after broker success. PostgreSQL tests prove failed
 publication retains the pending occurrence even without its source, and a fresh
 job can publish/mark it. Expiry-job retries erase delivery material and expired
 sessions once, preserve the activity journal and leave an active share untouched.
-Long-term structural-journal retention and source-deletion cleanup remain pending
-in the lifecycle increment.
+The same expiry job now removes only acknowledged dispatch-journal rows after
+`PublishedActivityRetentionDays` (default seven, startup-validated range 1–90)
+measured from `PublishedAt`, never from occurrence time. Each deterministic
+batch orders by publication/share/sequence, commits through the domain write
+context and clears tracking. Pending rows are never retention candidates,
+including after source purge; a long-delayed successful publication starts a
+fresh retention window. This is technical outbox retention, not Audit or Inbox
+retention. Their durable rows and deduplication identities are untouched.
+
+`AddEntrySharingJournalRetention` adds only the published-row partial index on
+`PublishedAt, ShareId, Sequence`. The existing pending-row index has a disjoint
+predicate and orders by occurrence, while the PK starts with share ID; neither
+serves global publication-age cleanup. No older migration is changed.
+PostgreSQL tests cover the exact boundary, batch/retry behavior, pending and
+recently published old occurrences, plus real Entry purge and Vault deletion
+cascades: sharing ciphertext, sessions and creation reservations disappear,
+while pending journal rows survive for dispatch. External asset storage is
+substituted in those tests. Real broker/SES and deployed operation remain
+acceptance gates; no deployment is implied by this local coverage.
 
 ## Dependencies
 

@@ -15,6 +15,7 @@ internal sealed class ExpireEntrySharesJobOptions : ICronJobOptions
     public string Expression { get; init; } = "* * * * *";
     public int BatchSize { get; init; } = 100;
     public int MaximumBatches { get; init; } = 100;
+    public int PublishedActivityRetentionDays { get; init; } = 7;
 }
 
 [UsedImplicitly]
@@ -63,6 +64,23 @@ internal sealed class ExpireEntrySharesJob(
             }
 
             domainWriteContext.RemoveRange(sessions);
+            await domainWriteContext.CommitAsync(cancellationToken);
+            domainWriteContext.Clear();
+        }
+
+        var publishedBefore = now - Duration.FromDays(options.Value.PublishedActivityRetentionDays);
+        for (var batch = 0; batch < Math.Clamp(options.Value.MaximumBatches, 1, 100); batch++)
+        {
+            var activities = await domainWriteContext.EntryShareActivities
+                .Where(x => x.PublishedAt != null && x.PublishedAt <= publishedBefore)
+                .OrderBy(x => x.PublishedAt).ThenBy(x => x.ShareId).ThenBy(x => x.Sequence)
+                .Take(batchSize).ToListAsync(cancellationToken);
+            if (activities.Count == 0)
+            {
+                break;
+            }
+
+            domainWriteContext.RemoveRange(activities);
             await domainWriteContext.CommitAsync(cancellationToken);
             domainWriteContext.Clear();
         }

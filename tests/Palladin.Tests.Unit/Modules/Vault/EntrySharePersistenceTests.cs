@@ -10,6 +10,22 @@ namespace Palladin.Tests.Unit.Modules.Vault;
 public sealed class EntrySharePersistenceTests
 {
     [Fact]
+    public void When_JournalJobsSelectTheirBatches_Then_PendingAndPublishedRowsHaveSeparateOrderedIndexes()
+    {
+        // Given
+        using var context = CreateContext();
+
+        // When
+        var indexes = context.Model.FindEntityType(typeof(EntryShareActivity))!.GetIndexes().ToArray();
+
+        // Then
+        indexes.Single(x => x.GetFilter() == "\"PublishedAt\" IS NULL").Properties.Select(x => x.Name)
+            .ShouldBe(["OccurredAt", "ShareId", "Sequence"]);
+        indexes.Single(x => x.GetFilter() == "\"PublishedAt\" IS NOT NULL").Properties.Select(x => x.Name)
+            .ShouldBe(["PublishedAt", "ShareId", "Sequence"]);
+    }
+
+    [Fact]
     public void When_SourceAuthorityIsChecked_Then_RevocationAndEqualTimestampPurgeAreConcurrencyFenced()
     {
         // Given

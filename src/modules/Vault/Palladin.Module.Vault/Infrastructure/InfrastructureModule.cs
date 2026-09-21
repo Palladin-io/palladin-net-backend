@@ -82,6 +82,10 @@ internal static class InfrastructureModule
             configuration.GetSection(ExpireGrantsJobOptions.Position));
         services.AddScopedCronJob<ExpireEntrySharesJob, ExpireEntrySharesJobOptions>(
             configuration.GetSection(ExpireEntrySharesJobOptions.Position));
+        services.AddOptions<ExpireEntrySharesJobOptions>()
+            .Validate(options => options.PublishedActivityRetentionDays is >= 1 and <= 90,
+                "Entry sharing dispatch journal retention must be between 1 and 90 days.")
+            .ValidateOnStart();
         services.AddScopedCronJob<DispatchEntryShareActivityJob, DispatchEntryShareActivityJobOptions>(
             configuration.GetSection(DispatchEntryShareActivityJobOptions.Position));
         services.AddScopedCronJob<DispatchEntryShareOtpJob, DispatchEntryShareOtpJobOptions>(

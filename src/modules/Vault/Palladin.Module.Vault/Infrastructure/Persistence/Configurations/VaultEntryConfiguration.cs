@@ -13,6 +13,10 @@ internal sealed class VaultEntryConfiguration : IEntityTypeConfiguration<Domain.
 
         builder.Property(x => x.CurrentRevision)
             .HasConversion(x => (decimal)x.Value, x => new Domain.EntryRevision((ulong)x))
+            .HasPrecision(20, 0)
+            .IsConcurrencyToken();
+        builder.Property(x => x.SharingRevokedThroughRevision)
+            .HasConversion(x => (decimal)x, x => (ulong)x)
             .HasPrecision(20, 0);
         builder.Property(x => x.DeliveryPolicy).IsRequired();
         builder.Property(x => x.MemberIndexRevision)
@@ -51,7 +55,7 @@ internal sealed class VaultEntryConfiguration : IEntityTypeConfiguration<Domain.
 
         builder.Property(x => x.MemberIndexEncodedSuitePayload).HasMaxLength(32_792).IsRequired();
         builder.Property(x => x.AgentDiscoveryEncodedSuitePayload).HasMaxLength(16_408);
-        builder.Property(x => x.IsPurging).IsRequired();
+        builder.Property(x => x.IsPurging).IsRequired().IsConcurrencyToken();
         builder.Property(x => x.PurgeLedgerRequired).IsRequired();
         builder.Property(x => x.PurgeRequestedAt);
         builder.Property(x => x.PurgeRequestedBy);

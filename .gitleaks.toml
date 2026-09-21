@@ -3,7 +3,7 @@ title = "Palladin backend secret scanning"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Deterministic cryptographic test vectors and a non-secret C# contract type identifier"
 paths = [
   '''^tests/Fixtures/IdentityKdf/password-only-v1\.json$''',
@@ -14,4 +14,25 @@ paths = [
 ]
 regexes = [
   '''^X25519RecipientKeyKindContract$''',
+]
+
+[[allowlists]]
+description = "Frozen public SharedUnlock derivedKey fixture values (protocol 0a70644fe3fbdeba49d77a8509ec27c449a1d4fa)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^tests/Fixtures/SharedUnlock/transport-v1\.json$''']
+regexes = [
+  '''^xuPH9ggKBiyRGfLCU5iV_kBLBZwB0eoD3csScCd7fBQ$''',
+  '''^9FfyDALwGrZQqN3mlVD4Jo2qPRDdk8qC2RIiWS3c8Io$''',
+]
+
+[[allowlists]]
+description = "Frozen public SharedUnlock keyContextDigest fixture values (protocol 0a70644fe3fbdeba49d77a8509ec27c449a1d4fa)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^tests/Fixtures/SharedUnlock/session-api-v1\.json$''']
+regexes = [
+  '''^x4puAvksU7wwTMOo8n5-OrMZUlXYA5dwaWNhqd7ovX0$''',
 ]

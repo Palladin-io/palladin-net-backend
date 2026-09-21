@@ -101,6 +101,11 @@ dotnet test tests/Palladin.Tests.Unit/Palladin.Tests.Unit.csproj
 
 Integration tests require the local PostgreSQL test databases. A fresh `docker compose up -d postgres` initializes them; external delivery and storage boundaries are replaced with test doubles where the suite requires isolation.
 
+The [Shared Unlock fixture scanner checks](tests/Fixtures/SharedUnlock/README.md)
+document the public-vector provenance and test the narrowly scoped Gitleaks
+exceptions. Run `bash scripts/test-gitleaks-fixtures.sh` when changing those
+fixtures or the scanner configuration.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) before changing code and the relevant module document before implementing a feature. Keep changes within a vertical slice, preserve zero-knowledge boundaries, add behavior-focused tests, and run the full build and test pipeline before opening a pull request.

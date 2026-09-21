@@ -475,6 +475,283 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.ToTable("EntryCreationChallenges");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShare", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("AccessTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<long>("ActivitySequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("Ciphertext")
+                        .IsRequired()
+                        .HasMaxLength(262144)
+                        .HasColumnType("bytea");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DeliveryCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("ExpiredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Instant?>("FirstConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("FirstDeliveredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("LastDeliveredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("LastOtpSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MaximumReceipts")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("MutationVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("Nonce")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("bytea");
+
+                    b.Property<bool>("NotifyOnFirstReceipt")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProtectedRecipientEmail")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<int>("Protection")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RecipientMode")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RevocationReason")
+                        .HasColumnType("integer");
+
+                    b.Property<Instant?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SecretVerifier")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<long>("SecurityVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SenderAuthorizationVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Instant>("SenderVaultMembershipAddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("SourceRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<Guid>("VaultId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt", "Id")
+                        .HasFilter("\"RevokedAt\" IS NULL AND \"ExpiredAt\" IS NULL");
+
+                    b.HasIndex("OrganizationId", "VaultId", "EntryId", "CreatedAt", "Id");
+
+                    b.ToTable("EntryShares", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShareActivity", b =>
+                {
+                    b.Property<Guid>("ShareId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("NotifySender")
+                        .HasColumnType("boolean");
+
+                    b.Property<Instant>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VaultId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ShareId", "Sequence");
+
+                    b.HasIndex("OccurredAt", "ShareId", "Sequence")
+                        .HasFilter("\"PublishedAt\" IS NULL");
+
+                    b.HasIndex("PublishedAt", "ShareId", "Sequence")
+                        .HasFilter("\"PublishedAt\" IS NOT NULL");
+
+                    b.ToTable("EntryShareActivities", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShareCreationChallenge", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VaultId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("EntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("MutationVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ShareId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("OrganizationId", "VaultId", "EntryId", "RequestedBy");
+
+                    b.ToTable("EntryShareCreationChallenges", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShareSenderAuthority", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("MutationVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("RevokedThroughAuthorizationVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("OrganizationId", "UserId");
+
+                    b.ToTable("EntryShareSenderAuthorities", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShareSession", b =>
+                {
+                    b.Property<Guid>("ShareId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("DeliveredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("EmailVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("MutationVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Instant?>("OtpExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("OtpGeneration")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("OtpHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("OtpLanguage")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<string>("ProtectedOtp")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Instant?>("SecretVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("SecurityVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.HasKey("ShareId", "Id");
+
+                    b.HasIndex("ExpiresAt", "ShareId", "Id");
+
+                    b.HasIndex("OtpExpiresAt", "ShareId", "Id")
+                        .HasFilter("\"ProtectedOtp\" IS NOT NULL");
+
+                    b.ToTable("EntryShareSessions", (string)null);
+                });
+
             modelBuilder.Entity("Palladin.Module.Vault.Domain.Grant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1057,6 +1334,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(10,0)");
 
                     b.Property<decimal>("CurrentRevision")
+                        .IsConcurrencyToken()
                         .HasPrecision(20)
                         .HasColumnType("numeric(20,0)");
 
@@ -1070,6 +1348,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer");
 
                     b.Property<bool>("IsPurging")
+                        .IsConcurrencyToken()
                         .HasColumnType("boolean");
 
                     b.Property<string>("MemberIndexCryptoSuiteId")
@@ -1101,6 +1380,10 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("PurgeRequestedBy")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal>("SharingRevokedThroughRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
 
                     b.Property<int>("State")
                         .HasColumnType("integer");
@@ -1479,6 +1762,9 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasPrecision(20)
                         .HasColumnType("numeric(20,0)");
 
+                    b.Property<bool>("SharingDisabled")
+                        .HasColumnType("boolean");
+
                     b.HasKey("OrganizationId");
 
                     b.ToTable("VaultOrganizationLifecycles");
@@ -1660,6 +1946,33 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.HasOne("Palladin.Module.Vault.Domain.Vault", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId", "VaultId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShare", b =>
+                {
+                    b.HasOne("Palladin.Module.Vault.Domain.VaultEntry", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "VaultId", "EntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShareCreationChallenge", b =>
+                {
+                    b.HasOne("Palladin.Module.Vault.Domain.VaultEntry", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "VaultId", "EntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.EntryShareSession", b =>
+                {
+                    b.HasOne("Palladin.Module.Vault.Domain.EntryShare", null)
+                        .WithMany()
+                        .HasForeignKey("ShareId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

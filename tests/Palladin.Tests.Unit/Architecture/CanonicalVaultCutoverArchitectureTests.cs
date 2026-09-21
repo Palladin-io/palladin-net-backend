@@ -9,6 +9,17 @@ namespace Palladin.Tests.Unit.Architecture;
 
 public sealed partial class CanonicalVaultCutoverArchitectureTests
 {
+    private static readonly HashSet<string> SharingRecipientEndpoints =
+    [
+        nameof(OpenEntryShareSessionEndpoint),
+        nameof(VerifyEntryShareSecretEndpoint),
+        nameof(DeliverEntryShareEndpoint),
+        nameof(ConfirmEntryShareReceiptEndpoint),
+        nameof(EndEntryShareEndpoint),
+        nameof(RequestEntryShareOtpEndpoint),
+        nameof(VerifyEntryShareOtpEndpoint),
+    ];
+
     [Fact]
     public void AgentCredentialDeliveryResponses_ShouldNeverExposePlaintextDiscoveryMetadata()
     {
@@ -156,8 +167,11 @@ public sealed partial class CanonicalVaultCutoverArchitectureTests
                     .Select(match => match.Groups[1].Value)
                     .ToList(),
                 AllowsAnonymous = item.Source.Contains("AllowAnonymous(", StringComparison.Ordinal),
+                IsGuestSharingPost = item.Source.Contains("Post(\"api/entry-shares/", StringComparison.Ordinal),
             })
-            .Where(item => item.Authentication.Count != 1
+            .Where(item => SharingRecipientEndpoints.Contains(item.Endpoint)
+                ? item.Authentication.Count != 0 || !item.AllowsAnonymous || !item.IsGuestSharingPost
+                : item.Authentication.Count != 1
                            || item.AllowsAnonymous
                            || item.Authentication.Any(scheme => scheme is not "JwtBearerDefaults.AuthenticationScheme"
                                and not "AgentAuthenticationOptions.SchemeName"))
@@ -166,7 +180,7 @@ public sealed partial class CanonicalVaultCutoverArchitectureTests
 
         // Then
         violations.ShouldBeEmpty(
-            "every Vault HTTP endpoint must fail closed behind exactly one JWT Member or Agent authentication boundary");
+            "Vault endpoints require Member/Agent authentication; only the enumerated guest sharing POSTs use their independent bearer and verification gates");
     }
 
     private static IEnumerable<string> EnumerateVaultRuntimeFiles(string root) =>

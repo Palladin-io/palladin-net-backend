@@ -11,6 +11,7 @@ using Palladin.Module.Vault.Infrastructure.History;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Module.Vault.Infrastructure.Purge;
 using Palladin.Module.Vault.Infrastructure.Sync;
+using Palladin.Module.Vault.Infrastructure.Sharing;
 using Palladin.Module.Vault.Shared;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +27,14 @@ internal static class InfrastructureModule
     {
         services.AddVaultPersistence(configuration);
         services.AddVaultCrypto(configuration);
+        services.AddOptions<EntrySharingOptions>()
+            .Bind(configuration.GetSection(EntrySharingOptions.Position))
+            .Validate(options => options.IsValid(), "Entry sharing requires bounded security limits.")
+            .ValidateOnStart();
+        services.AddSingleton<EntryShareSecurity>();
+        services.AddScoped<EntryShareAuthority>();
+        services.AddScoped<EntryShareReceiver>();
+        services.AddScoped<EntryShareOtpDispatcher>();
         services.AddOptions<VaultCreationOptions>()
             .Bind(configuration.GetSection(VaultCreationOptions.Position))
             .Validate(options => options.ChallengeTtlSeconds is > 0 and <= 3600,
@@ -71,6 +80,16 @@ internal static class InfrastructureModule
 
         services.AddScopedCronJob<ExpireGrantsJob, ExpireGrantsJobOptions>(
             configuration.GetSection(ExpireGrantsJobOptions.Position));
+        services.AddScopedCronJob<ExpireEntrySharesJob, ExpireEntrySharesJobOptions>(
+            configuration.GetSection(ExpireEntrySharesJobOptions.Position));
+        services.AddOptions<ExpireEntrySharesJobOptions>()
+            .Validate(options => options.PublishedActivityRetentionDays is >= 1 and <= 90,
+                "Entry sharing dispatch journal retention must be between 1 and 90 days.")
+            .ValidateOnStart();
+        services.AddScopedCronJob<DispatchEntryShareActivityJob, DispatchEntryShareActivityJobOptions>(
+            configuration.GetSection(DispatchEntryShareActivityJobOptions.Position));
+        services.AddScopedCronJob<DispatchEntryShareOtpJob, DispatchEntryShareOtpJobOptions>(
+            configuration.GetSection(DispatchEntryShareOtpJobOptions.Position));
         services.AddScopedCronJob<VaultEntryLifecycleJob, VaultEntryLifecycleOptions>(
             configuration.GetSection(VaultEntryLifecycleOptions.Position));
 

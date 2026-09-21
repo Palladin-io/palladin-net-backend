@@ -1,0 +1,5 @@
+{% include '_header.html.liquid', emailTitle: "Potwierdź e-mail, aby odebrać udostępniony wpis" %}
+<p style="margin:0 0 16px">Wpisz ten kod na otwartej wcześniej stronie udostępnienia. Konto Palladin nie jest wymagane.</p>
+<p style="margin:0 0 40px;font-size:24px;font-weight:700;letter-spacing:4px">{{ code }}</p>
+<p style="margin:0;font-size:12px;line-height:1.55;color:#8a8a8a">Żądanie {{ generation }}. Ważny do {{ expiresAtUtc }} (UTC). Wysłanie nowego kodu unieważnia poprzedni kod dla tej sesji. Nie przekazuj kodu innym osobom. Jeśli nie prosisz o kod, zignoruj tę wiadomość.</p>
+{% include '_footer.pl.html.liquid' %}

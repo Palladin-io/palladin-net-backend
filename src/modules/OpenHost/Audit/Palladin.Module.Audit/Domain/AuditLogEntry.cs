@@ -11,6 +11,7 @@ namespace Palladin.Module.Audit.Domain;
 internal sealed class AuditLogEntry
 {
     public Guid Id { get; private set; }
+    public bool HasExplicitOccurrenceId { get; private set; }
     public Guid OrganizationId { get; private set; }
     public string EventType { get; private set; } = string.Empty;
     public AuditActorType ActorType { get; private set; }
@@ -55,10 +56,12 @@ internal sealed class AuditLogEntry
         string? agentName = null,
         string? actorName = null,
         string? ipAddress = null,
-        IReadOnlyDictionary<string, string>? metadata = null) =>
+        IReadOnlyDictionary<string, string>? metadata = null,
+        bool hasExplicitOccurrenceId = false) =>
         new()
         {
             Id = id,
+            HasExplicitOccurrenceId = hasExplicitOccurrenceId,
             OrganizationId = organizationId,
             EventType = eventType,
             ActorType = actorType,

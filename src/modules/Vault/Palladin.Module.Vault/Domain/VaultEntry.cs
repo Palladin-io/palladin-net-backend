@@ -14,6 +14,7 @@ internal sealed class VaultEntry : EventEntityBase
     public EntryState State { get; private set; }
     public GrantDeliveryPolicy DeliveryPolicy { get; private set; }
     internal EntryRevision CurrentRevision { get; private set; }
+    internal ulong SharingRevokedThroughRevision { get; private set; }
     internal MemberIndexRevision MemberIndexRevision { get; private set; }
     internal AgentDiscoveryRevision? AgentDiscoveryRevision { get; private set; }
     internal AgentDiscoveryRevisionWatermark AgentDiscoveryRevisionHighWatermark { get; private set; }
@@ -427,6 +428,7 @@ internal sealed class VaultEntry : EventEntityBase
             deletedBy);
 
         State = EntryState.Deleted;
+        SharingRevokedThroughRevision = CurrentRevision.Value;
         ArchivedAt = null;
         ArchivedBy = null;
         DeletedAt = now;

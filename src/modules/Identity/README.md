@@ -104,6 +104,41 @@ EF Core + Postgres, MassTransit publish, custom JWT (`TokenService`), Google OAu
 - A user can belong to multiple organizations, but each JWT and refresh-token lineage carries exactly one `org_id`. JWT authentication validates `(sub, org_id, authz_ver)` against the current `OrganizationMember` on every request. A normal role-assignment or effective-permission change increments `AuthorizationVersion` and revokes all unrevoked refresh tokens for that membership in the same Identity commit, so old access and refresh tokens stop working immediately. A no-op does not invalidate sessions. A staged membership-removal row deliberately remains authorization-current for reads until its Vault removal workflow completes; every unsafe HTTP verb carrying the complete user-JWT claim set requires an `Active` membership by default. Only explicitly reviewed account/exit operations and the read-only Member snapshot/delta and GlobalSearch POSTs opt out through `AllowNonActiveOrganizationMembershipMetadata` in the endpoint's `Configure()` method. Login, TOTP completion, OAuth, refresh and organization switch never issue a session for a non-active membership.
 - **Current fail-closed `GrantManage` stage:** Identity and Vault do not yet have the durable role-change operation, staged `VaultReasonRecipientSet` wire/client material or `CutoverPending` protocol required for an honest cross-module recipient cutover. Therefore any role definition or member-role replacement that would change a member's effective `GrantManage` eligibility returns `409` with `organization-role-grant-manage-cutover-unavailable` before any role, version or refresh-token mutation. A role containing `GrantManage` is not invitation-assignable, and acceptance revalidates the current role and returns the same `409` with zero invitation or membership mutation if the role would grant it. This is an intentional safe restriction, not the final `202 + operationId` saga described by the target PRD; it must not be relaxed to a synchronous role write.
 
+### Individual Entry sharing revocation
+
+Before member removal or an effective loss of `VaultManage`, Identity sends the
+Vault-owned `RevokeMemberEntrySharingCommand` and waits for
+`MemberEntrySharingRevoked`. Both member-role replacement and custom-role
+definition updates calculate the effective permission union, so losing an
+unrelated permission or retaining `VaultManage` through another role does not
+revoke shares. The command binds the organization, Member and pre-change
+authorization version. Identity accepts only an acknowledgement for that scope
+whose committed revocation floor covers the requested version.
+
+The request runs before the Identity domain mutation/commit, with no open
+database transaction across the broker. Existing Organization membership and
+Member authorization concurrency stamps still arbitrate racing Identity writes.
+Vault serializes the revocation with recipient delivery through its own local
+optimistic authority fence. An acknowledgement timeout or fault returns a
+retryable conflict and leaves Identity roles, authorization version and removal
+status unchanged. Timeout defaults to ten seconds, configured and validated at
+`Modules:Identity:EntrySharingRevocation:RequestTimeoutSeconds` (1–60).
+
+If Vault committed but its acknowledgement was lost, or the later Identity commit
+loses a race, old sharing authority remains revoked. There is no unsafe rollback
+or automatic resurrection. Retrying the original authorized Identity operation
+is idempotent at the Vault fence and can finish the transition. Restoring sharing
+permission later permits creation under the new authorization version, not use
+of the old links. An abandoned failed transition can leave that old generation
+unable to create shares until a subsequent authorized version change; callers
+must not present the failed operation as a completed permission change.
+
+Tests cover all three access-loss paths over HTTP, preserved sharing after an
+unrelated permission change, regained authority without old-link resurrection,
+and injected lost acknowledgements both before and after the real Vault consumer
+commits. No account/organization deletion endpoint is introduced by this work;
+future access-losing lifecycle paths must use the same pre-commit boundary.
+
 ### Candidate shared-unlock receiver proof
 
 `Infrastructure/SharedUnlock/SharedUnlockIdentityProof` verifies the candidate

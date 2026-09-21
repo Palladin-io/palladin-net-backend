@@ -170,6 +170,227 @@ Vault and Entry Search publishers, consumers, endpoint registrations, and the Se
 
 The canonical Entry head/key/version model, snapshot/delta synchronization, lifecycle, history, rollback-resistant purge, encrypted reasons, split revision-bound grant scope/envelope lifecycle, staged key rotation, encrypted assets, and opaque Search/Audit cutover are active. Transitional grant event contracts keep plaintext Vault/Entry presentation slots empty until those contracts are replaced; no backend code may resolve or persist a Vault or Entry name.
 
+## Individual Entry sharing (CVT-644, implementation in progress)
+
+`EntryShare` is an independent encrypted snapshot, not an Agent grant or a Vault
+membership. The current increment implements the domain, storage, server-side
+gate primitives and authenticated sender creation-challenge/create/list/revoke/
+protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
+Guest session, OTP issuance/verification, optional-secret verification, delivery,
+confirmation and recipient termination now exist under
+`/api/entry-shares/{shareId}/sessions`. Audit and first-receipt Inbox consumers
+are connected. Client flows and operational acceptance remain outstanding;
+the feature is not ready for deployment.
+
+The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
+scope/revision, finite expiry, receipt budget, optional recipient policy and
+optional password/PIN verifier. No EntryDEK, VK, link encryption key or Entry
+plaintext is accepted. Access and session bearers are independent high-entropy
+values; their purpose-separated, scope-bound HMAC verifiers are stored instead
+of bearer values. Named-recipient email is encrypted with a separate server key
+and share-ID associated data because the server must be able to send an OTP.
+That server-readable address is not zero-knowledge Entry content.
+
+The extra sharing password/PIN is an online gate, never the snapshot encryption
+key. It is processed only transiently, peppered with a share-bound server HMAC,
+and stored using the versioned, randomly salted ASP.NET Identity PBKDF2 verifier.
+The default iteration count is 600,000. PIN validation requires at least six ASCII
+digits. OTPs use secure random six-digit values and a separate session-bound
+server HMAC. No code, password/PIN, address, bearer or verifier is logged or put
+into domain/activity events. Public request/response records suppress sensitive `ToString()`
+output. The receiver route has `no-store` headers even on errors and a 4 KiB
+body ceiling enforced before deserialization, including chunked requests. The
+bounded request buffer is memory-only and cleared after processing.
+
+Session opening exposes `shareExpiresAt` and `maximumReceipts` separately from
+the recipient session's `expiresAt`; these are link policy, not remaining uses
+or a promise of future availability. `otpRetryAfterSeconds` reports the current
+share-wide resend cooldown. Entry type and presentation remain encrypted.
+Successful `POST .../otp` returns HTTP 200 with `retryAfterSeconds`, including
+exact-generation retries. Remaining seconds round up and reach zero after the
+configured cooldown; acknowledgement retry does not restart it. Denials remain
+empty no-store 404 responses, with no timing metadata. These presentation fields
+reuse the already-authorized aggregate without another query or schema change.
+
+`POST .../otp` accepts a generation starting at one and a language (`en`/`pl`),
+never a recipient address. The address comes only from the sender-selected share.
+An exact generation retry does not generate a new code or bypass the share-wide
+resend cooldown. A resend must use exactly the next generation; stale and skipped
+generations fail closed. `POST .../verify-otp` checks the current generation and
+unexpired code before consuming its verifier. An already verified current session
+can retry the HTTP acknowledgement without retaining or re-consuming the code.
+PIN/password and email gates remain independent and share one failed-attempt
+budget. Verification never consumes a receipt or opens a Palladin account session.
+
+The session stores pending mail as AES-GCM ciphertext under a separate server
+key, with the independently loaded share ID, session ID and generation as associated data.
+`EntryShareOtpRequestedEvent` contains only those structural IDs, the generation
+and timestamp. Its trigger and a bounded recovery job use the same dispatcher.
+Current source/session authority is fenced and committed before publication;
+no database transaction spans the broker call. The dispatcher publishes through
+the root `IBus`, intentionally bypassing the consumer's in-memory outbox, and
+clears the encrypted pending code only after broker acknowledgement. A crash
+before that final marker leaves the same generation recoverable. A later resend
+cannot be cleared by an older dispatch completion. Verified, expired or
+invalidated pending codes are erased without further publication.
+
+Notification owns `SendEntryShareVerificationEmailCommand`, a distinct expiring
+transactional email contract. This restricted server-side email channel receives
+the code and address, never the sharing encryption key, complete link or Entry
+content. It suppresses sensitive `ToString()` output, uses a broker TTL and checks
+expiry again at consumption. The stable share/session/generation occurrence deduplicates
+command redelivery through the existing email-delivery lease. The provider's
+documented acceptance-before-marker duplicate window still applies; this is not
+a promise of exactly-once SMTP delivery. The code's generation and exact UTC
+expiry appear in both localized templates, with no sharing-link CTA.
+
+The incremental `AddEntryShareOtpDelivery` migration adds pending-mail columns
+and an expiry/share/session index filtered to pending rows. HTTP and PostgreSQL
+tests cover both verification gates, request/verification retries, stale/expired
+generations, mixed PIN/OTP guess budgets, cross-session cooldown, failed broker
+publication and recovery-job dispatch. The test bus now uses the production JSON
+configuration and in-memory outbox; a failing transport test exposed default
+`Instant` deserialization to the Unix epoch before that fixture correction.
+
+Every receiver session binds the exact share and security version. Email and
+optional-secret verification are independent. A policy change invalidates all
+existing sessions. Failed attempts and resend cooldown are share-wide; periodic
+lockout never resets the lifetime failed-attempt budget. Reaching that budget
+locks the link through expiry. Limits are configured under
+`Modules:Vault:EntrySharing` and validated at startup. Opening a session requires
+the independent access bearer, returns a newly generated session bearer once,
+and stores only its verifier. The active-session cap defaults to 128; opening
+advances the share's optimistic fence, so racing capacity reads cannot both
+commit. The session query uses the share-first composite PK. An outer per-IP
+in-memory rate limit covers the entire guest route; it is an abuse boundary, not
+recipient IP history. GET has no receiver mutation or ciphertext endpoint.
+
+`EntrySharingRateLimitTests` runs the real API pipeline in Development with the
+test configuration and existing external-provider substitutes, rather than the
+normal Testing host that skips global throttling. Hangfire is disabled before
+registration; the uncached fixture runs in a non-parallel collection. Sixty
+requests per minute share one peer budget across all seven receiver operations, changing
+share/session IDs and query strings. Untrusted forwarded headers do not create
+new peers. Concurrent requests admit exactly sixty; rejections are empty 429s
+with `Retry-After` and `no-store`. Another transport peer, health and a similar
+non-sharing path remain available. Tests inject transport peer addresses through
+TestServer, use real PostgreSQL and do not prove deployed proxy configuration,
+cross-instance quotas, real RabbitMQ/SES delivery or a runnable user environment.
+
+`Deliver` consumes one receipt for one authorized session. An exact session retry
+does not consume a second receipt but still advances the optimistic share fence.
+Client confirmation is a separate occurrence and cannot refund a receipt. Only
+the first confirmation can carry the sender's explicit notification request;
+later confirmations still produce structural audit activity. Delivery/revocation
+atomicity uses the share/session stamps plus tracked source and authority fences.
+PostgreSQL tests cover the final-receipt race, fresh-context retries, organization
+and sender revocation, and equal-timestamp purge. Identity integration tests also
+cover Member removal and both effective-permission-loss paths, including lost
+acknowledgement and exact retry. Each anonymous mutation resolves the exact
+share/session bearer and checks current source authority in the same write
+context as its commit. Absent, unauthorized, expired, consumed, revoked and
+concurrently invalidated attempts use the same empty 404 response. Validation
+and body-size failures are request-shape errors independent of resource state.
+HTTP tests cover idempotent delivery/confirmation, notification choice in the
+durable activity, PIN/password gates, required OTP not bypassed by a correct PIN,
+shared failed-attempt budgets, foreign session proof, policy/sender revocation,
+recipient termination, scanner GETs, session caps and bounded request bodies.
+The mail path is tested through the real bus, renderer and durable deduplication
+with a substituted email provider. HTTP confirmation now reaches the real test
+bus and downstream Audit/Inbox; real SES delivery and deployed client rendering
+are not yet accepted.
+
+Sender creation captures the authenticated Identity authorization version and
+the independently loaded Vault membership timestamp. A per-organization/Member
+`EntryShareSenderAuthority` monotonically revokes old authorization versions;
+`VaultOrganizationLifecycle.SharingDisabled` blocks organization-wide sharing.
+Vault-owned `RevokeMemberEntrySharingCommand` and
+`RevokeOrganizationEntrySharingCommand` consumers persist those fences before
+acknowledging. Identity awaits the Member acknowledgement before committing an
+access-losing transition, without holding a database transaction across messaging.
+Member removal, member-role replacement and custom-role definition changes are
+wired. Changes that preserve effective `VaultManage` do not revoke links.
+An interrupted Identity transition remains fail-closed: a committed Vault revoke
+is not rolled back even if the acknowledgement or later Identity commit fails.
+Exact retry can complete the operation. Regained permission uses a new Identity
+authorization version and cannot restore old shares. Organization-wide command
+support does not introduce a new Identity organization-deletion endpoint.
+
+Recipient source authorization fences the same authority and organization rows,
+Vault mutation stamp and Entry lifecycle. `IsPurging` and `CurrentRevision` are
+concurrency tokens alongside `UpdatedAt`, preventing equal-clock purge/delete
+races. Deleting an Entry advances a permanent sharing-revocation revision floor;
+restoring it does not clear that floor. Archive suspends snapshots while archived.
+Creating a new share after restoration binds the new revision. HTTP tests cover
+delete/restore and show the original snapshot remains revoked.
+
+Creation reserves a server-owned share ID scoped to organization, Vault, Entry
+and Member, bounded to one reservation per Member/Entry. Exact create retries
+match the original policy, ciphertext and verifiers and do not append another
+share or activity. The Vault mutation stamp serializes the active-link cap.
+The sender list projects policy, usage and status only, never ciphertext or token
+verifiers. It may decrypt the intended recipient address only for that sender.
+Sender responses carry `Cache-Control: no-store`.
+
+`EntryShareActivities` is the durable dispatch journal, keyed by share ID plus
+monotonic activity sequence. The Vault domain context stages new activity rows
+through `PrepareEventsAsync` before the same save as the share/session mutation.
+Immediate event dispatch and the recovery job are at-least-once; consumers must
+deduplicate that stable occurrence identity. The journal deliberately has no FK
+to the share: physical source purge may remove ciphertext and sessions but must
+not erase pending audit. It stores only structural IDs, kind, notification choice
+and timestamps. `SenderId` is the notification recipient, not the actor of an
+external recipient's delivery/confirmation/termination.
+
+`OnEntryShareActivityAudit` maps each occurrence to Audit's append command,
+independently of the notification choice. The stable UUIDv8 derives from a
+domain-separated SHA-256 share-ID/sequence digest; timestamps cannot collapse
+distinct simultaneous receipts. Sender, System and ExternalRecipient are explicit
+actor types. Audit metadata contains only share ID and sequence alongside opaque
+subject columns. `OnEntryShareActivityReceipt` sends Notification's separate
+sender-only command only for an opted-in first confirmation. The Inbox identity
+is stable per share. Reordered/repeated activities, a concurrent first-confirmation
+race, and the HTTP-to-test-bus-to-Audit/Inbox path are covered. No generic fan-out
+or global preference may silently override the per-share checkbox.
+
+EF may insert the activity before updating the share's optimistic stamp. A race
+can therefore first hit `PK_EntryShareActivities`; the Vault persistence boundary
+maps exactly that PostgreSQL unique violation to a concurrency conflict. The
+whole save rolls back and no delivery/audit occurrence survives the losing write.
+Unrelated uniqueness violations retain their original behavior.
+
+The incremental `AddEntrySharing` migration adds three tables without changing
+old migrations. `AddEntrySharingSourceAuthority` is a second incremental migration
+for the authority rows, reservations, source revocation floor and captured sender
+authority. Both apply successfully in isolated PostgreSQL integration tests.
+Sender lists use the tenant/Vault/Entry/creation-time index;
+expiry, expired-session cleanup and pending dispatch each have an index matching
+their bounded deterministic order. `ExpireEntrySharesJob` erases delivery data
+at expiry and removes expired sessions. `DispatchEntryShareActivityJob` marks
+an occurrence published only after broker success. PostgreSQL tests prove failed
+publication retains the pending occurrence even without its source, and a fresh
+job can publish/mark it. Expiry-job retries erase delivery material and expired
+sessions once, preserve the activity journal and leave an active share untouched.
+The same expiry job now removes only acknowledged dispatch-journal rows after
+`PublishedActivityRetentionDays` (default seven, startup-validated range 1–90)
+measured from `PublishedAt`, never from occurrence time. Each deterministic
+batch orders by publication/share/sequence, commits through the domain write
+context and clears tracking. Pending rows are never retention candidates,
+including after source purge; a long-delayed successful publication starts a
+fresh retention window. This is technical outbox retention, not Audit or Inbox
+retention. Their durable rows and deduplication identities are untouched.
+
+`AddEntrySharingJournalRetention` adds only the published-row partial index on
+`PublishedAt, ShareId, Sequence`. The existing pending-row index has a disjoint
+predicate and orders by occurrence, while the PK starts with share ID; neither
+serves global publication-age cleanup. No older migration is changed.
+PostgreSQL tests cover the exact boundary, batch/retry behavior, pending and
+recently published old occurrences, plus real Entry purge and Vault deletion
+cascades: sharing ciphertext, sessions and creation reservations disappear,
+while pending journal rows survive for dispatch. External asset storage is
+substituted in those tests. Real broker/SES and deployed operation remain
+acceptance gates; no deployment is implied by this local coverage.
+
 ## Dependencies
 
 - Project references: Agents, Identity, Notification.Events, Audit.Events, and shared core libraries.

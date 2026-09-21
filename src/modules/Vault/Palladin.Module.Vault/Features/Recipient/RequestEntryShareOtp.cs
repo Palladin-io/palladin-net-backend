@@ -24,6 +24,9 @@ public sealed record RequestEntryShareOtpRequest
     public override string ToString() => nameof(RequestEntryShareOtpRequest);
 }
 
+[PublicAPI]
+public sealed record RequestEntryShareOtpResponse(int RetryAfterSeconds);
+
 [UsedImplicitly]
 internal sealed class RequestEntryShareOtpValidator : Validator<RequestEntryShareOtpRequest>
 {
@@ -40,7 +43,7 @@ internal sealed class RequestEntryShareOtpValidator : Validator<RequestEntryShar
 [PublicAPI]
 internal sealed class RequestEntryShareOtpEndpoint(
     VaultDomainWriteContext context, EntryShareReceiver receiver, EntryShareSecurity security,
-    IOptions<EntrySharingOptions> options, IClock clock) : Endpoint<RequestEntryShareOtpRequest>
+    IOptions<EntrySharingOptions> options, IClock clock) : Endpoint<RequestEntryShareOtpRequest, RequestEntryShareOtpResponse>
 {
     public override void Configure()
     {
@@ -72,7 +75,7 @@ internal sealed class RequestEntryShareOtpEndpoint(
                 && (session.EmailVerifiedAt is not null || session.OtpExpiresAt > now))
             {
                 await context.CommitAsync(ct);
-                await Send.NoContentAsync(ct);
+                await SendCountdownAsync(share, ct);
                 return;
             }
 
@@ -87,7 +90,7 @@ internal sealed class RequestEntryShareOtpEndpoint(
                 Duration.FromSeconds(options.Value.OtpResendCooldownSeconds),
                 new EntryShareOtpDelivery(req.Generation, security.ProtectOtp(share.Id, session.Id, req.Generation, code), req.Language));
             await context.CommitAsync(ct);
-            await Send.NoContentAsync(ct);
+            await SendCountdownAsync(share, ct);
         }
         catch (EntryShareUnavailableException)
         {
@@ -98,4 +101,8 @@ internal sealed class RequestEntryShareOtpEndpoint(
             await Send.NotFoundAsync(ct);
         }
     }
+
+    private Task SendCountdownAsync(EntryShare share, CancellationToken ct) =>
+        Send.OkAsync(new RequestEntryShareOtpResponse(share.OtpRetryAfterSeconds(
+            clock.GetCurrentInstant(), Duration.FromSeconds(options.Value.OtpResendCooldownSeconds))), ct);
 }

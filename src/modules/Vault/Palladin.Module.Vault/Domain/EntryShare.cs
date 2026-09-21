@@ -125,6 +125,10 @@ internal sealed class EntryShare : EventEntityBase
             end < ExpiresAt ? end : ExpiresAt);
     }
 
+    internal int OtpRetryAfterSeconds(Instant now, Duration cooldown) => LastOtpSentAt is { } last
+        ? (int)Math.Max(0, Math.Ceiling((last + cooldown - now).TotalSeconds))
+        : 0;
+
     internal void IssueOtp(
         EntryShareSession session, byte[] otpHash, Instant now, Duration lifetime, Duration cooldown,
         EntryShareOtpDelivery delivery)

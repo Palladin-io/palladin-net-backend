@@ -202,6 +202,16 @@ output. The receiver route has `no-store` headers even on errors and a 4 KiB
 body ceiling enforced before deserialization, including chunked requests. The
 bounded request buffer is memory-only and cleared after processing.
 
+Session opening exposes `shareExpiresAt` and `maximumReceipts` separately from
+the recipient session's `expiresAt`; these are link policy, not remaining uses
+or a promise of future availability. `otpRetryAfterSeconds` reports the current
+share-wide resend cooldown. Entry type and presentation remain encrypted.
+Successful `POST .../otp` returns HTTP 200 with `retryAfterSeconds`, including
+exact-generation retries. Remaining seconds round up and reach zero after the
+configured cooldown; acknowledgement retry does not restart it. Denials remain
+empty no-store 404 responses, with no timing metadata. These presentation fields
+reuse the already-authorized aggregate without another query or schema change.
+
 `POST .../otp` accepts a generation starting at one and a language (`en`/`pl`),
 never a recipient address. The address comes only from the sender-selected share.
 An exact generation retry does not generate a new code or bypass the share-wide

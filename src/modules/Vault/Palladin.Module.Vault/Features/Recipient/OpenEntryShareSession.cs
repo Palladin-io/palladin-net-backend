@@ -25,7 +25,8 @@ public sealed record OpenEntryShareSessionRequest
 [PublicAPI]
 public sealed record OpenEntryShareSessionResponse(
     Guid SessionId, string SessionToken, Instant ExpiresAt,
-    EntryShareRecipientMode RecipientMode, EntryShareProtection Protection)
+    EntryShareRecipientMode RecipientMode, EntryShareProtection Protection,
+    Instant ShareExpiresAt, int MaximumReceipts, int OtpRetryAfterSeconds)
 {
     public override string ToString() => nameof(OpenEntryShareSessionResponse);
 }
@@ -87,7 +88,8 @@ internal sealed class OpenEntryShareSessionEndpoint(
             context.Add(session);
             await context.CommitAsync(ct);
             await Send.OkAsync(new OpenEntryShareSessionResponse(session.Id, token, session.ExpiresAt,
-                share.RecipientMode, share.Protection), ct);
+                share.RecipientMode, share.Protection, share.ExpiresAt, share.MaximumReceipts,
+                share.OtpRetryAfterSeconds(clock.GetCurrentInstant(), Duration.FromSeconds(options.Value.OtpResendCooldownSeconds))), ct);
         }
         catch (EntryShareUnavailableException)
         {

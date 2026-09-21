@@ -28,6 +28,74 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task When_ARecipientOpensTheLink_Then_LinkPolicyIsSeparateFromSessionExpiry(bool named)
+    {
+        // Given
+        var seed = await SeedAsync(named: named);
+        apiFactory.MockId(Guid.NewGuid());
+
+        // When
+        var response = await apiFactory.CreateClient().POSTAsync<OpenEntryShareSessionEndpoint, OpenEntryShareSessionRequest>(
+            new OpenEntryShareSessionRequest { ShareId = seed.ShareId, AccessToken = seed.AccessToken });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var body = json.RootElement;
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var share = await scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>().EntryShares
+            .SingleAsync(x => x.Id == seed.ShareId, TestContext.Current.CancellationToken);
+        body.GetProperty("shareExpiresAt").GetDateTimeOffset().ShouldBe(share.ExpiresAt.ToDateTimeOffset());
+        body.GetProperty("expiresAt").GetDateTimeOffset().ShouldBeLessThan(body.GetProperty("shareExpiresAt").GetDateTimeOffset());
+        body.GetProperty("maximumReceipts").GetInt32().ShouldBe(share.MaximumReceipts);
+        body.GetProperty("otpRetryAfterSeconds").GetInt32().ShouldBe(0);
+        body.EnumerateObject().Select(x => x.Name).Order().ShouldBe(new[]
+        {
+            "sessionId", "sessionToken", "expiresAt", "recipientMode", "protection",
+            "shareExpiresAt", "maximumReceipts", "otpRetryAfterSeconds",
+        }.Order());
+        share.DeliveryCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task When_AnotherSessionOpensDuringOtpCooldown_Then_ItReceivesTheSharedRemainingTime()
+    {
+        // Given
+        var seed = await SeedAsync(named: true);
+        var first = await OpenAsync(seed);
+        var client = apiFactory.CreateClient();
+        var issued = await client.POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
+            new RequestEntryShareOtpRequest
+            {
+                ShareId = first.ShareId, SessionId = first.SessionId, SessionToken = first.SessionToken,
+                Generation = 1, Language = "en",
+            });
+        issued.StatusCode.ShouldBe(HttpStatusCode.OK);
+        apiFactory.FakeClock.Advance(Duration.FromMilliseconds(21_500));
+        apiFactory.MockId(Guid.NewGuid());
+
+        // When
+        var opened = await client.POSTAsync<OpenEntryShareSessionEndpoint, OpenEntryShareSessionRequest, OpenEntryShareSessionResponse>(
+            new OpenEntryShareSessionRequest { ShareId = seed.ShareId, AccessToken = seed.AccessToken });
+
+        // Then
+        opened.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        opened.Result.OtpRetryAfterSeconds.ShouldBe(39);
+        opened.Result.SessionId.ShouldNotBe(first.SessionId);
+        var denied = await client.POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
+            new RequestEntryShareOtpRequest
+            {
+                ShareId = seed.ShareId, SessionId = opened.Result.SessionId, SessionToken = opened.Result.SessionToken,
+                Generation = 1, Language = "en",
+            });
+        denied.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await denied.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task When_AReceiptAndConfirmationAreRetried_Then_OneDeliveryAndOneConfirmationAreRecorded(bool notify)
     {
         // Given

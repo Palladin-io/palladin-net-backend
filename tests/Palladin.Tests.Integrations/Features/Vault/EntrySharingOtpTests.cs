@@ -27,6 +27,30 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
+    public async Task When_AnOtpAcknowledgementIsRetried_Then_TheCountdownDoesNotRestart()
+    {
+        // Given
+        var seed = await SeedAsync();
+
+        // When
+        var first = await RequestAsync(seed);
+        apiFactory.FakeClock.Advance(Duration.FromMilliseconds(21_500));
+        var retry = await RequestAsync(seed);
+        apiFactory.FakeClock.Advance(Duration.FromSeconds(40));
+        var ready = await RequestAsync(seed);
+
+        // Then
+        foreach (var (response, seconds) in new[] { (first, 60), (retry, 39), (ready, 0) })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+            using var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            json.RootElement.GetProperty("retryAfterSeconds").GetInt32().ShouldBe(seconds);
+            json.RootElement.EnumerateObject().Select(x => x.Name).ShouldBe(new[] { "retryAfterSeconds" });
+        }
+    }
+
+    [Fact]
     public async Task When_TheEmailCommandCrossesTheBus_Then_ItsExpiryIsPreserved()
     {
         // Given
@@ -36,7 +60,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
             .ConnectConsumeObserver(new EmailExpiryObserver(seed.Session.SessionId, received));
 
         // When
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var expiresAt = await received.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         // Then
@@ -54,7 +78,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
         (await client.POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(seed.Session)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
         // When
-        (await RequestAsync(seed, language: language)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed, language: language)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var email = await ReadEmailAsync(seed);
         var code = ReadCode(email);
         (await VerifyAsync(seed, code)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
@@ -83,9 +107,9 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
         var seed = await SeedAsync();
 
         // When
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var email = await ReadEmailAsync(seed);
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         // Then
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -102,13 +126,13 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var seed = await SeedAsync();
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var original = ReadCode(await ReadEmailAsync(seed));
         (await RequestAsync(seed, generation: 2)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         apiFactory.FakeClock.Advance(Duration.FromSeconds(61));
 
         // When
-        (await RequestAsync(seed, generation: 2)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed, generation: 2)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var replacement = ReadCode(await ReadEmailAsync(seed));
         var oldVerification = await VerifyAsync(seed, original, generation: 1);
         var oldRequest = await RequestAsync(seed, generation: 1);
@@ -125,7 +149,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var seed = await SeedAsync();
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var code = ReadCode(await ReadEmailAsync(seed));
         apiFactory.FakeClock.Advance(Duration.FromSeconds(301));
 
@@ -144,7 +168,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var seed = await SeedAsync(pin: true);
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await VerifyAsync(seed, ReadCode(await ReadEmailAsync(seed)))).StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
         // When
@@ -169,7 +193,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var seed = await SeedAsync();
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var code = ReadCode(await ReadEmailAsync(seed));
         var wrong = code == "000000" ? "111111" : "000000";
         var limit = apiFactory.Services.GetRequiredService<IOptions<EntrySharingOptions>>().Value.FailedAttemptLimit;
@@ -257,7 +281,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var seed = await SeedAsync();
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var code = ReadCode(await ReadEmailAsync(seed));
         var sessionId = Guid.NewGuid();
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
@@ -288,7 +312,7 @@ public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var seed = await SeedAsync(pin: true);
-        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RequestAsync(seed)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var code = ReadCode(await ReadEmailAsync(seed));
         var limit = apiFactory.Services.GetRequiredService<IOptions<EntrySharingOptions>>().Value.FailedAttemptLimit;
 

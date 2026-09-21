@@ -180,6 +180,32 @@ public sealed class EntryShareTests
         share.DeliveryCount.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData(0, 30)]
+    [InlineData(1, 30)]
+    [InlineData(21_500, 9)]
+    [InlineData(29_999, 1)]
+    [InlineData(30_000, 0)]
+    [InlineData(60_000, 0)]
+    public void When_OtpCooldownIsDisplayed_Then_RemainingSecondsRoundUpWithoutChangingTheShare(int elapsedMilliseconds, int expected)
+    {
+        // Given
+        var share = CreateShare(recipientMode: EntryShareRecipientMode.NamedRecipient);
+        var session = OpenSession(share);
+        var cooldown = Duration.FromSeconds(30);
+        share.OtpRetryAfterSeconds(Now, cooldown).ShouldBe(0);
+        share.IssueOtp(session, new byte[32], Now, Duration.FromMinutes(3), cooldown, new(1, "protected-code", "en"));
+        var version = share.MutationVersion;
+
+        // When
+        var remaining = share.OtpRetryAfterSeconds(Now + Duration.FromMilliseconds(elapsedMilliseconds), cooldown);
+
+        // Then
+        remaining.ShouldBe(expected);
+        share.MutationVersion.ShouldBe(version);
+        share.DeliveryCount.ShouldBe(0);
+    }
+
     [Fact]
     public void When_ANewSessionRequestsOtpDuringCooldown_Then_ResendingIsStillDenied()
     {

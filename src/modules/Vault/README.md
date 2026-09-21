@@ -265,6 +265,18 @@ commit. The session query uses the share-first composite PK. An outer per-IP
 in-memory rate limit covers the entire guest route; it is an abuse boundary, not
 recipient IP history. GET has no receiver mutation or ciphertext endpoint.
 
+`EntrySharingRateLimitTests` runs the real API pipeline in Development with the
+test configuration and existing external-provider substitutes, rather than the
+normal Testing host that skips global throttling. Hangfire is disabled before
+registration; the uncached fixture runs in a non-parallel collection. Sixty
+requests per minute share one peer budget across all seven receiver operations, changing
+share/session IDs and query strings. Untrusted forwarded headers do not create
+new peers. Concurrent requests admit exactly sixty; rejections are empty 429s
+with `Retry-After` and `no-store`. Another transport peer, health and a similar
+non-sharing path remain available. Tests inject transport peer addresses through
+TestServer, use real PostgreSQL and do not prove deployed proxy configuration,
+cross-instance quotas, real RabbitMQ/SES delivery or a runnable user environment.
+
 `Deliver` consumes one receipt for one authorized session. An exact session retry
 does not consume a second receipt but still advances the optimistic share fence.
 Client confirmation is a separate occurrence and cannot refund a receipt. Only

@@ -3,7 +3,7 @@ title = "Palladin backend secret scanning"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Deterministic cryptographic test vectors and a non-secret C# contract type identifier"
 paths = [
   '''^tests/Fixtures/IdentityKdf/password-only-v1\.json$''',
@@ -14,4 +14,18 @@ paths = [
 ]
 regexes = [
   '''^X25519RecipientKeyKindContract$''',
+]
+
+[[allowlists]]
+description = "Deterministic SharedUnlock vectors; see tests/Fixtures/SharedUnlock/PROVENANCE.md"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "secret"
+paths = [
+  '''^tests/Fixtures/SharedUnlock/(transport|session-api)-v1\.json$''',
+]
+regexes = [
+  '''^9FfyDALwGrZQqN3mlVD4Jo2qPRDdk8qC2RIiWS3c8Io$''',
+  '''^x4puAvksU7wwTMOo8n5\-OrMZUlXYA5dwaWNhqd7ovX0$''',
+  '''^xuPH9ggKBiyRGfLCU5iV_kBLBZwB0eoD3csScCd7fBQ$''',
 ]

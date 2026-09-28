@@ -41,16 +41,19 @@ jobs:
 
     steps:
       - name: Checkout source
+        id: checkout_source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up .NET
+        id: set_up_net
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
       - name: Initialize test databases
+        id: initialize_test_databases
         env:
           PGHOST: localhost
           PGPASSWORD: mysecretpassword
@@ -58,19 +61,50 @@ jobs:
         run: ./scripts/init-databases.sh
 
       - name: Restore dependencies
+        id: restore_dependencies
         run: dotnet restore Palladin.sln
 
       - name: Build
+        id: build
         run: dotnet build Palladin.sln --no-restore
 
       - name: Test the stage deployment orchestration
+        id: test_the_stage_deployment_orchestration
         run: |
           ./scripts/test-wait-for-prior-main-run.sh
           ./scripts/test-wait-for-ssm-command.sh
           ./scripts/test-deploy-stage-remote.sh
 
       - name: Test
+        id: test
         run: dotnet test Palladin.sln --no-build --verbosity normal
+
+      - name: Publish CI check summary
+        if: always()
+        shell: bash
+        env:
+          CHECKOUT_SOURCE: ${{ steps.checkout_source.outcome }}
+          SET_UP_NET: ${{ steps.set_up_net.outcome }}
+          INITIALIZE_TEST_DATABASES: ${{ steps.initialize_test_databases.outcome }}
+          RESTORE_DEPENDENCIES: ${{ steps.restore_dependencies.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          TEST_THE_STAGE_DEPLOYMENT_ORCHESTRATION: ${{ steps.test_the_stage_deployment_orchestration.outcome }}
+          TEST: ${{ steps.test.outcome }}
+        run: |
+          {
+            printf '## CI checks\n\nPlatform: Linux (ubuntu-latest)\n\n'
+            printf '| Check | Result |\n| --- | --- |\n'
+            printf '| %s | %s |\n' 'Checkout source' "${CHECKOUT_SOURCE:-not run}"
+            printf '| %s | %s |\n' 'Set up .NET' "${SET_UP_NET:-not run}"
+            printf '| %s | %s |\n' 'Initialize test databases' "${INITIALIZE_TEST_DATABASES:-not run}"
+            printf '| %s | %s |\n' 'Restore dependencies' "${RESTORE_DEPENDENCIES:-not run}"
+            printf '| %s | %s |\n' 'Build' "${BUILD:-not run}"
+            printf '| %s | %s |\n' 'Test the stage deployment orchestration' "${TEST_THE_STAGE_DEPLOYMENT_ORCHESTRATION:-not run}"
+            printf '| %s | %s |\n' 'Test' "${TEST:-not run}"
+            printf '\n[Open workflow logs](%s/%s/actions/runs/%s/attempts/%s)\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf '\nFailure details stay in the failing check log; this report contains only check outcomes.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   release-backend-artifact:
     name: Release backend artifact

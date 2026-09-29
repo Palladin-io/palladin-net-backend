@@ -17,7 +17,7 @@ regexes = [
 ]
 
 [[allowlists]]
-description = "Frozen public SharedUnlock derivedKey fixture values (protocol 0a70644fe3fbdeba49d77a8509ec27c449a1d4fa)"
+description = "Frozen public SharedUnlock derivedKey fixture values; see tests/Fixtures/SharedUnlock/PROVENANCE.md"
 targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "secret"
@@ -28,7 +28,7 @@ regexes = [
 ]
 
 [[allowlists]]
-description = "Frozen public SharedUnlock keyContextDigest fixture values (protocol 0a70644fe3fbdeba49d77a8509ec27c449a1d4fa)"
+description = "Frozen public SharedUnlock keyContextDigest fixture values; see tests/Fixtures/SharedUnlock/PROVENANCE.md"
 targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "secret"

@@ -4,6 +4,13 @@ Palladin is a zero-knowledge password manager for AI agents. This repository con
 
 The backend is pre-production. Its current migration baseline intentionally assumes empty databases and may be incompatible with earlier development data.
 
+## Palladin ecosystem
+
+[Project overview and public repositories](https://github.com/Palladin-io#readme) · [Mobile client](https://github.com/Palladin-io/palladin-flutter-mobile) · [Website](https://palladin.io)
+
+Each component owns its setup and contribution guide. This repository can be
+used independently of the private project workspace.
+
 ## Security model
 
 Security is an architectural constraint, not an optional feature:

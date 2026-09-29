@@ -6,6 +6,7 @@ using Palladin.Module.Audit.Infrastructure.Exports;
 using Palladin.Module.Agents.Infrastructure.PublicAssets;
 using Palladin.Core.Guid;
 using Palladin.Core.Json;
+using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain.Enums;
 using Palladin.Module.Identity.Infrastructure.OAuth;
@@ -39,6 +40,8 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
     internal InMemoryCdnService CdnService { get; } = new();
     internal IPublicAssetCatalogClient PublicAssetCatalogClient { get; } = Substitute.For<IPublicAssetCatalogClient>();
 
+    internal IPublicAssetStorage PublicAssetStorage { get; } = Substitute.For<IPublicAssetStorage>();
+
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddMassTransitTestHarness(configurator => configurator.UsingInMemory((context, bus) =>
@@ -68,6 +71,7 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
         services.Replace(ServiceDescriptor.Singleton<IAuditExportStorage>(CdnService));
         services.RemoveAll<IPublicAssetCatalogClient>();
         services.AddSingleton(PublicAssetCatalogClient);
+        services.Replace(ServiceDescriptor.Singleton(PublicAssetStorage));
     }
 
     protected override void ConfigureApp(IWebHostBuilder a)

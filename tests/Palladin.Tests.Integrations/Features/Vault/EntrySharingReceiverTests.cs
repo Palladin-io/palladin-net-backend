@@ -390,6 +390,39 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_ProtectionChangesAtTheSessionCap_Then_OnlyTheCurrentSecurityVersionCounts()
+    {
+        // Given
+        var seeded = await SeedAsync();
+        var obsolete = await OpenAsync(seeded);
+        var limit = apiFactory.Services.GetRequiredService<IOptions<EntrySharingOptions>>().Value.MaximumActiveSessionsPerShare;
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+            var share = await context.EntryShares.SingleAsync(x => x.Id == seeded.ShareId, TestContext.Current.CancellationToken);
+            for (var index = 1; index < limit; index++)
+            {
+                context.Add(share.OpenSession(Guid.NewGuid(), new byte[32], apiFactory.FakeClock.GetCurrentInstant(), Duration.FromMinutes(15)));
+            }
+            share.ChangeProtection(EntryShareProtection.None, null, apiFactory.FakeClock.GetCurrentInstant());
+            await context.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        // When
+        var current = await OpenAsync(seeded);
+        var stale = await apiFactory.CreateClient().POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(obsolete);
+        var delivered = await apiFactory.CreateClient().POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(current);
+
+        // Then
+        stale.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        delivered.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var verification = apiFactory.Services.CreateAsyncScope();
+        var database = verification.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        (await database.EntryShareSessions.CountAsync(x => x.ShareId == seeded.ShareId, TestContext.Current.CancellationToken)).ShouldBe(limit + 1);
+        (await database.EntryShares.SingleAsync(x => x.Id == seeded.ShareId, TestContext.Current.CancellationToken)).DeliveryCount.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task When_TheActiveSessionCapIsReached_Then_NoFurtherSessionIsPersisted()
     {
         // Given

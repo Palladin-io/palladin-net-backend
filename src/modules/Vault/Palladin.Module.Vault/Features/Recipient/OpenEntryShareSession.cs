@@ -75,7 +75,7 @@ internal sealed class OpenEntryShareSessionEndpoint(
             await authority.EnsureRecipientSourceAsync(share, ct);
             var now = clock.GetCurrentInstant();
             var activeSessions = await context.EntryShareSessions.CountAsync(
-                x => x.ShareId == share.Id && x.ExpiresAt > now, ct);
+                x => x.ShareId == share.Id && x.SecurityVersion == share.SecurityVersion && x.ExpiresAt > now, ct);
             if (activeSessions >= options.Value.MaximumActiveSessionsPerShare)
             {
                 throw new EntryShareUnavailableException();

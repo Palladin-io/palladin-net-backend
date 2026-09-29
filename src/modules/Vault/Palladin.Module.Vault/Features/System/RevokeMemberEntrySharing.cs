@@ -1,10 +1,13 @@
 using JetBrains.Annotations;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using NodaTime;
 using Palladin.Module.Vault.Contracts.Commands;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.MassTransit;
 using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Module.Vault.Infrastructure.Sharing;
 
 namespace Palladin.Module.Vault.Features;
 
@@ -15,7 +18,8 @@ internal sealed class RevokeMemberEntrySharingConsumerDefinition : ConsumerDefin
 }
 
 [PublicAPI]
-internal sealed class RevokeMemberEntrySharingConsumer(VaultDomainWriteContext domainWriteContext)
+internal sealed class RevokeMemberEntrySharingConsumer(
+    VaultDomainWriteContext domainWriteContext, IOptions<EntrySharingOptions> options, IClock clock)
     : IConsumer<RevokeMemberEntrySharingCommand>
 {
     public async Task Consume(ConsumeContext<RevokeMemberEntrySharingCommand> context)
@@ -31,7 +35,12 @@ internal sealed class RevokeMemberEntrySharingConsumer(VaultDomainWriteContext d
 
         authority.RevokeThrough(msg.AuthorizationVersion);
         await domainWriteContext.CommitAsync(context.CancellationToken);
+        var revokedThrough = authority.RevokedThroughAuthorizationVersion;
+        await EntryShareSourceRevocation.RevokeAsync(domainWriteContext,
+            domainWriteContext.EntryShares.Where(x => x.OrganizationId == msg.OrganizationId
+                && x.CreatedBy == msg.UserId && x.SenderAuthorizationVersion <= revokedThrough),
+            options.Value.SourceRevocationBatchSize, clock.GetCurrentInstant(), context.CancellationToken);
         await context.RespondAsync(new MemberEntrySharingRevoked(
-            msg.OrganizationId, msg.UserId, authority.RevokedThroughAuthorizationVersion));
+            msg.OrganizationId, msg.UserId, revokedThrough));
     }
 }

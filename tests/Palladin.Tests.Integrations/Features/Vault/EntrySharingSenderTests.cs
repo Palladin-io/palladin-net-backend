@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using FastEndpoints;
 using Microsoft.AspNetCore.WebUtilities;
@@ -22,6 +23,58 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 [Collection<ApiFactoryCollection>]
 public sealed class EntrySharingSenderTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_ExpiryIsOmitted_Then_DefaultsApplyAndRetryKeepsTheOriginalDeadline()
+    {
+        // Given
+        var (client, request, _) = await SeedRequestAsync();
+        var originalTime = apiFactory.FakeClock.GetCurrentInstant();
+        var now = Instant.FromUnixTimeMilliseconds(originalTime.ToUnixTimeMilliseconds());
+        request = request with { ExpiresAt = null, RecipientMode = EntryShareRecipientMode.AnyoneWithLink,
+            RecipientEmail = null, NotifyOnFirstReceipt = false };
+        try
+        {
+            // When
+            var first = await client.PostAsJsonAsync($"api/vaults/{request.VaultId}/entries/{request.EntryId}/sharing",
+                new { request.ShareId, request.SourceRevision, request.AccessToken, request.Nonce, request.Ciphertext },
+                TestContext.Current.CancellationToken);
+            first.StatusCode.ShouldBe(HttpStatusCode.OK);
+            apiFactory.FakeClock.Advance(Duration.FromSeconds(5));
+            var retry = await client.POSTAsync<CreateEntryShareEndpoint, CreateEntryShareRequest, CreateEntryShareResponse>(request);
+
+            // Then
+            retry.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            retry.Result.ExpiresAt.ShouldBe(now + Duration.FromHours(24));
+            retry.Result.MaximumReceipts.ShouldBeNull();
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var database = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            var share = await database.EntryShares.SingleAsync(x => x.Id == request.ShareId, TestContext.Current.CancellationToken);
+            share.RecipientMode.ShouldBe(EntryShareRecipientMode.AnyoneWithLink);
+            share.Protection.ShouldBe(EntryShareProtection.None);
+            share.ExpiresAt.ShouldBe(retry.Result.ExpiresAt);
+            (await database.EntryShareActivities.CountAsync(x => x.ShareId == share.Id
+                && x.Kind == EntryShareActivityKind.Created, TestContext.Current.CancellationToken)).ShouldBe(1);
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalTime);
+        }
+    }
+
+    [Fact]
+    public async Task When_ExpiryIsOmittedOnAnExplicitDifferentDeadlineRetry_Then_ThePolicyChangeIsRejected()
+    {
+        // Given
+        var (client, request, _) = await SeedRequestAsync();
+        (await client.POSTAsync<CreateEntryShareEndpoint, CreateEntryShareRequest>(request)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // When
+        var retry = await client.POSTAsync<CreateEntryShareEndpoint, CreateEntryShareRequest>(request with { ExpiresAt = null });
+
+        // Then
+        retry.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+    }
+
     [Fact]
     public async Task When_CreationIsRetried_Then_OneSnapshotIsStoredAndTheListContainsNoDeliveryMaterial()
     {

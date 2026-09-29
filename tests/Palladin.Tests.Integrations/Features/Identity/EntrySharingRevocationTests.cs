@@ -140,6 +140,10 @@ public sealed class EntrySharingRevocationTests(ApiFactory apiFactory) : TestBas
         await Should.ThrowAsync<EntryShareUnavailableException>(() => scope.ServiceProvider.GetRequiredService<EntryShareAuthority>()
             .EnsureRecipientSourceAsync(share, TestContext.Current.CancellationToken));
         share.DeliveryCount.ShouldBe(0);
+        share.RevocationReason.ShouldBe(EntryShareActivityKind.SourceAccessRemoved);
+        share.Ciphertext.ShouldBeEmpty();
+        (await vault.EntryShareActivities.CountAsync(x => x.ShareId == share.Id
+            && x.Kind == EntryShareActivityKind.SourceAccessRemoved, TestContext.Current.CancellationToken)).ShouldBe(1);
     }
 
     [Fact]

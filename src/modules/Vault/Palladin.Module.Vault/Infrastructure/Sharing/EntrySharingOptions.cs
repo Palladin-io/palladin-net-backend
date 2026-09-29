@@ -5,6 +5,7 @@ internal sealed class EntrySharingOptions
     public const string Position = "Modules:Vault:EntrySharing";
 
     public int MaximumLifetimeHours { get; init; } = 168;
+    public int DefaultLifetimeHours { get; init; } = 24;
     public int MaximumReceipts { get; init; } = 100;
     public int SessionLifetimeSeconds { get; init; } = 900;
     public int OtpLifetimeSeconds { get; init; } = 300;
@@ -17,8 +18,10 @@ internal sealed class EntrySharingOptions
     public int MaximumSecretLength { get; init; } = 128;
     public int MaximumActiveLinksPerEntry { get; init; } = 100;
     public int MaximumActiveSessionsPerShare { get; init; } = 128;
+    public int SourceRevocationBatchSize { get; init; } = 100;
 
     internal bool IsValid() => MaximumLifetimeHours is > 0 and <= 720
+                              && DefaultLifetimeHours > 0 && DefaultLifetimeHours <= MaximumLifetimeHours
                               && MaximumReceipts is > 0 and <= 1_000
                               && SessionLifetimeSeconds is >= 60 and <= 3_600
                               && OtpLifetimeSeconds is >= 60 and <= 600
@@ -33,5 +36,6 @@ internal sealed class EntrySharingOptions
                               && MaximumSecretLength >= MinimumPasswordLength
                               && MaximumSecretLength <= 256
                               && MaximumActiveLinksPerEntry is >= 1 and <= 500
-                              && MaximumActiveSessionsPerShare is >= 1 and <= 1_000;
+                              && MaximumActiveSessionsPerShare is >= 1 and <= 1_000
+                              && SourceRevocationBatchSize is >= 1 and <= 500;
 }

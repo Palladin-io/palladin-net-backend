@@ -277,7 +277,10 @@ locks the link through expiry.
 Concurrent failed PIN/password/OTP writes retry against freshly authenticated
 session and source authority until accounted for or unavailable. A changed
 security version, verified/expired/replaced OTP gate or source revocation ends
-the retry; stale attempts never charge a replacement gate. Limits are configured
+the retry; stale attempts never charge a replacement gate. Once an invalid proof
+has been evaluated, budget accounting ignores client disconnect and uses a
+bounded server-owned 30-second cancellation deadline for the commit/reload loop.
+Limits are configured
 under `Modules:Vault:EntrySharing` and validated at startup. Opening a session requires
 the independent access bearer, returns a newly generated session bearer once,
 and stores only its verifier. Only unexpired sessions for the share's current

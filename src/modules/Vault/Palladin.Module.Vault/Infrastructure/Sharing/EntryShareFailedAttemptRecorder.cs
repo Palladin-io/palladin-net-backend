@@ -11,20 +11,26 @@ internal sealed class EntryShareFailedAttemptRecorder(
     VaultDomainWriteContext context, EntryShareReceiver receiver,
     IOptions<EntrySharingOptions> options, IClock clock)
 {
-    internal Task RecordSecretAsync(EntryShare share, EntryShareSession session, string sessionToken, CancellationToken ct) =>
+    private static readonly TimeSpan PersistenceTimeout = TimeSpan.FromSeconds(30);
+
+    // Once a wrong proof has been evaluated, RequestAborted cannot cancel its budget charge.
+    // The request token remains explicit here so callers and tests cannot accidentally substitute it for the server-owned deadline.
+    internal Task RecordSecretAsync(EntryShare share, EntryShareSession session, string sessionToken, CancellationToken requestAborted) =>
         RecordAsync(share, session, sessionToken,
             static (current, receipt, _) => current.Protection != EntryShareProtection.None
-                && receipt.SecretVerifiedAt is null, ct);
+                && receipt.SecretVerifiedAt is null);
 
-    internal Task RecordOtpAsync(EntryShare share, EntryShareSession session, string sessionToken, long generation, CancellationToken ct) =>
+    internal Task RecordOtpAsync(EntryShare share, EntryShareSession session, string sessionToken, long generation, CancellationToken requestAborted) =>
         RecordAsync(share, session, sessionToken,
             (current, receipt, now) => current.RecipientMode == EntryShareRecipientMode.NamedRecipient
                 && receipt.OtpGeneration == generation && receipt.EmailVerifiedAt is null
-                && receipt.OtpExpiresAt is { } expiry && now < expiry, ct);
+                && receipt.OtpExpiresAt is { } expiry && now < expiry);
 
     private async Task RecordAsync(EntryShare share, EntryShareSession session, string sessionToken,
-        Func<EntryShare, EntryShareSession, Instant, bool> sameGate, CancellationToken ct)
+        Func<EntryShare, EntryShareSession, Instant, bool> sameGate)
     {
+        using var deadline = new CancellationTokenSource(PersistenceTimeout);
+        var ct = deadline.Token;
         var securityVersion = share.SecurityVersion;
         while (true)
         {

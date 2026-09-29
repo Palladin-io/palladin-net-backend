@@ -31,6 +31,53 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task When_RequestIsAbortedAfterWrongProof_Then_RacingAttemptsStillChargeTheSharedBudget(bool otp)
+    {
+        // Given: both evaluations already loaded the same gate before the caller disconnects.
+        var seeded = await SeedAsync(EntryShareProtection.Pin, "493827", named: otp);
+        var request = await OpenAsync(seeded);
+        if (otp)
+        {
+            var issued = await apiFactory.CreateClient().POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
+                new RequestEntryShareOtpRequest
+                {
+                    ShareId = request.ShareId, SessionId = request.SessionId, SessionToken = request.SessionToken,
+                    Generation = 1, Language = "en",
+                });
+            issued.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        await using var first = apiFactory.Services.CreateAsyncScope();
+        await using var second = apiFactory.Services.CreateAsyncScope();
+        var firstGate = await first.ServiceProvider.GetRequiredService<EntryShareReceiver>()
+            .LoadSessionAsync(request.ShareId, request.SessionId, request.SessionToken, TestContext.Current.CancellationToken);
+        var secondGate = await second.ServiceProvider.GetRequiredService<EntryShareReceiver>()
+            .LoadSessionAsync(request.ShareId, request.SessionId, request.SessionToken, TestContext.Current.CancellationToken);
+        using var disconnected = new CancellationTokenSource();
+        disconnected.Cancel();
+
+        // When: the request token is already canceled, including during an optimistic retry.
+        await Task.WhenAll(
+            ChargeAsync(first.ServiceProvider, firstGate),
+            ChargeAsync(second.ServiceProvider, secondGate));
+
+        // Then
+        await using var verification = apiFactory.Services.CreateAsyncScope();
+        (await verification.ServiceProvider.GetRequiredService<VaultDbWriteContext>().EntryShares
+            .SingleAsync(x => x.Id == request.ShareId, TestContext.Current.CancellationToken)).FailedAttempts.ShouldBe(2);
+
+        Task ChargeAsync(IServiceProvider services, (EntryShare Share, EntryShareSession Session) gate)
+        {
+            var recorder = services.GetRequiredService<EntryShareFailedAttemptRecorder>();
+            return otp
+                ? recorder.RecordOtpAsync(gate.Share, gate.Session, request.SessionToken, 1, disconnected.Token)
+                : recorder.RecordSecretAsync(gate.Share, gate.Session, request.SessionToken, disconnected.Token);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task When_FailedGateAttemptsRace_Then_TheyPersistUntilTheSharedLockout(bool otp)
     {
         // Given: all writers deliberately load the same mutation version before any commit.

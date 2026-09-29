@@ -13,15 +13,17 @@ internal static class EntryShareSourceRevocation
     {
         context.Clear();
         Guid? afterId = null;
+        Guid? afterSender = null;
         while (true)
         {
             var query = affectedShares.Where(x => x.RevokedAt == null && x.ExpiredAt == null);
             if (afterId is not null)
             {
-                query = query.Where(x => x.Id.CompareTo(afterId.Value) > 0);
+                query = query.Where(x => x.CreatedBy.CompareTo(afterSender!.Value) > 0
+                    || (x.CreatedBy == afterSender.Value && x.Id.CompareTo(afterId.Value) > 0));
             }
 
-            var shares = await query.OrderBy(x => x.Id).Take(batchSize).ToListAsync(ct);
+            var shares = await query.OrderBy(x => x.CreatedBy).ThenBy(x => x.Id).Take(batchSize).ToListAsync(ct);
             if (shares.Count == 0)
             {
                 return;
@@ -34,6 +36,7 @@ internal static class EntryShareSourceRevocation
 
             await context.CommitAsync(ct);
             afterId = shares[^1].Id;
+            afterSender = shares[^1].CreatedBy;
             context.Clear();
         }
     }

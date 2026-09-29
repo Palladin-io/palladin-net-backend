@@ -4,7 +4,6 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using NodaTime;
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
@@ -38,7 +37,7 @@ internal sealed class VerifyEntryShareSecretValidator : Validator<VerifyEntrySha
 [PublicAPI]
 internal sealed class VerifyEntryShareSecretEndpoint(
     VaultDomainWriteContext context, EntryShareReceiver receiver, EntryShareSecurity security,
-    IOptions<EntrySharingOptions> options, IClock clock) : Endpoint<VerifyEntryShareSecretRequest>
+    EntryShareFailedAttemptRecorder failures, IClock clock) : Endpoint<VerifyEntryShareSecretRequest>
 {
     public override void Configure()
     {
@@ -68,9 +67,7 @@ internal sealed class VerifyEntryShareSecretEndpoint(
 
             if (!security.VerifySecret(share.Id, share.Protection, req.Secret, share.SecretVerifier))
             {
-                share.RegisterFailedAttempt(now, options.Value.FailedAttemptLimit,
-                    options.Value.TotalFailedAttemptLimit, Duration.FromSeconds(options.Value.LockoutSeconds));
-                await context.CommitAsync(ct);
+                await failures.RecordSecretAsync(share, session, req.SessionToken, ct);
                 await Send.NotFoundAsync(ct);
                 return;
             }

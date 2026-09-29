@@ -99,7 +99,7 @@ internal sealed class CreateEntryShareEndpoint(
 
         var now = clock.GetCurrentInstant();
         var createdAt = Instant.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds());
-        var expiresAt = req.ExpiresAt ?? createdAt + Duration.FromHours(options.Value.DefaultLifetimeHours);
+        var expiresAt = NormalizeExpiry(req.ExpiresAt ?? createdAt + Duration.FromHours(options.Value.DefaultLifetimeHours));
         if (expiresAt <= now || expiresAt > now + Duration.FromHours(options.Value.MaximumLifetimeHours)
             || req.MaximumReceipts < 1 || req.MaximumReceipts > options.Value.MaximumReceipts
             || req.SourceRevision != source.Entry.CurrentRevision.Value.ToString(CultureInfo.InvariantCulture))
@@ -140,7 +140,7 @@ internal sealed class CreateEntryShareEndpoint(
     private bool IsExactRetry(EntryShare share, CreateEntryShareRequest req, EntryScope scope, Guid senderId) =>
         share.OrganizationId == scope.OrganizationId && share.VaultId == scope.VaultId && share.EntryId == scope.EntryId
         && share.CreatedBy == senderId && share.SourceRevision.Value.ToString(CultureInfo.InvariantCulture) == req.SourceRevision
-        && share.ExpiresAt == (req.ExpiresAt ?? share.CreatedAt + Duration.FromHours(options.Value.DefaultLifetimeHours))
+        && share.ExpiresAt == NormalizeExpiry(req.ExpiresAt ?? share.CreatedAt + Duration.FromHours(options.Value.DefaultLifetimeHours))
         && share.MaximumReceipts == req.MaximumReceipts
         && share.RecipientMode == req.RecipientMode && share.Protection == req.Protection
         && share.NotifyOnFirstReceipt == req.NotifyOnFirstReceipt
@@ -155,4 +155,7 @@ internal sealed class CreateEntryShareEndpoint(
               && security.UnprotectRecipientEmail(share.Id, share.ProtectedRecipientEmail) == NormalizeEmail(req.RecipientEmail));
 
     internal static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+    private static Instant NormalizeExpiry(Instant expiry) =>
+        Instant.FromUnixTimeTicks(expiry.ToUnixTimeTicks() / 10 * 10);
 }

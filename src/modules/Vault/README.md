@@ -191,7 +191,8 @@ Omitting `expiresAt` (or sending null) selects the server's 24-hour default
 maximum lifetime. Creation time is normalized to millisecond precision so the
 stored default deadline and exact retries agree; a retry uses the original
 creation time, never extends expiry and rejects a different previously chosen
-deadline. Response expiry is always non-null.
+deadline. Explicit expiry is normalized to PostgreSQL microsecond precision
+before both persistence and exact-retry comparison. Response expiry is always non-null.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
 scope/revision, finite expiry, receipt budget, optional recipient policy and
@@ -272,8 +273,12 @@ Every receiver session binds the exact share and security version. Email and
 optional-secret verification are independent. A policy change invalidates all
 existing sessions. Failed attempts and resend cooldown are share-wide; periodic
 lockout never resets the lifetime failed-attempt budget. Reaching that budget
-locks the link through expiry. Limits are configured under
-`Modules:Vault:EntrySharing` and validated at startup. Opening a session requires
+locks the link through expiry.
+Concurrent failed PIN/password/OTP writes retry against freshly authenticated
+session and source authority until accounted for or unavailable. A changed
+security version, verified/expired/replaced OTP gate or source revocation ends
+the retry; stale attempts never charge a replacement gate. Limits are configured
+under `Modules:Vault:EntrySharing` and validated at startup. Opening a session requires
 the independent access bearer, returns a newly generated session bearer once,
 and stores only its verifier. Only unexpired sessions for the share's current
 security version count against capacity; changing protection does not leave
@@ -334,15 +339,19 @@ the independently loaded Vault membership timestamp. A per-organization/Member
 Vault-owned `RevokeMemberEntrySharingCommand` and
 `RevokeOrganizationEntrySharingCommand` consumers persist those fences before
 acknowledging. After persisting the fail-closed authority fence, both consumers
-revoke affected shares through the domain method in deterministic ID-keyset
+revoke affected shares through the domain method in deterministic sender/ID-keyset
 pages (`SourceRevocationBatchSize`, default 100), committing each page and
 clearing its EF tracker. Each share loses delivery material and gains exactly
 one durable `SourceAccessRemoved` journal occurrence. The Member path includes
 only that organization's sender authorization versions through the revoked
 version; later authorized shares and other Members/organizations are untouched.
-Organization revocation covers all of its senders. A failed page/publication
-does not undo the initial fence or earlier journals; message retry finishes
-remaining pages without duplicating occurrences. No database transaction spans
+Organization revocation covers all of its senders.
+The incremental `AddEntryShareSourceRevocationIndex` migration adds the partial
+`(OrganizationId, CreatedBy, Id)` index for this keyset, excluding revoked/expired
+history; existing Entry-scoped and expiry-job indexes serve different paths.
+A failed page/publication does not undo the initial fence or earlier journals;
+message retry finishes remaining pages without duplicating occurrences.
+No database transaction spans
 all pages or broker publication. Identity awaits the Member acknowledgement before committing an
 access-losing transition, without holding a database transaction across messaging.
 Member removal, member-role replacement and custom-role definition changes are

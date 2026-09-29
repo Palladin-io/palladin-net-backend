@@ -34,6 +34,7 @@ internal static class InfrastructureModule
         services.AddSingleton<EntryShareSecurity>();
         services.AddScoped<EntryShareAuthority>();
         services.AddScoped<EntryShareReceiver>();
+        services.AddScoped<EntryShareFailedAttemptRecorder>();
         services.AddScoped<EntryShareOtpDispatcher>();
         services.AddOptions<VaultCreationOptions>()
             .Bind(configuration.GetSection(VaultCreationOptions.Position))

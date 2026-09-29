@@ -24,6 +24,25 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class EntrySharingSenderTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
+    public async Task When_AnExplicitDeadlineHasSubMicrosecondPrecision_Then_ExactRetryMatchesTheStoredPolicy()
+    {
+        // Given
+        var (client, request, _) = await SeedRequestAsync();
+        var durableExpiry = request.ExpiresAt!.Value;
+        request = request with { ExpiresAt = durableExpiry + Duration.FromNanoseconds(123) };
+
+        // When
+        var created = await client.POSTAsync<CreateEntryShareEndpoint, CreateEntryShareRequest, CreateEntryShareResponse>(request);
+        var retry = await client.POSTAsync<CreateEntryShareEndpoint, CreateEntryShareRequest, CreateEntryShareResponse>(request);
+
+        // Then
+        created.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        retry.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        created.Result.ExpiresAt.ShouldBe(durableExpiry);
+        retry.Result.ExpiresAt.ShouldBe(durableExpiry);
+    }
+
+    [Fact]
     public async Task When_ExpiryIsOmitted_Then_DefaultsApplyAndRetryKeepsTheOriginalDeadline()
     {
         // Given

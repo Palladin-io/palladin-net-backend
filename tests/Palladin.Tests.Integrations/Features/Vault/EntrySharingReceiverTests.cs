@@ -29,6 +29,142 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_FailedGateAttemptsRace_Then_TheyPersistUntilTheSharedLockout(bool otp)
+    {
+        // Given: all writers deliberately load the same mutation version before any commit.
+        var seeded = await SeedAsync(EntryShareProtection.Pin, "493827", named: otp);
+        var request = await OpenAsync(seeded);
+        if (otp)
+        {
+            var issued = await apiFactory.CreateClient().POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
+                new RequestEntryShareOtpRequest
+                {
+                    ShareId = request.ShareId, SessionId = request.SessionId, SessionToken = request.SessionToken,
+                    Generation = 1, Language = "en",
+                });
+            issued.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        var limit = apiFactory.Services.GetRequiredService<IOptions<EntrySharingOptions>>().Value.FailedAttemptLimit;
+        var writers = new List<(AsyncServiceScope Scope, EntryShare Share, EntryShareSession Session)>();
+        try
+        {
+            for (var index = 0; index < limit + 3; index++)
+            {
+                var scope = apiFactory.Services.CreateAsyncScope();
+                var (share, session) = await scope.ServiceProvider.GetRequiredService<EntryShareReceiver>()
+                    .LoadSessionAsync(request.ShareId, request.SessionId, request.SessionToken, TestContext.Current.CancellationToken);
+                writers.Add((scope, share, session));
+            }
+
+            // When
+            var results = await Task.WhenAll(writers.Select(async writer =>
+            {
+                try
+                {
+                    var recorder = writer.Scope.ServiceProvider.GetRequiredService<EntryShareFailedAttemptRecorder>();
+                    if (otp)
+                    {
+                        await recorder.RecordOtpAsync(writer.Share, writer.Session, request.SessionToken, 1, TestContext.Current.CancellationToken);
+                    }
+                    else
+                    {
+                        await recorder.RecordSecretAsync(writer.Share, writer.Session, request.SessionToken, TestContext.Current.CancellationToken);
+                    }
+                    return true;
+                }
+                catch (EntryShareUnavailableException)
+                {
+                    return false;
+                }
+            }));
+
+            // Then: no optimistic-concurrency loser escapes the budget; later requests see lockout.
+            results.Count(x => x).ShouldBe(limit);
+            await using var verification = apiFactory.Services.CreateAsyncScope();
+            var stored = await verification.ServiceProvider.GetRequiredService<VaultDbWriteContext>().EntryShares
+                .SingleAsync(x => x.Id == request.ShareId, TestContext.Current.CancellationToken);
+            stored.FailedAttempts.ShouldBe(limit);
+            (stored.LockedUntil > apiFactory.FakeClock.GetCurrentInstant()).ShouldBeTrue();
+        }
+        finally
+        {
+            foreach (var writer in writers)
+            {
+                await writer.Scope.DisposeAsync();
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task When_AFailedAttemptLosesToAGateChange_Then_ItDoesNotChargeTheNewGate(bool otp, bool verifySecret)
+    {
+        // Given
+        var seeded = await SeedAsync(EntryShareProtection.Pin, "493827", named: otp);
+        var request = await OpenAsync(seeded);
+        if (otp)
+        {
+            var issued = await apiFactory.CreateClient().POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
+                new RequestEntryShareOtpRequest
+                {
+                    ShareId = request.ShareId, SessionId = request.SessionId, SessionToken = request.SessionToken,
+                    Generation = 1, Language = "en",
+                });
+            issued.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        await using var stale = apiFactory.Services.CreateAsyncScope();
+        var (share, session) = await stale.ServiceProvider.GetRequiredService<EntryShareReceiver>()
+            .LoadSessionAsync(request.ShareId, request.SessionId, request.SessionToken, TestContext.Current.CancellationToken);
+        await using (var changed = apiFactory.Services.CreateAsyncScope())
+        {
+            var context = changed.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
+            for (var attempt = 0; ; attempt++)
+            {
+                var current = await context.EntryShares.SingleAsync(x => x.Id == request.ShareId, TestContext.Current.CancellationToken);
+                if (otp)
+                {
+                    var receipt = await context.EntryShareSessions.SingleAsync(x => x.Id == request.SessionId, TestContext.Current.CancellationToken);
+                    current.VerifyAccountEmail(receipt, apiFactory.FakeClock.GetCurrentInstant());
+                }
+                else if (verifySecret)
+                {
+                    var receipt = await context.EntryShareSessions.SingleAsync(x => x.Id == request.SessionId, TestContext.Current.CancellationToken);
+                    current.VerifySecret(receipt, apiFactory.FakeClock.GetCurrentInstant());
+                }
+                else
+                {
+                    current.ChangeProtection(EntryShareProtection.None, null, apiFactory.FakeClock.GetCurrentInstant());
+                }
+                try
+                {
+                    await context.CommitAsync(TestContext.Current.CancellationToken);
+                    break;
+                }
+                catch (DbUpdateConcurrencyException) when (attempt < 4)
+                {
+                    // The asynchronous OTP sender may clear the protected pending code in this test.
+                    context.Clear();
+                }
+            }
+        }
+
+        // When
+        var recorder = stale.ServiceProvider.GetRequiredService<EntryShareFailedAttemptRecorder>();
+        await Should.ThrowAsync<EntryShareUnavailableException>(() => otp
+            ? recorder.RecordOtpAsync(share, session, request.SessionToken, 1, TestContext.Current.CancellationToken)
+            : recorder.RecordSecretAsync(share, session, request.SessionToken, TestContext.Current.CancellationToken));
+
+        // Then
+        await using var verification = apiFactory.Services.CreateAsyncScope();
+        (await verification.ServiceProvider.GetRequiredService<VaultDbWriteContext>().EntryShares
+            .SingleAsync(x => x.Id == request.ShareId, TestContext.Current.CancellationToken)).FailedAttempts.ShouldBe(0);
+    }
+
+    [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
     [InlineData(false, true)]

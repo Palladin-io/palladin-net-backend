@@ -26,6 +26,14 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 [Collection<ApiFactoryCollection>]
 public sealed class EntrySharingOtpTests(ApiFactory apiFactory) : TestBase
 {
+    private readonly Instant _originalTime = apiFactory.FakeClock.GetCurrentInstant();
+
+    protected override ValueTask TearDownAsync()
+    {
+        apiFactory.FakeClock.Reset(_originalTime);
+        return ValueTask.CompletedTask;
+    }
+
     [Fact]
     public async Task When_AnOtpAcknowledgementIsRetried_Then_TheCountdownDoesNotRestart()
     {

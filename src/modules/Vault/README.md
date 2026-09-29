@@ -286,6 +286,14 @@ non-sharing path remain available. Tests inject transport peer addresses through
 TestServer, use real PostgreSQL and do not prove deployed proxy configuration,
 cross-instance quotas, real RabbitMQ/SES delivery or a runnable user environment.
 
+Testing connection strings cap each database pool at ten connections. This
+keeps the complete multi-module suite plus concurrent receiver requests inside
+the PostgreSQL test server's connection budget instead of producing `53300`
+errors unrelated to the HTTP limiter. The request count, 60-per-minute limit
+and exact 404/429 assertions are unchanged. OTP time-travel tests restore their
+shared clock through the test framework's asynchronous teardown hook; they
+must not leave later JWTs with future `notBefore` timestamps.
+
 `Deliver` consumes one receipt for one authorized session. An exact session retry
 does not consume a second receipt but still advances the optimistic share fence.
 Client confirmation is a separate occurrence and cannot refund a receipt. Only

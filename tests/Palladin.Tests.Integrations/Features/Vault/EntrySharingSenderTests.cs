@@ -149,6 +149,7 @@ public sealed class EntrySharingSenderTests(ApiFactory apiFactory) : TestBase
             SourceRevision = challenge.Result.SourceRevision,
             ExpiresAt = Instant.FromUnixTimeMilliseconds(apiFactory.FakeClock.GetCurrentInstant().ToUnixTimeMilliseconds())
                 + Duration.FromHours(1),
+            RecipientMode = EntryShareRecipientMode.NamedRecipient,
             RecipientEmail = "recipient@example.test",
             AccessToken = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32)),
             Nonce = RandomNumberGenerator.GetBytes(24),

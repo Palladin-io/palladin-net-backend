@@ -24,7 +24,7 @@ public sealed record ListEntrySharesRequest
 [PublicAPI]
 public sealed record EntryShareListItem(
     Guid ShareId, string Status, Instant CreatedAt, Instant ExpiresAt,
-    int MaximumReceipts, int DeliveryCount, Instant? FirstDeliveredAt,
+    int? MaximumReceipts, int DeliveryCount, Instant? FirstDeliveredAt,
     Instant? LastDeliveredAt, Instant? FirstConfirmedAt, bool NotifyOnFirstReceipt,
     EntryShareRecipientMode RecipientMode, string? RecipientEmail,
     EntryShareProtection Protection, bool SourceChanged);

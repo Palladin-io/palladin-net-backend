@@ -23,8 +23,8 @@ public sealed record CreateEntryShareRequest
     public Guid ShareId { get; init; }
     public string SourceRevision { get; init; } = string.Empty;
     public Instant ExpiresAt { get; init; }
-    public int MaximumReceipts { get; init; } = 1;
-    public EntryShareRecipientMode RecipientMode { get; init; } = EntryShareRecipientMode.NamedRecipient;
+    public int? MaximumReceipts { get; init; }
+    public EntryShareRecipientMode RecipientMode { get; init; } = EntryShareRecipientMode.AnyoneWithLink;
     public string? RecipientEmail { get; init; }
     public EntryShareProtection Protection { get; init; }
     public string? ProtectionSecret { get; init; }
@@ -36,7 +36,7 @@ public sealed record CreateEntryShareRequest
 }
 
 [PublicAPI]
-public sealed record CreateEntryShareResponse(Guid ShareId, Instant ExpiresAt, int MaximumReceipts);
+public sealed record CreateEntryShareResponse(Guid ShareId, Instant ExpiresAt, int? MaximumReceipts);
 
 [UsedImplicitly]
 internal sealed class CreateEntryShareValidator : Validator<CreateEntryShareRequest>

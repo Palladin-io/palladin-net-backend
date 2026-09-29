@@ -26,7 +26,7 @@ public sealed record OpenEntryShareSessionRequest
 public sealed record OpenEntryShareSessionResponse(
     Guid SessionId, string SessionToken, Instant ExpiresAt,
     EntryShareRecipientMode RecipientMode, EntryShareProtection Protection,
-    Instant ShareExpiresAt, int MaximumReceipts, int OtpRetryAfterSeconds)
+    Instant ShareExpiresAt, int? MaximumReceipts, int OtpRetryAfterSeconds)
 {
     public override string ToString() => nameof(OpenEntryShareSessionResponse);
 }

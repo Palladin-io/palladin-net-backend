@@ -83,7 +83,17 @@ internal sealed class EntryShareSession : EventEntityBase
             throw new EntryShareUnavailableException();
         }
 
-        EmailVerifiedAt = now;
+        VerifyAccountEmail(now);
+    }
+
+    internal void VerifyAccountEmail(Instant now)
+    {
+        if (now >= ExpiresAt)
+        {
+            throw new EntryShareUnavailableException();
+        }
+
+        EmailVerifiedAt ??= now;
         OtpHash = null;
         OtpExpiresAt = null;
         ClearPendingOtp();

@@ -11,6 +11,24 @@ public sealed class EntryShareTests
     private static readonly Instant Now = Instant.FromUtc(2026, 9, 20, 12, 0);
 
     [Fact]
+    public void When_ReceiptLimitIsNull_Then_IndependentSessionsCanReceiveUntilExpiry()
+    {
+        // Given
+        var share = CreateShare(maximumReceipts: null);
+
+        // When
+        for (var index = 0; index < 105; index++)
+        {
+            share.Deliver(OpenSession(share), Now).ShouldBeTrue();
+        }
+
+        // Then
+        share.MaximumReceipts.ShouldBeNull();
+        share.DeliveryCount.ShouldBe(105);
+        Should.Throw<EntryShareUnavailableException>(() => share.OpenSession(Guid.NewGuid(), new byte[32], share.ExpiresAt, Duration.FromMinutes(1)));
+    }
+
+    [Fact]
     public void When_RetryingAnAlreadyDeliveredSession_Then_TheLimitIsNotConsumedTwice()
     {
         // Given
@@ -59,7 +77,7 @@ public sealed class EntryShareTests
         share.Deliver(session, Now);
 
         // Then
-        share.DeliveryCount.ShouldBe(share.MaximumReceipts);
+        share.DeliveryCount.ShouldBe(share.MaximumReceipts!.Value);
         share.FirstConfirmedAt.ShouldBeNull();
         share.Activities.ShouldNotContain(x => x.NotifySender);
         Should.Throw<EntryShareUnavailableException>(() => OpenSession(share));
@@ -240,7 +258,6 @@ public sealed class EntryShareTests
 
         // Then
         Should.Throw<EntryShareUnavailableException>(() => share.Deliver(session, Now));
-        Should.Throw<EntryShareUnavailableException>(() => share.EndByRecipient(session, Now));
         share.DeliveryCount.ShouldBe(0);
         share.SecurityVersion.ShouldBe(2);
     }
@@ -328,7 +345,7 @@ public sealed class EntryShareTests
     }
 
     [Fact]
-    public void When_AnAuthorizedRecipientEndsTheLink_Then_OtherRecipientsLoseAccess()
+    public void When_AnAuthorizedRecipientTriesToEndTheLink_Then_TheLinkRemainsActive()
     {
         // Given
         var share = CreateShare(maximumReceipts: 2);
@@ -336,12 +353,12 @@ public sealed class EntryShareTests
         var second = OpenSession(share);
 
         // When
-        share.EndByRecipient(first, Now);
+        Should.Throw<DomainException>(() => share.Revoke(EntryShareActivityKind.EndedByRecipient, Now));
 
         // Then
-        Should.Throw<EntryShareUnavailableException>(() => share.Deliver(second, Now));
-        share.RevocationReason.ShouldBe(EntryShareActivityKind.EndedByRecipient);
-        share.DeliveryCount.ShouldBe(0);
+        share.Deliver(second, Now).ShouldBeTrue();
+        share.RevocationReason.ShouldBeNull();
+        share.DeliveryCount.ShouldBe(1);
     }
 
     [Fact]
@@ -352,10 +369,10 @@ public sealed class EntryShareTests
         var session = OpenSession(share);
 
         // When
-        Action action = () => share.EndByRecipient(session, Now);
+        Action action = () => share.Revoke(EntryShareActivityKind.EndedByRecipient, Now);
 
         // Then
-        action.ShouldThrow<EntryShareUnavailableException>();
+        action.ShouldThrow<DomainException>();
         share.RevokedAt.ShouldBeNull();
     }
 
@@ -369,12 +386,10 @@ public sealed class EntryShareTests
         // When
         Action deliver = () => share.Deliver(foreign, Now);
         Action confirm = () => share.ConfirmReceipt(foreign, Now);
-        Action end = () => share.EndByRecipient(foreign, Now);
 
         // Then
         deliver.ShouldThrow<EntryShareUnavailableException>();
         confirm.ShouldThrow<EntryShareUnavailableException>();
-        end.ShouldThrow<EntryShareUnavailableException>();
         share.DeliveryCount.ShouldBe(0);
     }
 
@@ -410,7 +425,7 @@ public sealed class EntryShareTests
         share.OpenSession(Guid.NewGuid(), new byte[32], Now, Duration.FromMinutes(10));
 
     private static EntryShare CreateShare(
-        int maximumReceipts = 1,
+        int? maximumReceipts = 1,
         bool notifications = true,
         EntryShareRecipientMode recipientMode = EntryShareRecipientMode.AnyoneWithLink,
         EntryShareProtection protection = EntryShareProtection.None) => EntryShare.Create(

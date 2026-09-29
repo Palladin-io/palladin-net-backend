@@ -35,4 +35,7 @@ public static class ClaimsPrincipalExtensions
 
     public static bool GetEmailVerified(this ClaimsPrincipal principal) =>
         bool.TryParse(principal.FindFirst(JwtClaimNames.EmailVerified)?.Value, out var value) && value;
+
+    public static string? GetEmail(this ClaimsPrincipal principal) =>
+        principal.FindFirst(JwtRegisteredClaimNames.Email)?.Value ?? principal.FindFirst(ClaimTypes.Email)?.Value;
 }

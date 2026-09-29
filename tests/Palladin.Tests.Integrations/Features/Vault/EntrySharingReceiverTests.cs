@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using FastEndpoints;
 using Microsoft.AspNetCore.WebUtilities;
@@ -16,6 +17,8 @@ using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Module.Vault.Infrastructure.Sharing;
 using Palladin.Tests.Integrations.Shared;
+using Palladin.Tests.Integrations.Shared.Extensions;
+using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Mocks;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using Shouldly;
@@ -25,6 +28,49 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 [Collection<ApiFactoryCollection>]
 public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
 {
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task When_AccountEmailIsUsedAsProof_Then_OnlyTheVerifiedMatchingAccountPasses(bool matching, bool verified)
+    {
+        // Given
+        var email = $"{Guid.NewGuid():N}@example.test";
+        var seed = await SeedAsync(EntryShareProtection.Pin, "493827", named: true, recipientEmail: email);
+        var request = await OpenAsync(seed);
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(UserFaker.CreateOnboarded(email: matching ? email : $"other-{email}")
+            .RuleFor(x => x.EmailVerified, verified));
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var proof = await client.POSTAsync<VerifyEntryShareAccountEndpoint, EntryShareSessionRequest>(request);
+        var beforePin = await apiFactory.CreateClient().POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(request);
+        await VerifyAsync(request, "493827");
+        var afterPin = await apiFactory.CreateClient().POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(request);
+
+        // Then
+        proof.StatusCode.ShouldBe(matching && verified ? HttpStatusCode.NoContent : HttpStatusCode.NotFound);
+        beforePin.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        afterPin.StatusCode.ShouldBe(matching && verified ? HttpStatusCode.OK : HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task When_AnonymousCallerClaimsTheMatchingEmail_Then_AccountVerificationRejectsIt()
+    {
+        // Given
+        var seed = await SeedAsync(named: true);
+        var request = await OpenAsync(seed);
+
+        // When
+        var proof = await apiFactory.CreateClient().PostAsJsonAsync(
+            $"api/entry-shares/{request.ShareId}/sessions/{request.SessionId}/verify-account",
+            new { request.SessionToken, email = "recipient@example.test", emailVerified = true }, TestContext.Current.CancellationToken);
+
+        // Then
+        proof.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await apiFactory.CreateClient().POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(request)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -48,7 +94,7 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
             .SingleAsync(x => x.Id == seed.ShareId, TestContext.Current.CancellationToken);
         body.GetProperty("shareExpiresAt").GetDateTimeOffset().ShouldBe(share.ExpiresAt.ToDateTimeOffset());
         body.GetProperty("expiresAt").GetDateTimeOffset().ShouldBeLessThan(body.GetProperty("shareExpiresAt").GetDateTimeOffset());
-        body.GetProperty("maximumReceipts").GetInt32().ShouldBe(share.MaximumReceipts);
+        body.GetProperty("maximumReceipts").GetInt32().ShouldBe(share.MaximumReceipts!.Value);
         body.GetProperty("otpRetryAfterSeconds").GetInt32().ShouldBe(0);
         body.EnumerateObject().Select(x => x.Name).Order().ShouldBe(new[]
         {
@@ -72,25 +118,33 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
                 Generation = 1, Language = "en",
             });
         issued.StatusCode.ShouldBe(HttpStatusCode.OK);
-        apiFactory.FakeClock.Advance(Duration.FromMilliseconds(21_500));
-        apiFactory.MockId(Guid.NewGuid());
+        var originalTime = apiFactory.FakeClock.GetCurrentInstant();
+        try
+        {
+            apiFactory.FakeClock.Advance(Duration.FromMilliseconds(21_500));
+            apiFactory.MockId(Guid.NewGuid());
 
-        // When
-        var opened = await client.POSTAsync<OpenEntryShareSessionEndpoint, OpenEntryShareSessionRequest, OpenEntryShareSessionResponse>(
-            new OpenEntryShareSessionRequest { ShareId = seed.ShareId, AccessToken = seed.AccessToken });
+            // When
+            var opened = await client.POSTAsync<OpenEntryShareSessionEndpoint, OpenEntryShareSessionRequest, OpenEntryShareSessionResponse>(
+                new OpenEntryShareSessionRequest { ShareId = seed.ShareId, AccessToken = seed.AccessToken });
 
-        // Then
-        opened.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        opened.Result.OtpRetryAfterSeconds.ShouldBe(39);
-        opened.Result.SessionId.ShouldNotBe(first.SessionId);
-        var denied = await client.POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
-            new RequestEntryShareOtpRequest
-            {
-                ShareId = seed.ShareId, SessionId = opened.Result.SessionId, SessionToken = opened.Result.SessionToken,
-                Generation = 1, Language = "en",
-            });
-        denied.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-        (await denied.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldBeEmpty();
+            // Then
+            opened.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            opened.Result.OtpRetryAfterSeconds.ShouldBe(39);
+            opened.Result.SessionId.ShouldNotBe(first.SessionId);
+            var denied = await client.POSTAsync<RequestEntryShareOtpEndpoint, RequestEntryShareOtpRequest>(
+                new RequestEntryShareOtpRequest
+                {
+                    ShareId = seed.ShareId, SessionId = opened.Result.SessionId, SessionToken = opened.Result.SessionToken,
+                    Generation = 1, Language = "en",
+                });
+            denied.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            (await denied.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldBeEmpty();
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalTime);
+        }
     }
 
     [Theory]
@@ -199,7 +253,7 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
         (await VerifyAsync(request, "493827")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
         var client = apiFactory.CreateClient();
         var delivery = await client.POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(request);
-        var ended = await client.POSTAsync<EndEntryShareEndpoint, EntryShareSessionRequest>(request);
+        var ended = await client.PostAsJsonAsync($"api/entry-shares/{request.ShareId}/sessions/{request.SessionId}/end", new { request.SessionToken }, TestContext.Current.CancellationToken);
 
         // Then
         delivery.StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -212,28 +266,28 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task When_AnAuthorizedRecipientEndsTheLink_Then_TheSourceRemainsAndEverySessionLosesDelivery()
+    public async Task When_AnAuthorizedRecipientTriesToEndTheLink_Then_OtherRecipientsCanStillReceive()
     {
         // Given
         var seeded = await SeedAsync(EntryShareProtection.Pin, "493827");
         var first = await OpenAsync(seeded);
         var second = await OpenAsync(seeded);
         var client = apiFactory.CreateClient();
-        (await client.POSTAsync<EndEntryShareEndpoint, EntryShareSessionRequest>(first)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await VerifyAsync(first, "493827")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await VerifyAsync(second, "493827")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
         // When
-        var ended = await client.POSTAsync<EndEntryShareEndpoint, EntryShareSessionRequest>(first);
-        var blocked = await client.POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(second);
+        var ended = await client.PostAsJsonAsync($"api/entry-shares/{first.ShareId}/sessions/{first.SessionId}/end", new { first.SessionToken }, TestContext.Current.CancellationToken);
+        var delivered = await client.POSTAsync<DeliverEntryShareEndpoint, EntryShareSessionRequest>(second);
 
         // Then
-        ended.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        blocked.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        ended.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        delivered.StatusCode.ShouldBe(HttpStatusCode.OK);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         var share = await db.EntryShares.SingleAsync(x => x.Id == seeded.ShareId, TestContext.Current.CancellationToken);
-        share.Ciphertext.ShouldBeEmpty();
-        share.RevocationReason.ShouldBe(EntryShareActivityKind.EndedByRecipient);
+        share.Ciphertext.ShouldNotBeEmpty();
+        share.RevocationReason.ShouldBeNull();
         (await db.Entries.AnyAsync(x => x.OrganizationId == share.OrganizationId && x.VaultId == share.VaultId
             && x.Id == share.EntryId, TestContext.Current.CancellationToken)).ShouldBeTrue();
     }
@@ -432,7 +486,7 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
     }
 
     private async Task<SharingSeed> SeedAsync(EntryShareProtection protection = EntryShareProtection.None,
-        string? secret = null, bool named = false, bool notify = false)
+        string? secret = null, bool named = false, bool notify = false, string recipientEmail = "recipient@example.test")
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
@@ -450,7 +504,7 @@ public sealed class EntrySharingReceiverTests(ApiFactory apiFactory) : TestBase
         context.Add(EntryShare.Create(id, sourceScope, source.Entry.CurrentRevision, user.Id, now,
             now + Duration.FromHours(1), 1,
             named ? EntryShareRecipientMode.NamedRecipient : EntryShareRecipientMode.AnyoneWithLink,
-            named ? security.ProtectRecipientEmail(id, "recipient@example.test") : null,
+            named ? security.ProtectRecipientEmail(id, recipientEmail) : null,
             protection, security.CreateSecretVerifier(id, protection, secret), security.HashAccessToken(id, accessToken),
             RandomNumberGenerator.GetBytes(24), ciphertext, notify, 1, source.Member.AddedAt));
         await context.CommitAsync(TestContext.Current.CancellationToken);

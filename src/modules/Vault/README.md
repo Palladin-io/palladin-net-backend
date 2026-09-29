@@ -176,11 +176,15 @@ The canonical Entry head/key/version model, snapshot/delta synchronization, life
 membership. The current increment implements the domain, storage, server-side
 gate primitives and authenticated sender creation-challenge/create/list/revoke/
 protection endpoints under `/api/vaults/{vaultId}/entries/{entryId}/sharing`.
-Guest session, OTP issuance/verification, optional-secret verification, delivery,
-confirmation and recipient termination now exist under
+Guest session, OTP issuance/verification, verified-account email proof,
+optional-secret verification, delivery and confirmation now exist under
 `/api/entry-shares/{shareId}/sessions`. Audit and first-receipt Inbox consumers
 are connected. Client flows and operational acceptance remain outstanding;
-the feature is not ready for deployment.
+the feature is not ready for deployment. Revocation is sender-only; receivers
+cannot terminate a link for other recipients. A null receipt limit means
+unlimited receipts until mandatory expiry; the default recipient policy is
+anyone with the link. `MakeEntrySharingReceiptLimitOptional` is an incremental
+migration and does not change earlier migration history.
 
 The share stores an opaque XChaCha20-Poly1305 packet and nonce, source structural
 scope/revision, finite expiry, receipt budget, optional recipient policy and
@@ -219,6 +223,11 @@ resend cooldown. A resend must use exactly the next generation; stale and skippe
 generations fail closed. `POST .../verify-otp` checks the current generation and
 unexpired code before consuming its verifier. An already verified current session
 can retry the HTTP acknowledgement without retaining or re-consuming the code.
+`POST .../verify-account` requires an authenticated account with a verified
+email claim matching the sender-selected, server-decrypted recipient address.
+Caller-supplied email/verification flags are not proof. The same share/session
+bearer and current source authority remain mandatory; this does not bypass an
+optional PIN/password or consume a receipt. Anonymous callers cannot use it.
 PIN/password and email gates remain independent and share one failed-attempt
 budget. Verification never consumes a receipt or opens a Palladin account session.
 
@@ -269,7 +278,7 @@ recipient IP history. GET has no receiver mutation or ciphertext endpoint.
 test configuration and existing external-provider substitutes, rather than the
 normal Testing host that skips global throttling. Hangfire is disabled before
 registration; the uncached fixture runs in a non-parallel collection. Sixty
-requests per minute share one peer budget across all seven receiver operations, changing
+requests per minute share one peer budget across the receiver operations, changing
 share/session IDs and query strings. Untrusted forwarded headers do not create
 new peers. Concurrent requests admit exactly sixty; rejections are empty 429s
 with `Retry-After` and `no-store`. Another transport peer, health and a similar
@@ -294,7 +303,7 @@ and body-size failures are request-shape errors independent of resource state.
 HTTP tests cover idempotent delivery/confirmation, notification choice in the
 durable activity, PIN/password gates, required OTP not bypassed by a correct PIN,
 shared failed-attempt budgets, foreign session proof, policy/sender revocation,
-recipient termination, scanner GETs, session caps and bounded request bodies.
+recipient termination denial, scanner GETs, session caps and bounded request bodies.
 The mail path is tested through the real bus, renderer and durable deduplication
 with a substituted email provider. HTTP confirmation now reaches the real test
 bus and downstream Audit/Inbox; real SES delivery and deployed client rendering

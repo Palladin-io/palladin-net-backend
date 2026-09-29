@@ -20,7 +20,7 @@ internal sealed class EntryShare : EventEntityBase
     internal EntryRevision SourceRevision { get; private set; }
     public Instant CreatedAt { get; private set; }
     public Instant ExpiresAt { get; private set; }
-    public int MaximumReceipts { get; private set; }
+    public int? MaximumReceipts { get; private set; }
     public int DeliveryCount { get; private set; }
     public Instant? FirstDeliveredAt { get; private set; }
     public Instant? LastDeliveredAt { get; private set; }
@@ -53,7 +53,7 @@ internal sealed class EntryShare : EventEntityBase
         Guid createdBy,
         Instant now,
         Instant expiresAt,
-        int maximumReceipts,
+        int? maximumReceipts,
         EntryShareRecipientMode recipientMode,
         string? protectedRecipientEmail,
         EntryShareProtection protection,
@@ -165,6 +165,18 @@ internal sealed class EntryShare : EventEntityBase
         AdvanceMutation();
     }
 
+    internal void VerifyAccountEmail(EntryShareSession session, Instant now)
+    {
+        EnsureSession(session, now);
+        if (RecipientMode != EntryShareRecipientMode.NamedRecipient)
+        {
+            throw new EntryShareUnavailableException();
+        }
+
+        session.VerifyAccountEmail(now);
+        AdvanceMutation();
+    }
+
     internal bool Deliver(EntryShareSession session, Instant now)
     {
         EnsureAuthorizedSession(session, now);
@@ -235,16 +247,10 @@ internal sealed class EntryShare : EventEntityBase
         AdvanceMutation();
     }
 
-    internal bool EndByRecipient(EntryShareSession session, Instant now)
-    {
-        EnsureAuthorizedSession(session, now);
-        return Revoke(EntryShareActivityKind.EndedByRecipient, now);
-    }
-
     internal bool Revoke(EntryShareActivityKind reason, Instant now)
     {
         if (reason is not (EntryShareActivityKind.RevokedBySender
-            or EntryShareActivityKind.EndedByRecipient or EntryShareActivityKind.SourceAccessRemoved))
+            or EntryShareActivityKind.SourceAccessRemoved))
         {
             throw new DomainException("The sharing revocation reason is invalid.");
         }

@@ -9,6 +9,24 @@ namespace Palladin.Tests.Unit.Core.Persistence;
 public sealed class DomainWriteContextBaseTests
 {
     [Fact]
+    public async Task When_PreparingDurableEvents_Then_PreparationRunsOnceBeforeEachSave()
+    {
+        // Given
+        var calls = new List<string>();
+        await using var dbContext = new TestDbContext(calls);
+        var context = new PreparingDomainWriteContext(dbContext, calls);
+        var transaction = Substitute.For<IDbContextTransaction>();
+
+        // When
+        await context.CommitAsync(TestContext.Current.CancellationToken);
+        await context.FlushAsync(TestContext.Current.CancellationToken);
+        await context.CommitAsync(transaction, TestContext.Current.CancellationToken);
+
+        // Then
+        calls.ShouldBe(["prepare", "save", "prepare", "save", "prepare", "save"]);
+    }
+
+    [Fact]
     public async Task When_CommittingExplicitTransaction_Then_PublishesEventsAfterTransactionCommit()
     {
         // Given
@@ -103,4 +121,14 @@ public sealed class DomainWriteContextBaseTests
         TestDbContext writeContext,
         IEnumerable<IEventPublisher> eventPublishers)
         : DomainWriteContextBase(writeContext, eventPublishers);
+
+    private sealed class PreparingDomainWriteContext(TestDbContext writeContext, List<string> calls)
+        : DomainWriteContextBase(writeContext, [])
+    {
+        protected override Task PrepareEventsAsync(CancellationToken cancellationToken)
+        {
+            calls.Add("prepare");
+            return Task.CompletedTask;
+        }
+    }
 }

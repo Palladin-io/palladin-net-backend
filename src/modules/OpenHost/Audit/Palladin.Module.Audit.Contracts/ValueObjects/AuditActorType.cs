@@ -8,4 +8,5 @@ public enum AuditActorType
     User = 1,
     Agent = 2,
     System = 3,
+    ExternalRecipient = 4,
 }

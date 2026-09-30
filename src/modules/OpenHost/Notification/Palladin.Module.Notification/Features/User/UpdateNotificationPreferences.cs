@@ -36,7 +36,7 @@ internal sealed class UpdateNotificationPreferencesValidator : Validator<UpdateN
     {
         RuleFor(x => x.Items).NotNull();
         RuleForEach(x => x.Items).ChildRules(item =>
-            item.RuleFor(i => i.Type).IsInEnum());
+            item.RuleFor(i => i.Type).IsInEnum().NotEqual(NotificationType.EntryShareReceived));
     }
 }
 

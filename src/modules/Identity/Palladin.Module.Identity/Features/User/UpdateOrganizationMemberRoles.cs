@@ -9,6 +9,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Palladin.Module.Identity.Infrastructure.Sharing;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -43,6 +44,7 @@ internal sealed class UpdateOrganizationMemberRolesValidator : Validator<UpdateO
 [PublicAPI]
 internal sealed class UpdateOrganizationMemberRolesEndpoint(
     IdentityDomainWriteContext domainWriteContext,
+    EntrySharingRevocation sharingRevocation,
     IClock clock) : Endpoint<UpdateOrganizationMemberRolesRequest, UpdateOrganizationMemberRolesResponse>
 {
     public override void Configure()
@@ -143,6 +145,13 @@ internal sealed class UpdateOrganizationMemberRolesEndpoint(
         }
 
         var now = clock.GetCurrentInstant();
+        if (currentPermissions.HasFlag(Permission.VaultManage)
+            && !proposedPermissions.HasFlag(Permission.VaultManage))
+        {
+            await sharingRevocation.RevokeMemberAsync(
+                organizationId.Value, member.UserId, member.AuthorizationVersion, now, ct);
+        }
+
         var changed = member.ReplaceRoles(
             roles, member.User.DisplayName, changedBy.Value, User.GetDisplayName(), now);
         if (changed)

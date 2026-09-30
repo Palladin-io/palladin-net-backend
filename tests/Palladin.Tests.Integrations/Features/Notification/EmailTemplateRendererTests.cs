@@ -37,6 +37,9 @@ public sealed class EmailTemplateRendererTests
         ["lockedUntil"] = "10 Jul 2026, 12:15 UTC",
         ["startsAtUtc"] = "2026-08-25T12:00:00Z",
         ["endsAtUtc"] = "2026-09-25T12:00:00Z",
+        ["code"] = "493827",
+        ["generation"] = "2",
+        ["expiresAtUtc"] = "2026-09-20T12:05:00Z",
     };
 
     private static readonly string[] AllTemplates = typeof(EmailTemplates)
@@ -54,6 +57,28 @@ public sealed class EmailTemplateRendererTests
         EmailTemplates.SecurityAlert,
         EmailTemplates.WaitlistVerification,
     ];
+
+    [Theory]
+    [InlineData("en")]
+    [InlineData("pl")]
+    public void When_SharingVerificationIsRendered_Then_ItContainsOnlyTheCodeAndExpiryWithoutASharingLink(string language)
+    {
+        // Given
+        var renderer = CreateRenderer();
+
+        // When
+        var rendered = renderer.Render(EmailTemplates.EntryShareVerification, language, Model);
+
+        // Then
+        rendered.HtmlBody.ShouldContain("493827");
+        rendered.TextBody.ShouldContain("493827");
+        rendered.TextBody.ShouldContain("2026-09-20T12:05:00Z");
+        rendered.Subject.ShouldNotContain("493827");
+        rendered.HtmlBody.ShouldNotContain("padding:10px 20px");
+        rendered.HtmlBody.ShouldNotContain("api/entry-shares");
+        rendered.TextBody.ShouldNotContain("verificationUrl");
+        rendered.HtmlBody.ShouldNotContain("token=abc");
+    }
 
     [Fact]
     public void When_RenderedInBothLanguages_Then_SubjectAndBodyAreLocalized()

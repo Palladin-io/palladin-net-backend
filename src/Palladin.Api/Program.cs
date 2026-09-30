@@ -244,6 +244,10 @@ app.Use(async (context, next) =>
     headers["X-Content-Type-Options"] = "nosniff";
     headers["X-Frame-Options"] = "DENY";
     headers["Referrer-Policy"] = "no-referrer";
+    if (context.Request.Path.StartsWithSegments("/api/entry-shares"))
+    {
+        headers.CacheControl = "no-store";
+    }
     await next();
 });
 
@@ -261,6 +265,7 @@ if (!app.Environment.IsEnvironment("Testing"))
 }
 
 app.UseAuthorization();
+app.UseMiddleware<EntrySharingRequestLimitsMiddleware>();
 
 app.UseFastEndpoints(config =>
 {

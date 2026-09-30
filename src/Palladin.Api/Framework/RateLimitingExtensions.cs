@@ -30,6 +30,11 @@ internal static class RateLimitingExtensions
                 var path = context.Request.Path;
                 var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
+                if (path.StartsWithSegments("/api/entry-shares"))
+                {
+                    return FixedWindow($"entry-share:{ip}", permitLimit: 60);
+                }
+
                 // Auth is partitioned by IP: the caller is an anonymous browser with no API key yet.
                 if (path.StartsWithSegments("/api/auth/oauth") || path.StartsWithSegments("/api/auth/refresh"))
                 {

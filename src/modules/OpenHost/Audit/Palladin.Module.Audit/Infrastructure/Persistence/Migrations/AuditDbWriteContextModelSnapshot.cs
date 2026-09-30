@@ -117,6 +117,9 @@ namespace Palladin.Module.Audit.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<bool>("HasExplicitOccurrenceId")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("IpAddress")
                         .HasMaxLength(45)
                         .HasColumnType("character varying(45)");
@@ -147,7 +150,8 @@ namespace Palladin.Module.Audit.Infrastructure.Persistence.Migrations
                     b.HasIndex("VaultId", "CreatedAt", "Id");
 
                     b.HasIndex("OrganizationId", "EventType", "VaultId", "AgentId", "EntryId", "OccurredAt")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("NOT \"HasExplicitOccurrenceId\"");
 
                     NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("OrganizationId", "EventType", "VaultId", "AgentId", "EntryId", "OccurredAt"), false);
 

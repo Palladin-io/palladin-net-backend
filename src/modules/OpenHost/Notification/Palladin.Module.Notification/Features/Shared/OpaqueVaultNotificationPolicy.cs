@@ -48,6 +48,11 @@ internal static class OpaqueVaultNotificationPolicy
 
     internal static void EnsureSafe(BroadcastNotificationCommand command)
     {
+        if (command.Type == NotificationType.EntryShareReceived)
+        {
+            throw new InvalidOperationException("Sharing receipts require the explicit sender-only receipt command.");
+        }
+
         if (!VaultTypes.Contains(command.Type))
         {
             return;

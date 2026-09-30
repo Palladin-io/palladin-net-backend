@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Hangfire;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.SharedUnlock;
+using Palladin.Module.Identity.Infrastructure.Sharing;
 
 namespace Palladin.Module.Identity.Infrastructure;
 
@@ -34,6 +35,12 @@ internal static class InfrastructureModule
         services.AddIdentityTotp(configuration);
         services.AddIdentityLogin(configuration);
         services.AddOrganizationInvitations(configuration);
+        services.AddOptions<EntrySharingRevocationOptions>()
+            .Bind(configuration.GetSection(EntrySharingRevocationOptions.Position))
+            .Validate(options => options.RequestTimeoutSeconds is >= 1 and <= 60,
+                "Sharing revocation timeout must be between 1 and 60 seconds.")
+            .ValidateOnStart();
+        services.AddScoped<EntrySharingRevocation>();
         services.Configure<SharedUnlockOptions>(configuration.GetSection(SharedUnlockOptions.Position));
         services.AddScopedCronJob<CleanupSharedUnlockOperationsJob, CleanupSharedUnlockOperationsJobOptions>(
             configuration.GetSection(CleanupSharedUnlockOperationsJobOptions.Position));

@@ -30,6 +30,14 @@ public static class AuditEventType
     public const string EntryCreated = "entry.created";
     public const string EntryUpdated = "entry.updated";
     public const string EntryDeleted = "entry.deleted";
+    public const string EntryShareCreated = "entry-share.created";
+    public const string EntryShareDelivered = "entry-share.delivered";
+    public const string EntryShareConfirmed = "entry-share.confirmed";
+    public const string EntryShareProtectionChanged = "entry-share.protection-changed";
+    public const string EntryShareExpired = "entry-share.expired";
+    public const string EntryShareRevoked = "entry-share.revoked";
+    public const string EntryShareEnded = "entry-share.ended";
+    public const string EntryShareSourceAccessRemoved = "entry-share.source-access-removed";
     public const string OrganizationCreated = "org.created";
     public const string OrganizationUpdated = "org.updated";
     public const string OrganizationMemberInvited = "org.member-invited";

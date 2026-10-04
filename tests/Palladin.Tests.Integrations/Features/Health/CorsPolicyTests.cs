@@ -8,10 +8,10 @@ namespace Palladin.Tests.Integrations.Features.Health;
 public sealed class CorsPolicyTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
-    public async Task When_WebStageSendsPreflight_Then_OriginIsAllowed()
+    public async Task When_ConfiguredPanelSendsPreflight_Then_OriginIsAllowed()
     {
         // Given
-        const string origin = "https://stage.palladin.io";
+        const string origin = "https://panel.example.test";
         var request = new HttpRequestMessage(HttpMethod.Options, "api/auth/login/salt");
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
@@ -27,12 +27,15 @@ public sealed class CorsPolicyTests(ApiFactory apiFactory) : TestBase
         response.Headers.GetValues("Access-Control-Allow-Credentials").ShouldBe(["true"]);
     }
 
-    [Fact]
-    public async Task When_UnknownOriginSendsPreflight_Then_OriginIsNotAllowed()
+    [Theory]
+    [InlineData("https://panel.example.test.attacker.test")]
+    [InlineData("https://panel.example.test:8443")]
+    [InlineData("http://panel.example.test")]
+    public async Task When_UnknownOriginSendsPreflight_Then_OriginIsNotAllowed(string origin)
     {
         // Given
         var request = new HttpRequestMessage(HttpMethod.Options, "api/auth/login/salt");
-        request.Headers.Add("Origin", "https://stage.palladin.io.example.com");
+        request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
 
         // When

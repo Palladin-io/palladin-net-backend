@@ -231,6 +231,7 @@ if (enforceHttps)
 
     app.UseHsts();
     app.UseHttpsRedirection();
+    app.UseMiddleware<RequireHttpsMiddleware>();
 }
 
 app.Use(async (context, next) =>

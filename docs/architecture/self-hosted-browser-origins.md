@@ -11,7 +11,9 @@ Configure `AllowedHosts` for the API host and, for example,
 environment. API and panel path prefixes are not CORS origins. A self-hosted HTTP
 API additionally requires administrator opt-in `Networking__AllowInsecureHttp=true`
 outside Development/Testing; HTTPS enforcement remains the default. This setting
-skips API HTTPS redirection/HSTS only. It does not change client URL selection,
+disables API HTTPS enforcement. Without opt-in, HTTP requests that cannot be
+redirected are rejected with 403 before authentication or endpoints. Only HTTPS
+or a trusted proxy's forwarded HTTPS scheme passes. It does not change client URL selection,
 trust an invalid certificate or override the extension's separate user consent
 for its exact API/panel pair. Existing HSTS/browser policies can still prevent HTTP.
 

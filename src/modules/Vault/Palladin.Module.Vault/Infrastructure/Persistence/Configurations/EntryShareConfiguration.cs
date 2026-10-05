@@ -24,6 +24,7 @@ internal sealed class EntryShareConfiguration : IEntityTypeConfiguration<EntrySh
         builder.HasIndex(x => new { x.OrganizationId, x.VaultId, x.EntryId, x.CreatedAt, x.Id });
         builder.HasIndex(x => new { x.OrganizationId, x.CreatedBy, x.Id })
             .HasFilter("\"RevokedAt\" IS NULL AND \"ExpiredAt\" IS NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.CreatedBy, x.CreatedAt, x.Id });
         builder.HasIndex(x => new { x.ExpiresAt, x.Id })
             .HasFilter("\"RevokedAt\" IS NULL AND \"ExpiredAt\" IS NULL");
         builder.HasOne<VaultEntry>().WithMany()

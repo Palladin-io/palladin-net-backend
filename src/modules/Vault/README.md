@@ -490,3 +490,21 @@ owner approval/re-grant. Deploy compatible Member writers with this additive
 backend contract; older writers cannot add newly grantable fields themselves.
 This change does not provide fresh TOTP at operation time: the current derived
 payload's code-at-envelope-construction limitation remains a separate gate.
+
+## Member sharing overview
+
+`GET /api/entry-sharing` lists only the authenticated Member's own sharing links
+across their currently joined Vaults in the current organization. It returns
+structural Vault/Entry IDs and the existing sender-safe share projection; names
+are resolved from the client's decrypted cache. It never returns ciphertext,
+bearers or verifiers. Sender-only, organization and membership filters execute
+before paging. The endpoint uses the same permissions, lifecycle status rules
+and no-store policy as the per-Entry list.
+
+Keyset pages use `(CreatedAt, Id)`, default 20, maximum 100. The incremental
+`AddMemberSharingListIndex` adds `(OrganizationId, CreatedBy, CreatedAt, Id)`
+for this history-inclusive cross-Vault access path. The existing partial
+sender/ID revocation index and per-Entry index cannot provide that ordering.
+Clients request one page when opened and one continuation near the scroll end;
+they must not scan every Entry to discover its links. Backend rollout is required
+before enabling this overview in a deployed client.

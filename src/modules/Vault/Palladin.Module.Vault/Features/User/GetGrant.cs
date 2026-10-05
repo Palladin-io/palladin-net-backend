@@ -74,7 +74,10 @@ public sealed record GrantResponse(
     string? LastAccessHostname,
     bool CanRevoke,
     bool CanGrantAgain,
-    IReadOnlyList<Guid> ActiveCoveringGrantIds);
+    IReadOnlyList<Guid> ActiveCoveringGrantIds)
+{
+    public Instant? GrantedAt { get; init; }
+}
 
 [PublicAPI]
 public sealed record GrantEntryScopeResponse(
@@ -300,7 +303,7 @@ internal static class GrantProjection
             // GRANULAR grant coverage is checked on its EntryId; for a FULL grant, on an active FULL grant
             // of the same agent in the vault.
             false,
-            Array.Empty<Guid>());
+            Array.Empty<Guid>()) { GrantedAt = g.GrantedAt };
     }
 
     internal static void ApplyAgentSigningIdentity(IList<GrantResponse> grants)

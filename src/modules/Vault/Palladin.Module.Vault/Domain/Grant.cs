@@ -45,6 +45,7 @@ internal abstract class Grant : EventEntityBase
     public int QueryCount { get; protected set; }
     public string ExpirySource { get; protected set; } = string.Empty;
     public Instant CreatedAt { get; protected set; }
+    public Instant? GrantedAt { get; protected set; }
 
     // Nullable: null while the grant is awaiting approval (created by an agent request — the actor is
     // AgentId, not a user). Set to the approving/creating user on Approve or proactive create.
@@ -206,6 +207,7 @@ internal abstract class Grant : EventEntityBase
     {
         Status = GrantStatus.Active;
         CreatedBy = approvedBy;
+        GrantedAt = now;
         ExpiresAt = expiresAt;
         QueryLimit = queryLimit;
         ExpirySource = expirySource;

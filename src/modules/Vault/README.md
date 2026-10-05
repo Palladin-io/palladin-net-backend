@@ -508,3 +508,11 @@ sender/ID revocation index and per-Entry index cannot provide that ordering.
 Clients request one page when opened and one continuation near the scroll end;
 they must not scan every Entry to discover its links. Backend rollout is required
 before enabling this overview in a deployed client.
+
+Grant responses also expose nullable `grantedAt`: the instant proactive creation
+or approval first authorized access. It is preserved through revoke, consumption
+and other later transitions, independently of `createdAt` and `updatedAt`.
+`createdBy`/`createdByName` identify the granting Member. Existing rows retain
+null because their creation or last-update time cannot safely reconstruct the
+approval time. `AddGrantAuthorizationTimestamp` is additive and does not rewrite
+historical migrations or invent past timestamps.

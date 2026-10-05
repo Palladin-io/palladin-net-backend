@@ -28,6 +28,55 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
 {
     [Theory]
+    [InlineData("web-to-extension", "http://192.168.1.20:5000", "http://panel.example.test:8080")]
+    [InlineData("extension-to-web", "https://api.example.test", "http://[fd00::20]:8080")]
+    public async Task When_AuthenticatedSourceUsesSelfHostedOrigins_Then_CommitPreservesExactBinding(string direction, string apiOrigin, string webOrigin)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var request = Request(source, receiver, direction) with { ApiOrigin = apiOrigin, WebOrigin = webOrigin };
+
+        // When
+        var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+
+        // Then
+        offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+        operation.Context.ApiOrigin.ShouldBe(apiOrigin);
+        operation.Context.WebOrigin.ShouldBe(webOrigin);
+        (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var (committed, result) = await CommitAsync(operation, receiver);
+        committed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        result.Context.ShouldBe(operation.Context);
+        result.Session.UserId.ShouldBe(source.User.Id);
+    }
+
+    [Theory]
+    [InlineData("http://user@panel.example.test")]
+    [InlineData("http://panel.example.test/path")]
+    [InlineData("http://panel.example.test?next=other")]
+    [InlineData("http://panel.example.test#fragment")]
+    [InlineData("ftp://panel.example.test")]
+    public async Task When_OriginIsNotCanonicalHttpOrHttps_Then_NoOperationIsCreated(string origin)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+
+        // When
+        var (response, _) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(
+                Request(source, receiver) with { WebOrigin = origin });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await db.SharedUnlockOperations.AnyAsync(o => o.UserId == source.User.Id, Ct)).ShouldBeFalse();
+    }
+
+    [Theory]
     [InlineData("web-to-extension")]
     [InlineData("extension-to-web")]
     public async Task When_ReceiverCommits_Then_ItGetsIndependentTokensAndOriginalUnlockLimits(string direction)

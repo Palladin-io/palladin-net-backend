@@ -303,6 +303,15 @@ independent authority for extension ID, origins, document and generation; reques
 shape checks on Identity do not attest browser identity. Owner-approved same-ID
 extension substitution/full-profile compromise remains outside this boundary.
 
+Origin syntax accepts canonical HTTPS and HTTP origins, including self-hosted LAN,
+IPv6 and public hosts. Identity never fetches these addresses. HTTP consent is
+an explicit setting for the exact API/panel pair in the extension-owned UI; the
+browser adapter and crypto transport policy enforce it before handoff. Accepting
+an origin string here is not transport consent or proof of browser identity.
+Paths, credentials, queries, fragments and other schemes remain invalid.
+Deployment CORS/HTTPS settings and the staging configuration prerequisite are
+documented in [self-hosted browser origins](../../../docs/architecture/self-hosted-browser-origins.md).
+
 - `POST api/account/shared-unlock/operations` requires source JWT, its own current
   refresh token, bound authorization nonce/link epoch/preference revision, explicit
   receiver organization, the source's current effective `idleDeadlineMs`,

@@ -99,7 +99,7 @@ internal sealed class CreateSharedUnlockOperationValidator : Validator<CreateSha
     }
 
     private static bool IsOrigin(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
-        && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.Host is "localhost" or "127.0.0.1" or "[::1]"))
+        && uri.Scheme is "https" or "http"
         && uri.UserInfo.Length == 0 && uri.GetLeftPart(UriPartial.Authority) == value;
 }
 

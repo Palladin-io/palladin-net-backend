@@ -102,6 +102,7 @@ internal sealed class ScriptExecutionGrant : Grant
             Methods = GrantMethods.Exec,
             CreatedAt = now,
             CreatedBy = createdBy,
+            GrantedAt = now,
             UpdatedAt = now,
             ScriptExecutionScopes = scopes.ToList(),
             ScriptExecutionPackage = package,

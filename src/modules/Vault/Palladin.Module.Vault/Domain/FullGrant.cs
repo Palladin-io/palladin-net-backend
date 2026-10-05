@@ -54,6 +54,7 @@ internal sealed class FullGrant : Grant
             Methods = methods,
             CreatedAt = now,
             CreatedBy = createdBy,
+            GrantedAt = now,
             UpdatedAt = now,
             AgentWrappedVaultKey = agentWrappedVaultKey,
         };

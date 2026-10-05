@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Palladin.Module.Vault.Infrastructure.Persistence;
 namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(VaultDbWriteContext))]
-    partial class VaultDbWriteContextModelSnapshot : ModelSnapshot
+    [Migration("20261005161635_AddMemberSharingListIndex")]
+    partial class AddMemberSharingListIndex
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -798,9 +801,6 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(21)
                         .HasColumnType("character varying(21)");
-
-                    b.Property<Instant?>("GrantedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LastAccessHostname")
                         .HasMaxLength(253)

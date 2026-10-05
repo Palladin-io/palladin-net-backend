@@ -275,36 +275,52 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             setup.OrganizationId, setup.VaultId, pending!.GrantId, setup.EntryId,
             setup.AgentPublicKey, expiresAt, agentId: setup.AgentId);
 
-        var response = await setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(
-            new ApproveGrantRequest
-            {
-                VaultId = setup.VaultId,
-                GrantId = pending.GrantId,
-                GrantEntry = envelope,
-                ExpiresAt = expiresAt,
-                FieldSelectionMode = mode,
-            });
+        var originalTime = apiFactory.FakeClock.GetCurrentInstant();
+        apiFactory.FakeClock.Advance(Duration.FromSeconds(5));
+        try
+        {
+            var response = await setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(
+                new ApproveGrantRequest
+                {
+                    VaultId = setup.VaultId,
+                    GrantId = pending.GrantId,
+                    GrantEntry = envelope,
+                    ExpiresAt = expiresAt,
+                    FieldSelectionMode = mode,
+                });
 
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        await using var scope = apiFactory.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        var grant = await db.Grants
-            .Include(g => g.EncryptedReason)
-            .Include(g => g.GrantEntryScopes).ThenInclude(s => s.Envelope)
-            .SingleAsync(g => g.Id == pending.GrantId);
-        grant.Status.ShouldBe(GrantStatus.Active);
-        grant.GrantEntryScopes.Single().FieldSelectionMode.ShouldBe(mode);
-        grant.GrantEntryScopes.Single().SelectedFieldIds.ShouldBe(
-            mode == GrantFieldSelectionMode.All ? string.Empty : grant.GrantEntryScopes.Single().FieldIds);
-        grant.EncryptedReason.ShouldNotBeNull();
-        grant.EncryptedReason!.GrantRequestId.ShouldBe(pending.GrantId);
-        grant.GrantEntryScopes.Single().Envelope!.EntryRevision.ShouldBe(1UL);
+            response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+            await using var scope = apiFactory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+            var grant = await db.Grants
+                .Include(g => g.EncryptedReason)
+                .Include(g => g.GrantEntryScopes).ThenInclude(s => s.Envelope)
+                .SingleAsync(g => g.Id == pending.GrantId);
+            grant.Status.ShouldBe(GrantStatus.Active);
+            grant.GrantedAt.ShouldBe(PostgreSqlInstant.Normalize(originalTime + Duration.FromSeconds(5)));
+            grant.GrantedAt.ShouldNotBe(grant.CreatedAt);
+            grant.GrantEntryScopes.Single().FieldSelectionMode.ShouldBe(mode);
+            grant.GrantEntryScopes.Single().SelectedFieldIds.ShouldBe(
+                mode == GrantFieldSelectionMode.All ? string.Empty : grant.GrantEntryScopes.Single().FieldIds);
+            grant.EncryptedReason.ShouldNotBeNull();
+            grant.EncryptedReason!.GrantRequestId.ShouldBe(pending.GrantId);
+            grant.GrantEntryScopes.Single().Envelope!.EntryRevision.ShouldBe(1UL);
 
-        var detailResponse = await setup.UserClient.GetAsync(
-            $"api/vaults/{setup.VaultId}/grants/{pending.GrantId}");
-        var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
-        detailResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        detailJson.RootElement.GetProperty("encryptedReason").ValueKind.ShouldBe(JsonValueKind.Object);
+            var detailResponse = await setup.UserClient.GetAsync(
+                $"api/vaults/{setup.VaultId}/grants/{pending.GrantId}");
+            var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+            detailResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+            detailJson.RootElement.GetProperty("encryptedReason").ValueKind.ShouldBe(JsonValueKind.Object);
+            detailJson.RootElement.GetProperty("grantedAt").ValueKind.ShouldBe(JsonValueKind.String);
+            await setup.UserClient.DELETEAsync<RevokeGrantEndpoint, RevokeGrantRequest>(
+                new RevokeGrantRequest { VaultId = setup.VaultId, GrantId = pending.GrantId });
+            var revoked = await db.Grants.AsNoTracking().SingleAsync(g => g.Id == pending.GrantId);
+            revoked.GrantedAt.ShouldBe(grant.GrantedAt);
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalTime);
+        }
     }
 
     [Fact]

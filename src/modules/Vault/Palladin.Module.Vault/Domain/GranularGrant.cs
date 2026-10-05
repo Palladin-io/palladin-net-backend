@@ -53,6 +53,7 @@ internal sealed class GranularGrant : Grant
             Methods = methods,
             CreatedAt = now,
             CreatedBy = createdBy,
+            GrantedAt = now,
             UpdatedAt = now,
             GrantEntryScopes =
             [

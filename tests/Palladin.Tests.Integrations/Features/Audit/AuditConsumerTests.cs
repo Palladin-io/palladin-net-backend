@@ -667,7 +667,7 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
         var evt = new EntryUpsertedEvent(organization.Id, vault.Id, Guid.NewGuid(), user.Id,
-            EntityChange.Created, 1, apiFactory.FakeClock.GetCurrentInstant());
+            EntityChange.Created, EntryOperation.Created, 1, apiFactory.FakeClock.GetCurrentInstant());
 
         // When
         await RunAsync(p => new OnEntryUpsertedAudit(p), evt);

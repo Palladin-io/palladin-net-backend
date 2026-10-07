@@ -39,7 +39,8 @@ internal sealed class OnEntryUpserted(IAnalyticsService analyticsService) : ICon
             return Task.CompletedTask;
         }
 
-        analyticsService.CaptureEvent(msg.UserId.ToString(), "vault", "entry-updated", new Dictionary<string, object>
+        var eventName = msg.Operation == EntryOperation.Deleted ? "entry-deleted" : "entry-updated";
+        analyticsService.CaptureEvent(msg.UserId.ToString(), "vault", eventName, new Dictionary<string, object>
         {
             ["vault_id"] = msg.VaultId,
             ["entry_id"] = msg.EntryId,

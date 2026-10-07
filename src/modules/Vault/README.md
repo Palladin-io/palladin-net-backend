@@ -501,9 +501,16 @@ bearers or verifiers. Sender-only, organization and membership filters execute
 before paging. The endpoint uses the same permissions, lifecycle status rules
 and no-store policy as the per-Entry list.
 
-Keyset pages use `(CreatedAt, Id)`, default 20, maximum 100. The incremental
+Keyset pages prioritize effective active links, then sort each group by descending
+`(CreatedAt, Id)`, default 20, maximum 100. The opaque cursor carries the active/
+inactive group as well as the shared InstantCursor timestamp and ID. Effective
+status is projected once in SQL before sorting and paging, including sender and
+source revocation fences. The incremental
 `AddMemberSharingListIndex` adds `(OrganizationId, CreatedBy, CreatedAt, Id)`
-for this history-inclusive cross-Vault access path. The existing partial
+for this history-inclusive cross-Vault access path. This index bounds the
+organization/sender scan; effective status depends on joined lifecycle fences and
+time, so its group sort is computed rather than persisted or separately indexed.
+The existing partial
 sender/ID revocation index and per-Entry index cannot provide that ordering.
 Clients request one page when opened and one continuation near the scroll end;
 they must not scan every Entry to discover its links. Backend rollout is required

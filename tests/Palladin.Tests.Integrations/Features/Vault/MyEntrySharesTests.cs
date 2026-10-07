@@ -72,7 +72,40 @@ public sealed class MyEntrySharesTests(ApiFactory apiFactory) : TestBase
         page.Result.Items.ShouldBeEmpty();
     }
 
-    private async Task<EntryShare> SeedShareAsync(Guid organizationId, Guid userId)
+    [Fact]
+    public async Task When_PagingShares_Then_ActiveLinksComeFirstAndEachGroupIsNewestFirst()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var oldActive = await SeedShareAsync(organization.Id, user.Id, age: 60);
+        var newestRevoked = await SeedShareAsync(organization.Id, user.Id, revoked: true);
+        var newActive = await SeedShareAsync(organization.Id, user.Id, age: 10);
+        var tiedActive = await SeedShareAsync(organization.Id, user.Id, age: 10);
+        var oldRevoked = await SeedShareAsync(organization.Id, user.Id, age: 120, revoked: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var ids = new List<Guid>();
+        var states = new List<string>();
+        string? cursor = null;
+
+        // When
+        for (var pageNumber = 0; pageNumber < 5; pageNumber++)
+        {
+            var page = await client.GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(
+                new ListMyEntrySharesRequest { PageSize = 1, Cursor = cursor });
+            page.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            ids.Add(page.Result.Items.Single().Share.ShareId);
+            states.Add(page.Result.Items.Single().Share.Status);
+            cursor = page.Result.NextCursor;
+        }
+
+        // Then
+        ids.ShouldBe(new[] { newActive.Id, tiedActive.Id }.OrderDescending()
+            .Concat([oldActive.Id, newestRevoked.Id, oldRevoked.Id]));
+        states.ShouldBe(["active", "active", "active", "revoked", "revoked"]);
+        cursor.ShouldBeNull();
+    }
+
+    private async Task<EntryShare> SeedShareAsync(Guid organizationId, Guid userId, int age = 0, bool revoked = false)
     {
         var vault = await apiFactory.Services.SeedVaultAsync(organizationId, userId);
         var entryId = await apiFactory.Services.SeedSyncEntryAsync(organizationId, vault.Id, userId);
@@ -82,11 +115,15 @@ public sealed class MyEntrySharesTests(ApiFactory apiFactory) : TestBase
             TestContext.Current.CancellationToken);
         var now = apiFactory.FakeClock.GetCurrentInstant();
         var share = EntryShare.Create(Guid.NewGuid(), new EntryScope(organizationId, vault.Id, entryId), new EntryRevision(1),
-            userId, now, now + Duration.FromHours(1), null, EntryShareRecipientMode.AnyoneWithLink, null,
+            userId, now - Duration.FromMinutes(age), now + Duration.FromHours(1), null, EntryShareRecipientMode.AnyoneWithLink, null,
             EntryShareProtection.None, null, new byte[32], new byte[24], new byte[32], false, 1, membership.AddedAt);
         if (!await db.EntryShareSenderAuthorities.AnyAsync(x => x.OrganizationId == organizationId && x.UserId == userId, TestContext.Current.CancellationToken))
         {
             db.EntryShareSenderAuthorities.Add(EntryShareSenderAuthority.Create(organizationId, userId));
+        }
+        if (revoked)
+        {
+            share.Revoke(EntryShareActivityKind.RevokedBySender, now);
         }
         db.EntryShares.Add(share);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);

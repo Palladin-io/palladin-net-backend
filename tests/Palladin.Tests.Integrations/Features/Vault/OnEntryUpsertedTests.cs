@@ -23,7 +23,7 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class OnEntryUpsertedTests(ApiFactory apiFactory) : TestBase
 {
     private EntryUpsertedEvent CreatedEvent(Guid vaultId, Guid userId, bool viaImport) =>
-        new(Guid.NewGuid(), vaultId, Guid.NewGuid(), userId, EntityChange.Created, 1,
+        new(Guid.NewGuid(), vaultId, Guid.NewGuid(), userId, EntityChange.Created, EntryOperation.Created, 1,
             apiFactory.FakeClock.GetCurrentInstant(), viaImport);
 
     [Fact]

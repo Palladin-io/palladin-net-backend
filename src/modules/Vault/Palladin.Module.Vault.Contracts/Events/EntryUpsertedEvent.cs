@@ -12,6 +12,7 @@ public sealed record EntryUpsertedEvent(
     Guid EntryId,
     Guid UserId,
     EntityChange Change,
+    EntryOperation Operation,
     ulong Revision,
     Instant UpdatedAt,
     bool ViaImport = false) : IIntegrationEvent;

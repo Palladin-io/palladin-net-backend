@@ -106,7 +106,7 @@ internal sealed class VaultEntry : EventEntityBase
         entry.SetAgentDiscovery(agentDiscovery);
         entry.Keys.Add(entryKey);
         entry.Versions.Add(version);
-        entry.EmitUpserted(createdBy, EntityChange.Created, now, viaImport);
+        entry.EmitUpserted(createdBy, EntityChange.Created, version.Operation, now, viaImport);
         return entry;
     }
 
@@ -363,7 +363,7 @@ internal sealed class VaultEntry : EventEntityBase
             SetAgentDiscovery(agentDiscovery);
         }
 
-        EmitUpserted(updatedBy, EntityChange.Updated, now);
+        EmitUpserted(updatedBy, EntityChange.Updated, version.Operation, now);
     }
 
     internal void Archive(
@@ -647,7 +647,7 @@ internal sealed class VaultEntry : EventEntityBase
             SetAgentDiscovery(agentDiscovery);
         }
 
-        EmitUpserted(changedBy, EntityChange.Updated, now);
+        EmitUpserted(changedBy, EntityChange.Updated, version.Operation, now);
     }
 
     internal MemberIndexCiphertext GetMemberIndex()
@@ -861,13 +861,14 @@ internal sealed class VaultEntry : EventEntityBase
         }
     }
 
-    private void EmitUpserted(Guid actorId, EntityChange change, Instant updatedAt, bool viaImport = false) =>
+    private void EmitUpserted(Guid actorId, EntityChange change, EntryOperation operation, Instant updatedAt, bool viaImport = false) =>
         AddOrReplaceEvent(new EntryUpsertedEvent(
             OrganizationId,
             VaultId,
             Id,
             actorId,
             change,
+            operation,
             CurrentRevision.Value,
             updatedAt,
             viaImport));

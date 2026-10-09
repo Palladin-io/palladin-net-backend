@@ -80,4 +80,41 @@ public sealed class BrowserSessionSecurityTests(ApiFactory apiFactory) : TestBas
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
+    [Fact]
+    public async Task When_RefreshCookieBelongsToAnotherTabSession_Then_RejectWithoutReplacingCookie()
+    {
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var raw = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        await apiFactory.Services.SeedRefreshTokenAsync(user.Id, raw);
+        using var client = apiFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+        client.DefaultRequestHeaders.Add("Cookie", "__Host-palladin-refresh=" + Uri.EscapeDataString(raw));
+        var response = await client.PostAsJsonAsync("api/browser/auth/refresh", new { expectedSessionId = Guid.NewGuid() });
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("https://panel.example.test", true)]
+    [InlineData("https://sibling.example.test", false)]
+    [InlineData("null", false)]
+    public async Task When_BrowserPreflights_Then_CredentialsAreAllowedOnlyForExactConfiguredOrigins(string origin, bool allowed)
+    {
+        using var client = apiFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, "api/browser/auth/refresh");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+        request.Headers.Add("Access-Control-Request-Headers", "content-type,x-palladin-browser");
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+        response.Headers.Contains("Access-Control-Allow-Origin").ShouldBe(allowed);
+        if (allowed)
+        {
+            response.Headers.GetValues("Access-Control-Allow-Origin").Single().ShouldBe(origin);
+            response.Headers.GetValues("Access-Control-Allow-Credentials").Single().ShouldBe("true");
+        }
+        else response.Headers.Contains("Access-Control-Allow-Credentials").ShouldBeFalse();
+    }
+
 }

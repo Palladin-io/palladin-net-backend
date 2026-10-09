@@ -187,6 +187,38 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
             .IsEnabled.ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task When_BrowserTotpCompletes_Then_CookieAppearsOnlyAfterTheSecondFactor()
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var credential = KeyGeneration.GenerateRandomKey(32);
+        var email = $"browser-totp-{Guid.NewGuid():N}@example.com";
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(credential, email: email, emailVerified: true);
+        var authenticated = apiFactory.CreateAuthenticatedClient(user);
+        var enrollment = await EnrollAsync(authenticated);
+        var (confirmed, _) = await authenticated.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
+            new() { Code = Code(enrollment.Secret) });
+        confirmed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var browser = apiFactory.CreateClient();
+        browser.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        browser.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+        var challenge = await browser.PostAsJsonAsync("api/browser/auth/login", new LoginRequest
+            { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = credential });
+        challenge.StatusCode.ShouldBe(HttpStatusCode.OK);
+        challenge.Headers.Contains("Set-Cookie").ShouldBeFalse();
+        var pending = (await challenge.Content.ReadFromJsonAsync<LoginResponse>())!;
+        pending.TotpRequired.ShouldBeTrue();
+        var rejected = await browser.PostAsJsonAsync("api/browser/auth/login/totp", new { pending.ChallengeToken, code = "not-a-code" });
+        rejected.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        rejected.Headers.Contains("Set-Cookie").ShouldBeFalse();
+        var completed = await browser.PostAsJsonAsync("api/browser/auth/login/totp", new { pending.ChallengeToken, code = NextCode(enrollment.Secret) });
+        completed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        completed.Headers.Contains("Set-Cookie").ShouldBeTrue();
+        using var body = System.Text.Json.JsonDocument.Parse(await completed.Content.ReadAsStringAsync());
+        body.RootElement.TryGetProperty("refreshToken", out _).ShouldBeFalse();
+        body.RootElement.GetProperty("sessionId").GetGuid().ShouldNotBe(Guid.Empty);
+    }
+
     private async Task<EnrollTotpResponse> EnrollAsync(HttpClient client)
     {
         var response = await client.PostAsync("api/auth/totp/enroll", null, TestContext.Current.CancellationToken);

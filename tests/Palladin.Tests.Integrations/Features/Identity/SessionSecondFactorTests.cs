@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -119,6 +121,43 @@ public sealed class SessionSecondFactorTests(ApiFactory apiFactory) : TestBase
             session.SecondFactorVerifiedAt.ShouldNotBeNull().ToUnixTimeMilliseconds()
                 .ShouldBe(originalTime.ToUnixTimeMilliseconds());
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_MigratingBrowserSession_Then_ForcesRotationWithoutRenewingAssurance(bool assured)
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var verifiedAt = now - Duration.FromDays(10);
+        var raw = Guid.NewGuid().ToString("N");
+        var original = RefreshToken.Create(Guid.NewGuid(), user.Id, organization.Id,
+            TokenService.HashToken(raw), 1, now + Duration.FromDays(30), verifiedAt,
+            assured ? 2u : null, assured ? verifiedAt : null);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            db.RefreshTokens.Add(original);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+        using var client = apiFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+
+        var response = await client.PostAsJsonAsync("api/browser/auth/migrate", new { refreshToken = raw });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.TryGetProperty("refreshToken", out _).ShouldBeFalse();
+        body.RootElement.GetProperty("sessionId").GetGuid().ShouldBe(original.SessionId ?? original.Id);
+        await using var verification = apiFactory.Services.CreateAsyncScope();
+        var read = verification.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        var next = await read.RefreshTokens.SingleAsync(row => row.UserId == user.Id && row.RevokedAt == null);
+        next.Id.ShouldNotBe(original.Id);
+        next.SecondFactorRevision.ShouldBe(assured ? 2u : null);
+        next.SecondFactorVerifiedAt.ShouldBe(assured ? verifiedAt : null);
     }
 
     [Fact]

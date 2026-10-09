@@ -40,7 +40,8 @@ internal static class RateLimitingExtensions
                 }
 
                 // Auth is partitioned by IP: the caller is an anonymous browser with no API key yet.
-                if (path.StartsWithSegments("/api/auth/oauth") || path.StartsWithSegments("/api/auth/refresh"))
+                if (path.StartsWithSegments("/api/auth/oauth") || path.StartsWithSegments("/api/auth/refresh")
+                    || path.StartsWithSegments("/api/auth/migrate"))
                 {
                     return FixedWindow($"auth:{ip}", permitLimit: 30);
                 }

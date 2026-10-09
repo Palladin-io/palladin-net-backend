@@ -1,3 +1,4 @@
+using Palladin.Module.Identity.Infrastructure.Jwt;
 using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -5,8 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure;
-using Palladin.Module.Identity.Infrastructure.BrowserSessions;
-using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 
 namespace Palladin.Module.Identity.Features;
@@ -39,16 +38,8 @@ internal sealed class DiscardBrowserSessionEndpoint(IdentityDomainWriteContext c
             await Send.StatusCodeAsync(409, ct);
             return;
         }
-        var raw = BrowserSessionCookie.Read(HttpContext);
-        if (raw is not null)
-        {
-            var hash = TokenService.HashToken(raw);
-            if (await context.RefreshTokens.AnyAsync(token => token.TokenHash == hash
-                && (token.SessionId ?? token.Id) == sessionId && token.UserId == User.GetUserId(), ct))
-            {
-                BrowserSessionCookie.Delete(HttpContext);
-            }
-        }
+        // Cleanup responses can arrive after a newer login in another document.
+        // Revoke the signed lineage without emitting a delayed cookie deletion.
         await Send.NoContentAsync(ct);
     }
 }

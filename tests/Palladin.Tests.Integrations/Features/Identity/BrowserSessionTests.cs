@@ -70,6 +70,36 @@ public sealed class BrowserSessionTests(ApiFactory apiFactory) : TestBase
         var stored = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().RefreshTokens.SingleAsync(t => t.Id == old.Id);
         stored.RevokedAt.ShouldNotBeNull();
         stored.ReplacedByTokenId.ShouldNotBeNull();
+        var replacement = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .RefreshTokens.SingleAsync(t => t.Id == stored.ReplacedByTokenId);
+        (replacement.SessionId ?? replacement.Id).ShouldBe(old.SessionId ?? old.Id);
+        replacement.SecondFactorRevision.ShouldBe(old.SecondFactorRevision);
+        replacement.SecondFactorVerifiedAt.ShouldBe(old.SecondFactorVerifiedAt);
+        var replay = await client.PostAsJsonAsync("api/auth/refresh", new { refreshToken = raw });
+        replay.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        replay.Headers.Contains("Set-Cookie").ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_LegacySessionIsExpiredOrRevoked_Then_MigrationIssuesNothing(bool revoked)
+    {
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync();
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var raw = Guid.NewGuid().ToString("N");
+        await apiFactory.Services.SeedRefreshTokenAsync(user.Id, raw,
+            expiresAt: now + NodaTime.Duration.FromDays(revoked ? 1 : -1),
+            revokedAt: revoked ? now : null);
+        using var client = BrowserClient();
+
+        var response = await client.PostAsJsonAsync("api/browser/auth/migrate", new { refreshToken = raw });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().RefreshTokens
+            .CountAsync(row => row.UserId == user.Id)).ShouldBe(1);
     }
 
     [Fact]
@@ -130,8 +160,10 @@ public sealed class BrowserSessionTests(ApiFactory apiFactory) : TestBase
         (await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().RefreshTokens.SingleAsync(t => t.Id == token.Id)).RevokedAt.ShouldBeNull();
     }
 
-    [Fact]
-    public async Task When_DiscardingUninstalledSession_Then_NewCookieSessionSurvives()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task When_DiscardingUninstalledSession_Then_NewCookieSessionSurvives(bool newerCookie)
     {
         // Given
         var (user, _, _) = await apiFactory.Services.SeedUserAsync();
@@ -145,7 +177,7 @@ public sealed class BrowserSessionTests(ApiFactory apiFactory) : TestBase
         var nextRaw = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
         var next = await apiFactory.Services.SeedRefreshTokenAsync(user.Id, nextRaw);
         client.DefaultRequestHeaders.Remove("Cookie");
-        client.DefaultRequestHeaders.Add("Cookie", "__Host-palladin-refresh=" + Uri.EscapeDataString(nextRaw));
+        client.DefaultRequestHeaders.Add("Cookie", "__Host-palladin-refresh=" + Uri.EscapeDataString(newerCookie ? nextRaw : raw));
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", access);
 
         // When

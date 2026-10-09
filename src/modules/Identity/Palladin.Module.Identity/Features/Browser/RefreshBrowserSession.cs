@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
@@ -9,8 +10,14 @@ using Palladin.Module.Identity.Shared;
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
+public sealed record RefreshBrowserSessionRequest
+{
+    public Guid? ExpectedSessionId { get; init; }
+}
+
+[PublicAPI]
 internal sealed class RefreshBrowserSessionEndpoint(RefreshAccessTokenOperation operation,
-    IdentityDomainWriteContext context, ITokenService tokenService) : EndpointWithoutRequest<BrowserAuthSessionResponse>
+    IdentityDomainWriteContext context, ITokenService tokenService) : Endpoint<RefreshBrowserSessionRequest, BrowserAuthSessionResponse>
 {
     public override void Configure()
     {
@@ -20,13 +27,24 @@ internal sealed class RefreshBrowserSessionEndpoint(RefreshAccessTokenOperation 
         Tags("Identity/Browser");
     }
 
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(RefreshBrowserSessionRequest req, CancellationToken ct)
     {
         var token = BrowserSessionCookie.Read(HttpContext);
         if (string.IsNullOrEmpty(token))
         {
             await Send.UnauthorizedAsync(ct);
             return;
+        }
+        if (req.ExpectedSessionId is { } expected)
+        {
+            var cookieHash = TokenService.HashToken(token);
+            var matches = await context.RefreshTokens.AnyAsync(row => row.TokenHash == cookieHash
+                && (row.SessionId ?? row.Id) == expected, ct);
+            if (!matches)
+            {
+                await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
+                return;
+            }
         }
         var result = await operation.ExecuteAsync(new RefreshAccessTokenRequest { RefreshToken = token }, ct);
         if (result.Error is { } error)

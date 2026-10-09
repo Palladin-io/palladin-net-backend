@@ -82,6 +82,29 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_BrowserCommitHasStaleSessionExpectation_Then_NoCookieOverwrite(bool hasCookie)
+    {
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(
+                Request(source, receiver, "extension-to-web") with { WebOrigin = "https://panel.example.test" });
+        offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var client = apiFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+        if (hasCookie) client.DefaultRequestHeaders.Add("Cookie", "__Host-palladin-refresh=" + Uri.EscapeDataString(source.RawToken));
+        var signature = Base64Url.EncodeToString(Sign(Proof(operation), receiver, SharedUnlockProofPurpose.Commit));
+        var response = await client.PostAsJsonAsync($"api/browser/auth/shared-unlock/operations/{operation.Context.OperationId}/commit",
+            new { signature, expectedSessionId = Guid.NewGuid() }, Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+    }
+
+    [Theory]
     [InlineData("web-to-extension", "http://192.168.1.20:5000", "http://panel.example.test:8080")]
     [InlineData("extension-to-web", "https://api.example.test", "http://[fd00::20]:8080")]
     public async Task When_AuthenticatedSourceUsesSelfHostedOrigins_Then_CommitPreservesExactBinding(string direction, string apiOrigin, string webOrigin)

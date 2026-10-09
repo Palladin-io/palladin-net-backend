@@ -10,7 +10,7 @@ namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
 internal sealed class RefreshBrowserSessionEndpoint(RefreshAccessTokenOperation operation,
-    IdentityDomainWriteContext context) : EndpointWithoutRequest<BrowserAuthSessionResponse>
+    IdentityDomainWriteContext context, ITokenService tokenService) : EndpointWithoutRequest<BrowserAuthSessionResponse>
 {
     public override void Configure()
     {
@@ -43,7 +43,7 @@ internal sealed class RefreshBrowserSessionEndpoint(RefreshAccessTokenOperation 
         var hash = TokenService.HashToken(body.RefreshToken);
         var session = await context.RefreshTokens.SingleAsync(token => token.TokenHash == hash, ct);
         BrowserSessionCookie.Write(HttpContext, body.RefreshToken, session.ExpiresAt);
-        await Send.OkAsync(new BrowserAuthSessionResponse(body.AccessToken, session.SessionId ?? session.Id,
+        await Send.OkAsync(new BrowserAuthSessionResponse(tokenService.BindBrowserSession(body.AccessToken, session.SessionId ?? session.Id), session.SessionId ?? session.Id,
             body.UserId, body.IsOnboarded, body.EmailVerified, body.WaitlistDeveloperBenefitStartedAt,
             body.WaitlistDeveloperBenefitEndsAt), ct);
     }

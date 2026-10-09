@@ -28,6 +28,10 @@ internal static class RateLimitingExtensions
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 var path = context.Request.Path;
+                if (path.StartsWithSegments("/api/browser", out var browserPath))
+                {
+                    path = new PathString("/api").Add(browserPath);
+                }
                 var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                 if (path.StartsWithSegments("/api/entry-shares"))

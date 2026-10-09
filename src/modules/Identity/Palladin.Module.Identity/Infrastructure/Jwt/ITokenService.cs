@@ -16,5 +16,6 @@ internal interface ITokenService
         OrganizationOfflineAccessPolicy offlineAccessPolicy,
         uint offlineAccessPolicyVersion,
         Instant? expiresAtCap = null);
+    string BindBrowserSession(string issuedAccessToken, Guid sessionId);
     (string rawToken, string tokenHash) GenerateRefreshToken();
 }

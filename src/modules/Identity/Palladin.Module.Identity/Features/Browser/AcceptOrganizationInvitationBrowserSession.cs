@@ -15,29 +15,21 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Npgsql;
 
+using Palladin.Module.Identity.Infrastructure.BrowserSessions;
+
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
-public sealed record AcceptOrganizationInvitationRequest
-{
-    public string Token { get; init; } = string.Empty;
-}
-
-[UsedImplicitly]
-internal sealed class AcceptOrganizationInvitationValidator : Validator<AcceptOrganizationInvitationRequest>
-{
-    public AcceptOrganizationInvitationValidator() => RuleFor(x => x.Token).NotEmpty();
-}
-
-[PublicAPI]
-internal sealed class AcceptOrganizationInvitationEndpoint(AcceptOrganizationInvitationOperation operation) : IdentityOperationEndpoint<AcceptOrganizationInvitationRequest, AuthSessionResponse>
+internal sealed class AcceptOrganizationInvitationBrowserSessionEndpoint(AcceptOrganizationInvitationOperation operation, BrowserSessionResponseWriter writer)
+    : IdentityOperationEndpoint<AcceptOrganizationInvitationRequest, object>
 {
     public override void Configure()
     {
-        Post("api/organization/invitations/accept");
+        Post("api/browser/organization/invitations/accept");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
         Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequireEmailVerified();
+        Validator<AcceptOrganizationInvitationValidator>();
         Tags("Identity/Organization");
         Summary(summary =>
         {
@@ -49,6 +41,6 @@ internal sealed class AcceptOrganizationInvitationEndpoint(AcceptOrganizationInv
     public override async Task HandleAsync(AcceptOrganizationInvitationRequest req, CancellationToken ct)
     {
         var result = await operation.ExecuteAsync(req, HttpContext, ct);
-        await SendResultAsync(result, ct);
+        await SendResultAsync(await writer.MapAsync(result, HttpContext, ct), ct);
     }
 }

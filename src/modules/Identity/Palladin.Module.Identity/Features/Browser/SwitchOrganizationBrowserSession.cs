@@ -11,29 +11,21 @@ using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Palladin.Module.Identity.Domain;
 
+using Palladin.Module.Identity.Infrastructure.BrowserSessions;
+
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
-public sealed record SwitchOrganizationRequest
-{
-    public Guid OrganizationId { get; init; }
-}
-
-[UsedImplicitly]
-internal sealed class SwitchOrganizationValidator : Validator<SwitchOrganizationRequest>
-{
-    public SwitchOrganizationValidator() => RuleFor(x => x.OrganizationId).NotEmpty();
-}
-
-[PublicAPI]
-internal sealed class SwitchOrganizationEndpoint(SwitchOrganizationOperation operation) : IdentityOperationEndpoint<SwitchOrganizationRequest, AuthSessionResponse>
+internal sealed class SwitchOrganizationBrowserSessionEndpoint(SwitchOrganizationOperation operation, BrowserSessionResponseWriter writer)
+    : IdentityOperationEndpoint<SwitchOrganizationRequest, object>
 {
     public override void Configure()
     {
-        Post("api/auth/switch-organization");
+        Post("api/browser/auth/switch-organization");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
         Options(builder => builder.AllowNonActiveOrganizationMembership());
         this.RequireEmailVerified();
+        Validator<SwitchOrganizationValidator>();
         Tags("Identity/Auth");
         Summary(summary =>
         {
@@ -45,6 +37,6 @@ internal sealed class SwitchOrganizationEndpoint(SwitchOrganizationOperation ope
     public override async Task HandleAsync(SwitchOrganizationRequest req, CancellationToken ct)
     {
         var result = await operation.ExecuteAsync(req, HttpContext, ct);
-        await SendResultAsync(result, ct);
+        await SendResultAsync(await writer.MapAsync(result, HttpContext, ct), ct);
     }
 }

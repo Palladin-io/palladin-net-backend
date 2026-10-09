@@ -31,6 +31,13 @@ internal static class InfrastructureModule
         services.AddIdentityOAuth(configuration);
         services.AddIdentityJwt(configuration);
         services.AddScoped<RefreshAccessTokenOperation>();
+        services.AddScoped<BrowserSessions.BrowserSessionResponseWriter>();
+        services.AddScoped<AcceptOrganizationInvitationOperation>();
+        services.AddScoped<SwitchOrganizationOperation>();
+        services.AddScoped<OAuthAuthenticateOperation>();
+        services.AddScoped<LoginTotpOperation>();
+        services.AddScoped<LoginOperation>();
+        services.AddScoped<RegisterOperation>();
         services.AddIdentityWaitlist(configuration);
         services.AddIdentityPasswordAuth(configuration);
         services.AddIdentityTotp(configuration);

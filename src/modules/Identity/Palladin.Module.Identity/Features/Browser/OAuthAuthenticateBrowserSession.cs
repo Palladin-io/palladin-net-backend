@@ -18,54 +18,30 @@ using Microsoft.Extensions.Options;
 using NodaTime;
 using Serilog;
 
+using Palladin.Module.Identity.Infrastructure.BrowserSessions;
+
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
-public sealed record OAuthAuthenticateRequest
-{
-    public string Provider { get; init; } = string.Empty;
-    public string Token { get; init; } = string.Empty;
-}
-
-[PublicAPI]
-public sealed record OAuthAuthenticateResponse(
-    string AccessToken,
-    string RefreshToken,
-    Guid UserId,
-    bool IsOnboarded,
-    bool EmailVerified,
-    Instant? WaitlistDeveloperBenefitStartedAt,
-    Instant? WaitlistDeveloperBenefitEndsAt,
-    bool IsNewUser = false);
-
-[UsedImplicitly]
-internal sealed class OAuthAuthenticateValidator : Validator<OAuthAuthenticateRequest>
-{
-    public OAuthAuthenticateValidator()
-    {
-        RuleFor(x => x.Provider).NotEmpty();
-        RuleFor(x => x.Token).NotEmpty();
-    }
-}
-
-[PublicAPI]
-internal sealed class OAuthAuthenticateEndpoint(OAuthAuthenticateOperation operation) : IdentityOperationEndpoint<OAuthAuthenticateRequest, OAuthAuthenticateResponse>
+internal sealed class OAuthAuthenticateBrowserSessionEndpoint(OAuthAuthenticateOperation operation, BrowserSessionResponseWriter writer)
+    : IdentityOperationEndpoint<OAuthAuthenticateRequest, object>
 {
     public override void Configure()
     {
-        Post("api/auth/oauth/{Provider}");
+        Post("api/browser/auth/oauth/{Provider}");
         AllowAnonymous();
         Summary(summary =>
         {
             summary.Summary = "Authenticate via OAuth provider";
             summary.Description = "Authenticates a user via an external OAuth provider (Google, Apple, X). Creates a new account if the user does not exist.";
         });
+        Validator<OAuthAuthenticateValidator>();
         Tags("Identity/Auth");
     }
 
     public override async Task HandleAsync(OAuthAuthenticateRequest req, CancellationToken ct)
     {
         var result = await operation.ExecuteAsync(req, HttpContext, ct);
-        await SendResultAsync(result, ct);
+        await SendResultAsync(await writer.MapAsync(result, HttpContext, ct), ct);
     }
 }

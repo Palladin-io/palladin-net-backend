@@ -66,14 +66,7 @@ internal sealed class RegisterValidator : Validator<RegisterRequest>
 }
 
 [PublicAPI]
-internal sealed class RegisterEndpoint(
-    IdentityDomainWriteContext domainWriteContext,
-    IPasswordHasher passwordHasher,
-    IAuthSessionIssuer sessionIssuer,
-    IGuidProvider guidProvider,
-    IOptions<EmailVerificationOptions> emailVerificationOptions,
-    ITransportContext transportContext,
-    IClock clock) : Endpoint<RegisterRequest, AuthSessionResponse>
+internal sealed class RegisterEndpoint(RegisterOperation operation) : IdentityOperationEndpoint<RegisterRequest, AuthSessionResponse>
 {
     public override void Configure()
     {
@@ -94,68 +87,7 @@ internal sealed class RegisterEndpoint(
 
     public override async Task HandleAsync(RegisterRequest req, CancellationToken ct)
     {
-        var email = req.Email.Trim().ToLowerInvariant();
-        var now = clock.GetCurrentInstant();
-
-        if (await domainWriteContext.Users.AnyAsync(u => u.Email == email, ct))
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
-            return;
-        }
-
-        var orgId = guidProvider.Generate();
-        var userId = req.AccountId;
-
-        var organization = Organization.Create(orgId, $"{req.DisplayName}'s Organization", PlanType.Basic, userId, req.DisplayName, now);
-        domainWriteContext.Add(organization);
-
-        var adminRole = Role.CreateAdministrator(guidProvider.Generate(), orgId, now);
-        domainWriteContext.Add(adminRole);
-        domainWriteContext.Add(Role.CreateDefaultUser(guidProvider.Generate(), orgId, now));
-
-        var user = Domain.User.RegisterWithPassword(
-            userId, email, req.DisplayName, req.PreferredLanguage, orgId, adminRole.Permissions,
-            req.KdfSalt, req.RecoverySalt, req.PublicKey, req.EncryptedPrivateKey, req.EncryptedPrivateKeyByRecovery,
-            req.DeviceWrapperMetadata,
-            transportContext.Platform ?? "unknown", now);
-        domainWriteContext.Add(user);
-        domainWriteContext.Add(OrganizationMember.CreateOwner(orgId, userId, adminRole, now));
-        domainWriteContext.Add(OrganizationMemberDirectoryEntry.Create(
-            orgId, userId, req.DisplayName, now));
-
-        var (serverHash, serverSalt) = passwordHasher.Hash(req.AuthCredential);
-        domainWriteContext.Add(PasswordCredential.Create(
-            userId,
-            serverHash,
-            req.KdfSalt,
-            serverSalt,
-            now));
-
-        var (token, tokenHash) = SecureToken.Generate();
-        domainWriteContext.Add(VerificationToken.CreateEmailVerification(
-            guidProvider.Generate(), userId, email, user.PreferredLanguage.Code, token, tokenHash,
-            Duration.FromMinutes(emailVerificationOptions.Value.TokenTtlMinutes), now));
-
-        var (accessToken, refreshToken) = sessionIssuer.Issue(
-            user, organization, adminRole.Permissions, authorizationVersion: 1, now);
-
-        try
-        {
-            await domainWriteContext.CommitAsync(ct);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: Core.Persistence.PostgresErrorCodes.UniqueViolation })
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status409Conflict, ct);
-            return;
-        }
-
-        await Send.OkAsync(new AuthSessionResponse(
-            accessToken,
-            refreshToken,
-            userId,
-            user.IsOnboarded,
-            user.EmailVerified,
-            null,
-            null), ct);
+        var result = await operation.ExecuteAsync(req, HttpContext, ct);
+        await SendResultAsync(result, ct);
     }
 }

@@ -1,3 +1,6 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Net;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +21,58 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 [Collection<ApiFactoryCollection>]
 public sealed class SharedUnlockAuthorizationTests(ApiFactory apiFactory) : TestBase
 {
+    [Fact]
+    public async Task When_BrowserAuthorizesAndActivates_Then_NoRefreshTokenIsRequiredInJson()
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        var (client, sessionId) = await BrowserSessionClient.CreateAsync(apiFactory, source.User, source.RawToken);
+        var body = JsonSerializer.SerializeToNode(Request(source), new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+        body.Remove("refreshToken");
+        body["expectedSessionId"] = sessionId;
+
+        // When
+        var response = await client.PostAsJsonAsync("api/browser/account/shared-unlock/authorizations", body, Ct);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var authority = (await response.Content.ReadFromJsonAsync<AuthorizeSharedUnlockResponse>(Ct))!;
+        var link = await SeedLinkAsync(source.User.Id);
+        var activation = JsonSerializer.SerializeToNode(Activate(source, authority, link.Id, link.Revision), new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+        activation.Remove("refreshToken");
+        activation["expectedSessionId"] = sessionId;
+        var activated = await client.PostAsJsonAsync($"api/browser/account/shared-unlock/links/{link.Id}/activate", activation, Ct);
+        activated.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var activity = await client.PostAsJsonAsync("api/browser/account/shared-unlock/authorizations/activity", new {
+            expectedSessionId = sessionId, authorizationId = authority.AuthorizationId,
+            sourceGeneration = Convert.ToBase64String(Generation).TrimEnd('=').Replace('+', '-').Replace('/', '_'),
+            idleDeadlineMs = authority.IdleDeadlineMs }, Ct);
+        activity.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var state = await client.PostAsJsonAsync("api/browser/account/shared-unlock/session-state", new { expectedSessionId = sessionId, linkId = link.Id }, Ct);
+        state.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task When_BrowserCookieAndJwtNameDifferentSessions_Then_SharedUnlockRejects()
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        var (client, sessionId) = await BrowserSessionClient.CreateAsync(apiFactory, source.User, source.RawToken);
+        var otherRaw = Guid.NewGuid().ToString("N");
+        await apiFactory.Services.SeedRefreshTokenAsync(source.User.Id, otherRaw);
+        client.DefaultRequestHeaders.Remove("Cookie");
+        client.DefaultRequestHeaders.Add("Cookie", "__Host-palladin-refresh=" + otherRaw);
+        var body = JsonSerializer.SerializeToNode(Request(source), new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+        body.Remove("refreshToken");
+        body["expectedSessionId"] = sessionId;
+
+        // When
+        var response = await client.PostAsJsonAsync("api/browser/account/shared-unlock/authorizations", body, Ct);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
     [Theory]
     [InlineData(1, false)]
     [InlineData(86400000, false)]

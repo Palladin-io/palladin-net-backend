@@ -2,6 +2,7 @@ namespace Palladin.Core.Security;
 
 public static class JwtClaimNames
 {
+    public const string BrowserSessionId = "browser_session_id";
     public const string OrganizationId = "org_id";
     public const string Permissions = "permissions";
     public const string AuthorizationVersion = "authz_ver";

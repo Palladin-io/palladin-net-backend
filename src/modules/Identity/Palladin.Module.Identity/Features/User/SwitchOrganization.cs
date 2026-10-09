@@ -26,11 +26,7 @@ internal sealed class SwitchOrganizationValidator : Validator<SwitchOrganization
 }
 
 [PublicAPI]
-internal sealed class SwitchOrganizationEndpoint(
-    IdentityDomainWriteContext domainWriteContext,
-    IAuthSessionIssuer sessionIssuer,
-    WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
-    IClock clock) : Endpoint<SwitchOrganizationRequest, AuthSessionResponse>
+internal sealed class SwitchOrganizationEndpoint(SwitchOrganizationOperation operation) : IdentityOperationEndpoint<SwitchOrganizationRequest, AuthSessionResponse>
 {
     public override void Configure()
     {
@@ -48,44 +44,7 @@ internal sealed class SwitchOrganizationEndpoint(
 
     public override async Task HandleAsync(SwitchOrganizationRequest req, CancellationToken ct)
     {
-        var userId = User.GetUserId();
-        if (userId is null)
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-
-        var member = await domainWriteContext.OrganizationMembers
-            .Include(m => m.User)
-            .Include(m => m.RoleAssignments)
-                .ThenInclude(assignment => assignment.Role)
-            .Include(m => m.Organization)
-            .FirstOrDefaultAsync(m => m.OrganizationId == req.OrganizationId && m.UserId == userId, ct);
-        if (member is null || member.Status != OrganizationMemberStatus.Active)
-        {
-            await Send.ForbiddenAsync(ct);
-            return;
-        }
-
-        var permissions = member.EffectivePermissions();
-        var now = clock.GetCurrentInstant();
-        await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
-        await waitlistDeveloperBenefitActivator.TryActivateAsync(member.User, now, ct);
-        var (accessToken, refreshToken) = sessionIssuer.Issue(
-            member.User,
-            member.Organization,
-            permissions,
-            member.AuthorizationVersion,
-            now);
-        await domainWriteContext.CommitAsync(transaction, ct);
-
-        await Send.OkAsync(new AuthSessionResponse(
-            accessToken,
-            refreshToken,
-            member.UserId,
-            member.User.IsOnboarded,
-            member.User.EmailVerified,
-            member.User.ActiveWaitlistDeveloperBenefitStartedAt(now),
-            member.User.ActiveWaitlistDeveloperBenefitEndsAt(now)), ct);
+        var result = await operation.ExecuteAsync(req, HttpContext, ct);
+        await SendResultAsync(result, ct);
     }
 }

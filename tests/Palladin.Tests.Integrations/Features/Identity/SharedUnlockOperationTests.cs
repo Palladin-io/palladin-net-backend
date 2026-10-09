@@ -28,6 +28,83 @@ namespace Palladin.Tests.Integrations.Features.Identity;
 public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
 {
     [Theory]
+    [InlineData("web-to-extension")]
+    [InlineData("extension-to-web")]
+    public async Task When_BrowserParticipatesInSharedUnlock_Then_OnlyExtensionReceivesRefreshJson(string direction)
+    {
+        // Given
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var request = Request(source, receiver, direction) with { WebOrigin = "https://panel.example.test" };
+        var (browser, sessionId) = await BrowserSessionClient.CreateAsync(apiFactory, source.User, source.RawToken);
+        SharedUnlockOperationResponse operation;
+        if (direction == "web-to-extension")
+        {
+            var payload = JsonSerializer.SerializeToNode(request, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+            payload.Remove("refreshToken");
+            payload["expectedSessionId"] = sessionId;
+            var offered = await browser.PostAsJsonAsync("api/browser/account/shared-unlock/operations", payload, Ct);
+            offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+            operation = (await offered.Content.ReadFromJsonAsync<SharedUnlockOperationResponse>(Ct))!;
+        }
+        else
+        {
+            var (offered, result) = await apiFactory.CreateAuthenticatedClient(source.User)
+                .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(request);
+            offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+            operation = result;
+        }
+        (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // When
+        if (direction == "web-to-extension")
+        {
+            var (response, result) = await CommitAsync(operation, receiver);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            result.Session.RefreshToken.ShouldNotBeNullOrEmpty();
+            response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+        }
+        else
+        {
+            using var client = apiFactory.CreateClient();
+            client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+            client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+            var signature = Base64Url.EncodeToString(Sign(Proof(operation), receiver, SharedUnlockProofPurpose.Commit));
+            var response = await client.PostAsJsonAsync($"api/browser/auth/shared-unlock/operations/{operation.Context.OperationId}/commit", new { signature }, Ct);
+
+            // Then
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+            result.RootElement.GetProperty("session").TryGetProperty("refreshToken", out _).ShouldBeFalse();
+            result.RootElement.GetProperty("session").GetProperty("sessionId").GetGuid().ShouldNotBe(Guid.Empty);
+            response.Headers.Contains("Set-Cookie").ShouldBeTrue();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task When_BrowserCommitHasStaleSessionExpectation_Then_NoCookieOverwrite(bool hasCookie)
+    {
+        var source = await SeedSourceAsync();
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var (offered, operation) = await apiFactory.CreateAuthenticatedClient(source.User)
+            .POSTAsync<CreateSharedUnlockOperationEndpoint, CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>(
+                Request(source, receiver, "extension-to-web") with { WebOrigin = "https://panel.example.test" });
+        offered.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var client = apiFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+        if (hasCookie) client.DefaultRequestHeaders.Add("Cookie", "__Host-palladin-refresh=" + Uri.EscapeDataString(source.RawToken));
+        var signature = Base64Url.EncodeToString(Sign(Proof(operation), receiver, SharedUnlockProofPurpose.Commit));
+        var response = await client.PostAsJsonAsync($"api/browser/auth/shared-unlock/operations/{operation.Context.OperationId}/commit",
+            new { signature, expectedSessionId = Guid.NewGuid() }, Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        response.Headers.Contains("Set-Cookie").ShouldBeFalse();
+    }
+
+    [Theory]
     [InlineData("web-to-extension", "http://192.168.1.20:5000", "http://panel.example.test:8080")]
     [InlineData("extension-to-web", "https://api.example.test", "http://[fd00::20]:8080")]
     public async Task When_AuthenticatedSourceUsesSelfHostedOrigins_Then_CommitPreservesExactBinding(string direction, string apiOrigin, string webOrigin)

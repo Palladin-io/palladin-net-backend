@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using Palladin.Core.Security;
@@ -182,6 +183,21 @@ public sealed class RegisterTests(ApiFactory apiFactory) : TestBase
             .FirstAsync(c => c.User.Email == email, TestContext.Current.CancellationToken);
         credential.AuthHash.ShouldNotBe(authHash);
         credential.ServerHashSalt.Length.ShouldBe(16);
+    }
+
+    [Fact]
+    public async Task When_BrowserRegisters_Then_ReturnsCookieAndNoRefreshJson()
+    {
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        using var client = apiFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+        var response = await client.PostAsJsonAsync("api/browser/auth/register", NewRequest($"browser-{Guid.NewGuid():N}@example.com"));
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Headers.Contains("Set-Cookie").ShouldBeTrue();
+        using var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.TryGetProperty("refreshToken", out _).ShouldBeFalse();
+        body.RootElement.GetProperty("sessionId").GetGuid().ShouldNotBe(Guid.Empty);
     }
 
     private static RegisterRequest NewRequest(

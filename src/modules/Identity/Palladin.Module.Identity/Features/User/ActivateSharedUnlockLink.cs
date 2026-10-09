@@ -1,3 +1,4 @@
+using Palladin.Module.Identity.Shared;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 using FluentValidation;
@@ -42,8 +43,7 @@ internal sealed class ActivateSharedUnlockLinkValidator : Validator<ActivateShar
 }
 
 [PublicAPI]
-internal sealed class ActivateSharedUnlockLinkEndpoint(IdentityDomainWriteContext context, IClock clock)
-    : Endpoint<ActivateSharedUnlockLinkRequest, SharedUnlockLinkResponse>
+internal sealed class ActivateSharedUnlockLinkEndpoint(ActivateSharedUnlockLinkOperation operation) : IdentityOperationEndpoint<ActivateSharedUnlockLinkRequest, SharedUnlockLinkResponse>
 {
     public override void Configure()
     {
@@ -56,76 +56,7 @@ internal sealed class ActivateSharedUnlockLinkEndpoint(IdentityDomainWriteContex
     public override async Task HandleAsync(ActivateSharedUnlockLinkRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
-        var userId = User.GetUserId();
-        var organizationId = User.GetOrganizationId();
-        var link = await context.SharedUnlockLinks.SingleOrDefaultAsync(
-            link => link.UserId == userId && link.Id == req.LinkId, ct);
-        if (link is null)
-        {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-
-        var hash = TokenService.HashToken(req.RefreshToken);
-        var session = await context.RefreshTokens.SingleOrDefaultAsync(token =>
-            token.UserId == userId && token.OrganizationId == organizationId && token.TokenHash == hash, ct);
-        if (session is null || !session.IsActive(clock.GetCurrentInstant()))
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-
-        var sessionId = session.SessionId ?? session.Id;
-        var authorization = await context.SharedUnlockAuthorizations.SingleOrDefaultAsync(
-            authorization => authorization.UserId == userId && authorization.SessionId == sessionId, ct);
-        var user = await context.Users.Include(user => user.TotpCredential)
-            .SingleAsync(user => user.Id == userId, ct);
-        var membership = await context.OrganizationMembers.SingleOrDefaultAsync(member =>
-            member.UserId == userId && member.OrganizationId == organizationId, ct);
-        var now = clock.GetCurrentInstant();
-        if (authorization is null || authorization.Id != req.AuthorizationId || membership is null
-            || membership.AuthorizationVersion != User.GetAuthorizationVersion()
-            || !authorization.SourceGeneration.AsSpan().SequenceEqual(req.SourceGeneration)
-            || !authorization.IsCurrent(user, session, membership, user.TotpCredential, now)
-            || user.SharedUnlockRevision != req.ExpectedPreferenceRevision
-            || link.Revision != req.ExpectedRevision || link.State == SharedUnlockLinkState.Revoked
-            || (authorization.LinkId is not null
-                && (authorization.LinkId != link.Id || authorization.LinkEpoch != link.Epoch))
-            || (link.State == SharedUnlockLinkState.Locked
-                && !link.TryActivateFromManualUnlock(req.ExpectedRevision, authorization.Sequence, now))
-            || !authorization.TryBind(link))
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        context.MarkPropertyAsUpdated(user, user => user.SharedUnlockSequence);
-        context.MarkPropertyAsUpdated(session, session => session.RevokedAt);
-        context.MarkPropertyAsUpdated(membership, member => member.Status);
-        context.MarkPropertyAsUpdated(authorization, authorization => authorization.Sequence);
-        context.MarkPropertyAsUpdated(link, link => link.Revision);
-        if (user.TotpCredential is { } factor)
-        {
-            context.MarkPropertyAsUpdated(factor, factor => factor.ConfigurationRevision);
-        }
-
-        try
-        {
-            await context.CommitAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        await Send.OkAsync(new SharedUnlockLinkResponse(link.Id, link.Revision, link.Epoch, "active",
-            link.LastInvalidationSequence, link.LastLogoutSequence), ct);
-    }
-
-    private async Task SendConflictAsync(CancellationToken ct)
-    {
-        AddError(ErrorResponses.General("shared-unlock-authorization-conflict"));
-        await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
+        var result = await operation.ExecuteAsync(req, HttpContext, ct);
+        await SendResultAsync(result, ct);
     }
 }

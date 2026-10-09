@@ -28,6 +28,10 @@ internal static class RateLimitingExtensions
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
                 var path = context.Request.Path;
+                if (path.StartsWithSegments("/api/browser", out var browserPath))
+                {
+                    path = new PathString("/api").Add(browserPath);
+                }
                 var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                 if (path.StartsWithSegments("/api/entry-shares"))
@@ -36,7 +40,8 @@ internal static class RateLimitingExtensions
                 }
 
                 // Auth is partitioned by IP: the caller is an anonymous browser with no API key yet.
-                if (path.StartsWithSegments("/api/auth/oauth") || path.StartsWithSegments("/api/auth/refresh"))
+                if (path.StartsWithSegments("/api/auth/oauth") || path.StartsWithSegments("/api/auth/refresh")
+                    || path.StartsWithSegments("/api/auth/migrate"))
                 {
                     return FixedWindow($"auth:{ip}", permitLimit: 30);
                 }

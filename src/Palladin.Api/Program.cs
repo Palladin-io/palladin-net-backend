@@ -251,6 +251,7 @@ app.UseMiddleware<FillTransportHeadersMiddleware>();
 app.UseMiddleware<AgentPairingRequestBufferingMiddleware>();
 
 app.UseCors();
+app.UseBrowserSessionBoundary(networkingOptions.AllowedOrigins);
 app.UseAuthentication();
 
 // Skip enforcement under the in-memory Testing host: the suite drives many auth/agent requests from a

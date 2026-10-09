@@ -30,6 +30,7 @@ internal static class InfrastructureModule
         services.AddIdentityPersistence(configuration);
         services.AddIdentityOAuth(configuration);
         services.AddIdentityJwt(configuration);
+        services.AddScoped<RefreshAccessTokenOperation>();
         services.AddIdentityWaitlist(configuration);
         services.AddIdentityPasswordAuth(configuration);
         services.AddIdentityTotp(configuration);

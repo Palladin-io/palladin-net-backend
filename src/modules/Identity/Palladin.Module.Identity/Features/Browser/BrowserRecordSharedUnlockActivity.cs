@@ -14,36 +14,35 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.SharedUnlock;
 
+using Palladin.Module.Identity.Infrastructure.BrowserSessions;
+
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
-public sealed record RecordSharedUnlockActivityRequest
+public sealed record BrowserRecordSharedUnlockActivityRequest
 {
-    public string RefreshToken { get; init; } = string.Empty;
+    public Guid ExpectedSessionId { get; init; }
+
     public Guid AuthorizationId { get; init; }
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))]
     public byte[] SourceGeneration { get; init; } = [];
     public long IdleDeadlineMs { get; init; }
-}
-
-[UsedImplicitly]
-internal sealed class RecordSharedUnlockActivityValidator : Validator<RecordSharedUnlockActivityRequest>
-{
-    public RecordSharedUnlockActivityValidator()
+    internal RecordSharedUnlockActivityRequest WithCookie(string token) => new()
     {
-        RuleFor(request => request.RefreshToken).NotEmpty().MaximumLength(1024);
-        RuleFor(request => request.AuthorizationId).NotEmpty();
-        RuleFor(request => request.SourceGeneration).Must(value => value is { Length: 32 });
-        RuleFor(request => request.IdleDeadlineMs).InclusiveBetween(1, Instant.MaxValue.ToUnixTimeMilliseconds());
-    }
+        RefreshToken = token,
+        AuthorizationId = AuthorizationId,
+        SourceGeneration = SourceGeneration,
+        IdleDeadlineMs = IdleDeadlineMs,
+    };
 }
 
 [PublicAPI]
-internal sealed class RecordSharedUnlockActivityEndpoint(RecordSharedUnlockActivityOperation operation) : IdentityOperationEndpoint<RecordSharedUnlockActivityRequest, AuthorizeSharedUnlockResponse>
+internal sealed class BrowserRecordSharedUnlockActivityEndpoint(RecordSharedUnlockActivityOperation operation, IdentityDomainWriteContext context)
+    : IdentityOperationEndpoint<BrowserRecordSharedUnlockActivityRequest, AuthorizeSharedUnlockResponse>
 {
     public override void Configure()
     {
-        Post("api/account/shared-unlock/authorizations/activity");
+        Post("api/browser/account/shared-unlock/authorizations/activity");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
         Tags("Identity/Account");
         Summary(summary =>
@@ -55,10 +54,22 @@ internal sealed class RecordSharedUnlockActivityEndpoint(RecordSharedUnlockActiv
         });
     }
 
-    public override async Task HandleAsync(RecordSharedUnlockActivityRequest req, CancellationToken ct)
+    public override async Task HandleAsync(BrowserRecordSharedUnlockActivityRequest req, CancellationToken ct)
     {
-        HttpContext.Response.Headers.CacheControl = "no-store";
-        var result = await operation.ExecuteAsync(req, HttpContext, ct);
-        await SendResultAsync(result, ct);
+        var raw = await BrowserOwnSession.ResolveAsync(HttpContext, req.ExpectedSessionId, context.RefreshTokens, ct);
+        if (raw is null)
+        {
+            await Send.UnauthorizedAsync(ct);
+            return;
+        }
+        var core = req.WithCookie(raw);
+        var validation = await new RecordSharedUnlockActivityValidator().ValidateAsync(core, ct);
+        if (!validation.IsValid)
+        {
+            ValidationFailures.AddRange(validation.Errors);
+            await Send.ErrorsAsync(400, ct);
+            return;
+        }
+        await SendResultAsync(await operation.ExecuteAsync(core, HttpContext, ct), ct);
     }
 }

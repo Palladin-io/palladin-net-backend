@@ -31,6 +31,12 @@ internal static class InfrastructureModule
         services.AddIdentityOAuth(configuration);
         services.AddIdentityJwt(configuration);
         services.AddScoped<RefreshAccessTokenOperation>();
+        services.AddScoped<CommitSharedUnlockOperationHandler>();
+        services.AddScoped<GetSharedUnlockSessionStateOperation>();
+        services.AddScoped<CreateSharedUnlockOperationHandler>();
+        services.AddScoped<RecordSharedUnlockActivityOperation>();
+        services.AddScoped<ActivateSharedUnlockLinkOperation>();
+        services.AddScoped<AuthorizeSharedUnlockOperation>();
         services.AddScoped<BrowserSessions.BrowserSessionResponseWriter>();
         services.AddScoped<AcceptOrganizationInvitationOperation>();
         services.AddScoped<SwitchOrganizationOperation>();

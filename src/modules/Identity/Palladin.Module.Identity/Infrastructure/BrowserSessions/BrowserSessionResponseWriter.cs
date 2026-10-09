@@ -16,6 +16,12 @@ internal sealed class BrowserSessionResponseWriter(IdentityDomainWriteContext co
         {
             return new(result.StatusCode, Error: result.Error, RetryAfterSeconds: result.RetryAfterSeconds);
         }
+        if (result.Body is CommitSharedUnlockOperationResponse commit)
+        {
+            var mapped = await MapAsync(IdentityOperationResult<AuthSessionResponse>.Ok(commit.Session), httpContext, ct);
+            return IdentityOperationResult<object>.Ok(new BrowserSharedUnlockCommitResponse(
+                (BrowserAuthSessionResponse)mapped.Body!, commit.AuthorizationId, commit.AuthorizationSequence, commit.Context));
+        }
         if (result.Body is LoginResponse { TotpRequired: true } challenge)
         {
             return IdentityOperationResult<object>.Ok(new { totpRequired = true, challengeToken = challenge.ChallengeToken });

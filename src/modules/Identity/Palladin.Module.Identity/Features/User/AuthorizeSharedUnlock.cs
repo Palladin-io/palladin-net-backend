@@ -1,3 +1,4 @@
+using Palladin.Module.Identity.Shared;
 using System.Globalization;
 using System.Text.Json.Serialization;
 using FastEndpoints;
@@ -62,10 +63,7 @@ internal sealed class AuthorizeSharedUnlockValidator : Validator<AuthorizeShared
 }
 
 [PublicAPI]
-internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext context,
-    IPasswordHasher passwordHasher, LoginRateLimiter rateLimiter, LoginThrottleService throttle,
-    IGuidProvider guidProvider, IClock clock)
-    : Endpoint<AuthorizeSharedUnlockRequest, AuthorizeSharedUnlockResponse>
+internal sealed class AuthorizeSharedUnlockEndpoint(AuthorizeSharedUnlockOperation operation) : IdentityOperationEndpoint<AuthorizeSharedUnlockRequest, AuthorizeSharedUnlockResponse>
 {
     public override void Configure()
     {
@@ -78,184 +76,7 @@ internal sealed class AuthorizeSharedUnlockEndpoint(IdentityDomainWriteContext c
     public override async Task HandleAsync(AuthorizeSharedUnlockRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
-        var userId = User.GetUserId();
-        var organizationId = User.GetOrganizationId();
-        var now = clock.GetCurrentInstant();
-        var hash = TokenService.HashToken(req.RefreshToken);
-        var session = await context.RefreshTokens.SingleOrDefaultAsync(token =>
-            token.UserId == userId && token.OrganizationId == organizationId && token.TokenHash == hash, ct);
-        if (session is null || !session.IsActive(now))
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-
-        var user = await context.Users.Include(user => user.PasswordCredential)
-            .Include(user => user.TotpCredential).SingleAsync(user => user.Id == userId, ct);
-        var membership = await context.OrganizationMembers.SingleOrDefaultAsync(member =>
-            member.UserId == userId && member.OrganizationId == organizationId, ct);
-        if (membership is null || membership.Status != OrganizationMemberStatus.Active
-            || membership.AuthorizationVersion != session.AuthorizationVersion
-            || membership.AuthorizationVersion != User.GetAuthorizationVersion())
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-
-        var sessionRevocation = await SharedUnlockSessionRevocation.LoadAsync(context, session, ct);
-        if (sessionRevocation.IsRevoked)
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-        sessionRevocation.Fence(context);
-
-        if (user.SharedUnlockRevision != req.ExpectedPreferenceRevision
-            || user.CredentialRevision != req.ExpectedCredentialRevision
-            || user.PrivateKeyWrapRevision != req.ExpectedPrivateKeyWrapRevision)
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        if (!user.IsOnboarded || user.SecurityVersion != IdentityKdfProfiles.CurrentSecurityVersion
-            || user.KdfProfileId != IdentityKdfProfiles.CurrentProfileId || user.PasswordCredential is null)
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-
-        if (!session.SatisfiesSecondFactor(user.TotpCredential, now))
-        {
-            AddError(ErrorResponses.General("shared-unlock-step-up-required"));
-            await Send.ErrorsAsync(StatusCodes.Status403Forbidden, ct);
-            return;
-        }
-
-        var idle = Instant.FromUnixTimeMilliseconds(req.IdleDeadlineMs);
-        var absolute = Instant.FromUnixTimeMilliseconds(req.AbsoluteDeadlineMs);
-        var offline = Instant.FromUnixTimeMilliseconds(req.OfflineDeadlineMs);
-        if (!SharedUnlockAuthorization.ValidDeadlines(idle, absolute, offline, Instant.MaxValue, now))
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        var sessionExpiry = Instant.FromUnixTimeMilliseconds(session.ExpiresAt.ToUnixTimeMilliseconds());
-        absolute = new[] { absolute, sessionExpiry }.Min();
-        idle = new[] { idle, absolute }.Min();
-        offline = new[] { offline, sessionExpiry }.Min();
-        if (!SharedUnlockAuthorization.ValidDeadlines(idle, absolute, offline, session.ExpiresAt, now))
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var permit = await rateLimiter.AcquireLoginAsync(user.Email, ip, now, ct);
-        if (!permit.IsAcquired)
-        {
-            await SendRateLimitedAsync(permit.RetryAfterSeconds, ct);
-            return;
-        }
-
-        var status = await throttle.GetStatusAsync(user.Email, now, ct);
-        if (status.IsLocked)
-        {
-            await SendRateLimitedAsync(status.RetryAfterSeconds, ct);
-            return;
-        }
-
-        bool verified;
-        try
-        {
-            verified = passwordHasher.Verify(req.AuthCredential,
-                user.PasswordCredential.AuthHash, user.PasswordCredential.ServerHashSalt);
-        }
-        finally
-        {
-            Array.Clear(req.AuthCredential);
-        }
-
-        if (!verified)
-        {
-            var failure = await throttle.RecordFailureAsync(user.Email, ip,
-                LoginFailureAttribution.Known(membership.OrganizationId, user.Id, LoginAttemptFactor.Password,
-                    user.PreferredLanguage.Code, user.EmailVerified), now, ct);
-            if (failure.IsLocked)
-            {
-                await SendRateLimitedAsync(failure.RetryAfterSeconds, ct);
-                return;
-            }
-
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-
-        var reset = await throttle.StageResetAsync(context, user.Email, now, ct);
-        if (reset.IsLocked)
-        {
-            await SendRateLimitedAsync(reset.RetryAfterSeconds, ct);
-            return;
-        }
-
-        if (!user.TryAdvanceSharedUnlockSequence())
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        var sessionId = session.SessionId ?? session.Id;
-        var authorization = sessionRevocation.Authorization;
-        if (authorization is null)
-        {
-            authorization = SharedUnlockAuthorization.Create(user.Id, sessionId);
-            context.Add(authorization);
-        }
-
-        authorization.AuthorizeManualUnlock(guidProvider.Generate(), user, session, req.SourceGeneration,
-            idle, absolute, offline, now);
-        context.MarkPropertyAsUpdated(session, session => session.RevokedAt);
-        context.MarkPropertyAsUpdated(membership, member => member.Status);
-        if (user.TotpCredential is { } factor)
-        {
-            context.MarkPropertyAsUpdated(factor, factor => factor.ConfigurationRevision);
-        }
-
-        if (!authorization.IsSessionCurrent(user, session, membership, user.TotpCredential, clock.GetCurrentInstant()))
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        try
-        {
-            await context.CommitAsync(ct);
-        }
-        catch (Exception exception) when (LoginProtectionConcurrency.IsAuthenticationFenceConflict(exception)
-            || exception is DbUpdateException { InnerException: PostgresException
-                { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "PK_SharedUnlockAuthorizations" } })
-        {
-            await SendConflictAsync(ct);
-            return;
-        }
-
-        await Send.OkAsync(new AuthorizeSharedUnlockResponse(authorization.Id, authorization.Sequence,
-            user.Id, authorization.OrganizationId, authorization.CredentialRevision,
-            authorization.PrivateKeyWrapRevision, authorization.AuthorizationVersion,
-            authorization.UnlockedAt.ToUnixTimeMilliseconds(), authorization.IdleDeadline.ToUnixTimeMilliseconds(),
-            authorization.AbsoluteDeadline.ToUnixTimeMilliseconds(), authorization.OfflineDeadline.ToUnixTimeMilliseconds()), ct);
-    }
-
-    private async Task SendConflictAsync(CancellationToken ct)
-    {
-        AddError(ErrorResponses.General("shared-unlock-authorization-conflict"));
-        await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
-    }
-
-    private async Task SendRateLimitedAsync(int seconds, CancellationToken ct)
-    {
-        HttpContext.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
-        await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+        var result = await operation.ExecuteAsync(req, HttpContext, ct);
+        await SendResultAsync(result, ct);
     }
 }

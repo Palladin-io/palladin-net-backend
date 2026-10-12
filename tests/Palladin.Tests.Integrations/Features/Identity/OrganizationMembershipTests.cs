@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Text.Json;
@@ -710,6 +711,30 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
         (await readContext.OrganizationMembers.AnyAsync(
             m => m.OrganizationId == organization.Id && m.UserId == invitedUser.Id)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_BrowserAcceptsAndSwitchesOrganization_Then_BothSessionsStayCookieOnly()
+    {
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var (invited, original, _) = await apiFactory.Services.SeedUserAsync();
+        await SetSeatLimitAsync(organization.Id, 2);
+        const string invitation = "synthetic-browser-invitation";
+        await SeedInvitationAsync(owner, organization, invited.Email, invitation);
+        using var client = apiFactory.CreateAuthenticatedClient(invited);
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+        foreach (var response in new[] {
+            await client.PostAsJsonAsync("api/browser/organization/invitations/accept", new { token = invitation }),
+            await client.PostAsJsonAsync("api/browser/auth/switch-organization", new { organizationId = original.Id }),
+        })
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            response.Headers.Contains("Set-Cookie").ShouldBeTrue();
+            using var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            body.RootElement.TryGetProperty("refreshToken", out _).ShouldBeFalse();
+            body.RootElement.GetProperty("sessionId").GetGuid().ShouldNotBe(Guid.Empty);
+        }
     }
 
     [Fact]

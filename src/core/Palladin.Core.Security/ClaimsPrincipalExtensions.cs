@@ -12,6 +12,12 @@ public static class ClaimsPrincipalExtensions
         return Guid.TryParse(raw, out var parsed) ? parsed : null;
     }
 
+    public static Guid? GetBrowserSessionId(this ClaimsPrincipal principal)
+    {
+        var raw = principal.FindFirst(JwtClaimNames.BrowserSessionId)?.Value;
+        return Guid.TryParse(raw, out var parsed) ? parsed : null;
+    }
+
     public static Guid? GetOrganizationId(this ClaimsPrincipal principal)
     {
         var raw = principal.FindFirst(JwtClaimNames.OrganizationId)?.Value;

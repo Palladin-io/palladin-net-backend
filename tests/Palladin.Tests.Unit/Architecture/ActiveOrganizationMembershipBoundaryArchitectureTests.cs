@@ -6,10 +6,13 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
 {
     private static readonly string[] ReviewedExemptEndpoints =
     [
+        "AcceptOrganizationInvitationBrowserSessionEndpoint",
         "AcceptOrganizationInvitationEndpoint",
+        "BrowserGetSharedUnlockSessionStateEndpoint",
         "ChangePasswordEndpoint",
         "ConfirmTotpEndpoint",
         "DisableTotpEndpoint",
+        "DiscardBrowserSessionEndpoint",
         "DisconnectSharedUnlockLinkEndpoint",
         "EnrollTotpEndpoint",
         "GetMemberDeltaEndpoint",
@@ -26,6 +29,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "RemovePushTokenEndpoint",
         "ResendVerificationEmailEndpoint",
         "SetupAccountEndpoint",
+        "SwitchOrganizationBrowserSessionEndpoint",
         "SwitchOrganizationEndpoint",
         "UpdateNotificationPreferencesEndpoint",
         "UpdateUserConsentEndpoint",

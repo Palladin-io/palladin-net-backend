@@ -81,6 +81,19 @@ internal sealed class TokenService(
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+    // Only called with the access token just produced by this module's issuer.
+    public string BindBrowserSession(string issuedAccessToken, Guid sessionId)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var issued = handler.ReadJwtToken(issuedAccessToken);
+        var credentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Value.Secret)), SecurityAlgorithms.HmacSha256);
+        var claims = issued.Claims.Where(claim => claim.Type != JwtClaimNames.BrowserSessionId)
+            .Append(new Claim(JwtClaimNames.BrowserSessionId, sessionId.ToString()));
+        return handler.WriteToken(new JwtSecurityToken(issued.Issuer, null, claims,
+            issued.ValidFrom, issued.ValidTo, credentials));
+    }
+
     public (string rawToken, string tokenHash) GenerateRefreshToken()
     {
         var randomBytes = RandomNumberGenerator.GetBytes(32);

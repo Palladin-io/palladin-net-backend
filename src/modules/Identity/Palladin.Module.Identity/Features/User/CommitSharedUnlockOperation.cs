@@ -39,9 +39,7 @@ internal sealed class CommitSharedUnlockOperationValidator : Validator<CommitSha
 }
 
 [PublicAPI]
-internal sealed class CommitSharedUnlockOperationEndpoint(IdentityDomainWriteContext context,
-    IAuthSessionIssuer sessionIssuer, IGuidProvider guidProvider, IClock clock, IOptionsMonitor<SharedUnlockOptions> options)
-    : Endpoint<CommitSharedUnlockOperationRequest, CommitSharedUnlockOperationResponse>
+internal sealed class CommitSharedUnlockOperationEndpoint(CommitSharedUnlockOperationHandler operation) : IdentityOperationEndpoint<CommitSharedUnlockOperationRequest, CommitSharedUnlockOperationResponse>
 {
     public override void Configure()
     {
@@ -60,61 +58,7 @@ internal sealed class CommitSharedUnlockOperationEndpoint(IdentityDomainWriteCon
     public override async Task HandleAsync(CommitSharedUnlockOperationRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
-        if (!options.CurrentValue.Enabled)
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
-            return;
-        }
-
-        var operation = await context.SharedUnlockOperations.SingleOrDefaultAsync(operation => operation.Id == req.OperationId, ct);
-        var now = clock.GetCurrentInstant();
-        if (operation is null || !SharedUnlockIdentityProof.Verify(SharedUnlockTranscript.Proof(operation),
-            SharedUnlockProofPurpose.Commit, req.Signature, now))
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-        var authority = await SharedUnlockOperationAuthority.LoadAsync(context, operation, now, ct);
-        if (authority is null || operation.State != SharedUnlockOperationState.Consumed)
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        var issued = sessionIssuer.IssueWithSession(authority.User, authority.TargetOrganization,
-            authority.TargetMember.EffectivePermissions(), authority.TargetMember.AuthorizationVersion,
-            clock.GetCurrentInstant(), authority.Source.SecondFactorRevision, authority.Source.SecondFactorVerifiedAt);
-        if (!operation.TryCommit(issued.Session.SessionId ?? issued.Session.Id, clock.GetCurrentInstant()))
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        var inherited = SharedUnlockAuthorization.Inherit(guidProvider.Generate(), issued.Session, authority.Source, operation);
-        context.Add(inherited);
-        authority.Fence(context);
-        if (!options.CurrentValue.Enabled)
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
-            return;
-        }
-        try
-        {
-            await context.CommitAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        await Send.OkAsync(new CommitSharedUnlockOperationResponse(new AuthSessionResponse(
-            issued.AccessToken, issued.RefreshToken, authority.User.Id, authority.User.IsOnboarded,
-            authority.User.EmailVerified, authority.User.ActiveWaitlistDeveloperBenefitStartedAt(now),
-            authority.User.ActiveWaitlistDeveloperBenefitEndsAt(now)), inherited.Id, inherited.Sequence,
-            SharedUnlockOperationResponse.From(operation, authority.KeyContext).Context), ct);
-    }
-
-    private async Task SendUnavailableAsync(CancellationToken ct)
-    {
-        AddError(ErrorResponses.General("shared-unlock-operation-unavailable"));
-        await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
+        var result = await operation.ExecuteAsync(req, HttpContext, ct);
+        await SendResultAsync(result, ct);
     }
 }

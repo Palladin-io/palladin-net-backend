@@ -7,6 +7,46 @@
 ## Business responsibility
 Owns user identity and authentication: email+password sign-up/sign-in (zero-knowledge, Variant A — the login password *is* the master password), OAuth sign-in, TOTP second factor, email verification, the double-opt-in waitlist and its one-time personal Developer benefit, JWT issuance/refresh, sessions, and the organization + user profile lifecycle. It is the system's source of truth for who a user is; every other module keeps a read-only replica fed from Identity events.
 
+### Browser sessions (CVT-198)
+
+The web panel uses separate `/api/browser/` endpoints. Existing `/api/auth/`
+and `/api/account/shared-unlock/` JSON contracts remain available to mobile,
+CLI and the extension. Shared domain operations preserve their existing proof,
+second-factor, expiry, rotation and revocation rules.
+
+Browser issuance (registration, password/TOTP, OAuth, organization switch,
+invitation acceptance and Shared Unlock commit) returns an access token and
+logical `sessionId`, never a refresh token. The raw refresh credential is only
+written as `__Host-palladin-refresh; HttpOnly; Secure; SameSite=Strict; Path=/`,
+without Domain. It expires with the authoritative refresh row. Refresh accepts
+`{}` or an `expectedSessionId` fence; seven-day rotation and 365-day lifetime
+remain unchanged. Cookie presence does not authenticate general JWT endpoints.
+
+Every browser request requires one exact configured `Origin` and
+`X-Palladin-Browser: 1` before endpoint binding or side effects. The guard and
+credentialed CORS share `Networking.AllowedOrigins`; wildcard, null and sibling
+origins are not accepted. Responses use `Cache-Control: no-store`. HTTPS is
+required locally too; serve the panel and API on the same site. Deploy the
+backward-compatible backend before the web cutover.
+
+`auth/migrate` alone accepts a legacy JSON refresh token. It rejects an existing
+cookie, forces rotation within the same logical lineage and revokes the old raw
+credential. The web removes legacy storage before this one-time exchange and
+never restores it after failure. `auth/logout` uses cookie authority without a
+JWT, optionally fenced by the expected logical session. A mismatched newer
+cookie gets 409 without mutation. `auth/discard` revokes only the lineage named
+by the issued JWT's signed `browser_session_id`, bound to its user and org; it
+never emits Set-Cookie, so late cleanup cannot delete a newer browser session.
+
+Browser Shared Unlock own-session adapters resolve the raw token internally from
+the cookie and require it to match the signed JWT, account, org and expected
+logical session ID. Web offers are web-to-extension only; web commits are
+extension-to-web only and compare the current cookie with the receiver's captured
+session. Both bind the web origin independently to the request Origin. The
+extension's native response still contains its own refresh token. Neither peer
+receives the web cookie or plaintext keys. Existing membership exceptions remain
+limited to account exit/switch/invitation and read-only session-state repair.
+
 ### Versioned password-only Identity KDF
 Security version 1 uses the immutable `identity-argon2id-password-v1` profile. The exact password UTF-8 bytes (no normalization, pre-hash or terminator) are passed to Argon2id 1.3 with 32,768 KiB, `t=2`, `p=1`, a random 16-byte per-account salt and a 32-byte output (`AccountRoot`). HKDF-SHA-256 uses the RFC 4122 network-order AccountId bytes as its extract salt and expands two independent 32-byte outputs with the exact UTF-8 labels `palladin/identity/password-v1/auth-credential` and `palladin/identity/password-v1/master-key`. Only `AuthCredential` crosses TLS; Identity re-hashes it with an independent server salt in `PasswordCredential`. AccountRoot, MK, plaintext private keys, VK and VDK are structurally absent from every backend DTO. The frozen cross-client vector is `tests/Fixtures/IdentityKdf/password-only-v1.json`.
 

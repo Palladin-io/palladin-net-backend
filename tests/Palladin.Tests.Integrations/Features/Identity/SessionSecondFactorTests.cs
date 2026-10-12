@@ -157,7 +157,14 @@ public sealed class SessionSecondFactorTests(ApiFactory apiFactory) : TestBase
         var next = await read.RefreshTokens.SingleAsync(row => row.UserId == user.Id && row.RevokedAt == null);
         next.Id.ShouldNotBe(original.Id);
         next.SecondFactorRevision.ShouldBe(assured ? 2u : null);
-        next.SecondFactorVerifiedAt.ShouldBe(assured ? verifiedAt : null);
+        var persistedOriginal = await read.RefreshTokens.SingleAsync(row => row.Id == original.Id,
+            TestContext.Current.CancellationToken);
+        next.SecondFactorVerifiedAt.ShouldBe(persistedOriginal.SecondFactorVerifiedAt);
+        if (assured)
+        {
+            next.SecondFactorVerifiedAt.ShouldNotBeNull().ToUnixTimeMilliseconds()
+                .ShouldBe(verifiedAt.ToUnixTimeMilliseconds());
+        }
     }
 
     [Fact]

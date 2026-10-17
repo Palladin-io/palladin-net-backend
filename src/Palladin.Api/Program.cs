@@ -190,17 +190,12 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddPalladinRateLimiter();
 
+networkingOptions.ValidateAllowedOrigins();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "http://localhost:5174",
-                "http://127.0.0.1:5174",
-                "https://stage.palladin.io",
-                "https://palladin.io")
+        policy.WithOrigins(networkingOptions.AllowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -216,8 +211,8 @@ if (trustForwardedHeaders)
     app.UseForwardedHeaders();
 }
 
-// HSTS + redirect keep credentials off plaintext transport; skipped only in Development and Testing (no TLS).
-var enforceHttps = !app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing");
+var enforceHttps = !networkingOptions.AllowInsecureHttp
+    && !app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing");
 if (enforceHttps)
 {
     // Behind a proxy without trusted-proxy config, rate-limiting collapses to one bucket and HTTPS redirect loops.
@@ -236,6 +231,7 @@ if (enforceHttps)
 
     app.UseHsts();
     app.UseHttpsRedirection();
+    app.UseMiddleware<RequireHttpsMiddleware>();
 }
 
 app.Use(async (context, next) =>
@@ -244,6 +240,10 @@ app.Use(async (context, next) =>
     headers["X-Content-Type-Options"] = "nosniff";
     headers["X-Frame-Options"] = "DENY";
     headers["Referrer-Policy"] = "no-referrer";
+    if (context.Request.Path.StartsWithSegments("/api/entry-shares"))
+    {
+        headers.CacheControl = "no-store";
+    }
     await next();
 });
 
@@ -251,6 +251,7 @@ app.UseMiddleware<FillTransportHeadersMiddleware>();
 app.UseMiddleware<AgentPairingRequestBufferingMiddleware>();
 
 app.UseCors();
+app.UseBrowserSessionBoundary(networkingOptions.AllowedOrigins);
 app.UseAuthentication();
 
 // Skip enforcement under the in-memory Testing host: the suite drives many auth/agent requests from a
@@ -261,6 +262,7 @@ if (!app.Environment.IsEnvironment("Testing"))
 }
 
 app.UseAuthorization();
+app.UseMiddleware<EntrySharingRequestLimitsMiddleware>();
 
 app.UseFastEndpoints(config =>
 {

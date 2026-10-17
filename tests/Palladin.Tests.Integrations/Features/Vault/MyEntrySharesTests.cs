@@ -1,0 +1,215 @@
+using System.Net;
+using FastEndpoints;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
+using Palladin.Core.Types;
+using Palladin.Module.Vault.Domain;
+using Palladin.Module.Vault.Features;
+using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Tests.Integrations.Shared;
+using Palladin.Tests.Integrations.Shared.Extensions;
+using Palladin.Tests.Integrations.Shared.Seeders;
+using Shouldly;
+
+namespace Palladin.Tests.Integrations.Features.Vault;
+
+[Collection<ApiFactoryCollection>]
+public sealed class MyEntrySharesTests(ApiFactory apiFactory) : TestBase
+{
+    [Fact]
+    public async Task When_ListingOwnShares_Then_PagesCrossVaultsWithoutForeignSharesOrDeliveryMaterial()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var first = await SeedShareAsync(organization.Id, user.Id);
+        var second = await SeedShareAsync(organization.Id, user.Id);
+        var colleague = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        await SeedShareAsync(organization.Id, colleague.Id);
+        var (other, foreignOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        await SeedShareAsync(foreignOrganization.Id, other.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var page = await client.GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(
+            new ListMyEntrySharesRequest { PageSize = 1 });
+        var next = await client.GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(
+            new ListMyEntrySharesRequest { PageSize = 1, Cursor = page.Result.NextCursor });
+
+        // Then
+        page.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        page.Response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        page.Result.Items.Count.ShouldBe(1);
+        page.Result.Items[0].Share.Status.ShouldBe("active");
+        page.Result.NextCursor.ShouldNotBeNull();
+        next.Result.Items.Count.ShouldBe(1);
+        next.Result.NextCursor.ShouldBeNull();
+        new[] { page.Result.Items[0].Share.ShareId, next.Result.Items[0].Share.ShareId }
+            .ShouldBe(new[] { first.Id, second.Id }, ignoreOrder: true);
+        var json = await page.Response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        json.ShouldNotContain("ciphertext", Case.Insensitive);
+        json.ShouldNotContain("accessToken", Case.Insensitive);
+        json.ShouldNotContain("nonce", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task When_MembershipIsRemoved_Then_OwnSharesAreNotVisible()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var share = await SeedShareAsync(organization.Id, user.Id);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        await db.VaultMembers.Where(x => x.OrganizationId == organization.Id && x.VaultId == share.VaultId && x.UserId == user.Id)
+            .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+
+        // When
+        var page = await apiFactory.CreateAuthenticatedClient(user)
+            .GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(new());
+
+        // Then
+        page.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        page.Result.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task When_PagingShares_Then_ActiveLinksComeFirstAndEachGroupIsNewestFirst()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var oldActive = await SeedShareAsync(organization.Id, user.Id, age: 60);
+        var newestRevoked = await SeedShareAsync(organization.Id, user.Id, revoked: true);
+        var newActive = await SeedShareAsync(organization.Id, user.Id, age: 10);
+        var tiedActive = await SeedShareAsync(organization.Id, user.Id, age: 10);
+        var oldRevoked = await SeedShareAsync(organization.Id, user.Id, age: 120, revoked: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var ids = new List<Guid>();
+        var states = new List<string>();
+        string? cursor = null;
+
+        // When
+        for (var pageNumber = 0; pageNumber < 5; pageNumber++)
+        {
+            var page = await client.GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(
+                new ListMyEntrySharesRequest { PageSize = 1, Cursor = cursor });
+            page.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            ids.Add(page.Result.Items.Single().Share.ShareId);
+            states.Add(page.Result.Items.Single().Share.Status);
+            cursor = page.Result.NextCursor;
+        }
+
+        // Then
+        ids.ShouldBe(new[] { newActive.Id, tiedActive.Id }.OrderDescending()
+            .Concat([oldActive.Id, newestRevoked.Id, oldRevoked.Id]));
+        states.ShouldBe(["active", "active", "active", "revoked", "revoked"]);
+        cursor.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("expired", "expired")]
+    [InlineData("authority", "revoked")]
+    [InlineData("missing-authority", "revoked")]
+    [InlineData("organization", "revoked")]
+    [InlineData("membership", "revoked")]
+    [InlineData("source", "revoked")]
+    [InlineData("suspended", "suspended")]
+    [InlineData("locked", "locked")]
+    [InlineData("consumed", "consumed")]
+    public async Task When_LifecycleRestrictsSharing_Then_StatusAndKeysetPartitionPreservePrecedence(string restriction, string expected)
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var control = await SeedShareAsync(organization.Id, user.Id, age: 60);
+        var restricted = await SeedShareAsync(organization.Id, user.Id);
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        var share = await db.EntryShares.SingleAsync(x => x.Id == restricted.Id, TestContext.Current.CancellationToken);
+        db.Entry(share).Property(x => x.MaximumReceipts).CurrentValue = 1;
+        db.Entry(share).Property(x => x.DeliveryCount).CurrentValue = 1;
+        if (restriction != "consumed")
+        {
+            db.Entry(share).Property(x => x.LockedUntil).CurrentValue = now + Duration.FromMinutes(10);
+        }
+        switch (restriction)
+        {
+            case "expired":
+                db.Entry(share).Property(x => x.ExpiresAt).CurrentValue = now;
+                break;
+            case "authority":
+                var authority = await db.EntryShareSenderAuthorities.SingleAsync(x => x.OrganizationId == organization.Id && x.UserId == user.Id, TestContext.Current.CancellationToken);
+                authority.RevokeThrough(1);
+                var activeControl = await db.EntryShares.SingleAsync(x => x.Id == control.Id, TestContext.Current.CancellationToken);
+                db.Entry(activeControl).Property(x => x.SenderAuthorizationVersion).CurrentValue = 2;
+                break;
+            case "missing-authority":
+                await db.EntryShareSenderAuthorities.Where(x => x.OrganizationId == organization.Id && x.UserId == user.Id).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+                break;
+            case "organization":
+                var lifecycle = VaultOrganizationLifecycle.Create(organization.Id);
+                lifecycle.DisableSharing();
+                db.VaultOrganizationLifecycles.Add(lifecycle);
+                break;
+            case "membership":
+                db.Entry(share).Property(x => x.SenderVaultMembershipAddedAt).CurrentValue = share.SenderVaultMembershipAddedAt - Duration.FromSeconds(1);
+                break;
+            case "source":
+            case "suspended":
+                var entry = await db.Entries.SingleAsync(x => x.OrganizationId == organization.Id && x.VaultId == share.VaultId && x.Id == share.EntryId, TestContext.Current.CancellationToken);
+                db.Entry(entry).Property(x => x.State).CurrentValue = EntryState.Archived;
+                if (restriction == "source")
+                {
+                    db.Entry(entry).Property(x => x.SharingRevokedThroughRevision).CurrentValue = 1;
+                }
+                break;
+        }
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var first = await client.GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(new() { PageSize = 1 });
+        var second = await client.GETAsync<ListMyEntrySharesEndpoint, ListMyEntrySharesRequest, ListMyEntrySharesResponse>(new() { PageSize = 1, Cursor = first.Result.NextCursor });
+
+        // Then
+        first.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        second.Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var items = first.Result.Items.Concat(second.Result.Items).ToList();
+        items.Single(x => x.Share.ShareId == restricted.Id).Share.Status.ShouldBe(expected);
+        if (restriction is "organization" or "missing-authority")
+        {
+            items.Select(x => x.Share.Status).ShouldBe(["revoked", "revoked"]);
+            items[0].Share.ShareId.ShouldBe(restricted.Id);
+        }
+        else
+        {
+            items[0].Share.ShareId.ShouldBe(control.Id);
+            items[0].Share.Status.ShouldBe("active");
+        }
+        second.Result.NextCursor.ShouldBeNull();
+    }
+
+    private async Task<EntryShare> SeedShareAsync(Guid organizationId, Guid userId, int age = 0, bool revoked = false)
+    {
+        var vault = await apiFactory.Services.SeedVaultAsync(organizationId, userId);
+        var entryId = await apiFactory.Services.SeedSyncEntryAsync(organizationId, vault.Id, userId);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        var membership = await db.VaultMembers.SingleAsync(x => x.OrganizationId == organizationId && x.VaultId == vault.Id && x.UserId == userId,
+            TestContext.Current.CancellationToken);
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var share = EntryShare.Create(Guid.NewGuid(), new EntryScope(organizationId, vault.Id, entryId), new EntryRevision(1),
+            userId, now - Duration.FromMinutes(age), now + Duration.FromHours(1), null, EntryShareRecipientMode.AnyoneWithLink, null,
+            EntryShareProtection.None, null, new byte[32], new byte[24], new byte[32], false, 1, membership.AddedAt);
+        if (!await db.EntryShareSenderAuthorities.AnyAsync(x => x.OrganizationId == organizationId && x.UserId == userId, TestContext.Current.CancellationToken))
+        {
+            db.EntryShareSenderAuthorities.Add(EntryShareSenderAuthority.Create(organizationId, userId));
+        }
+        if (revoked)
+        {
+            share.Revoke(EntryShareActivityKind.RevokedBySender, now);
+        }
+        db.EntryShares.Add(share);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return share;
+    }
+}

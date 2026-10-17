@@ -35,7 +35,9 @@ internal sealed class OnEntryUpsertedAudit(
                 Metadata: new Dictionary<string, string> { ["revision"] = msg.Revision.ToString() })
             : new AppendAuditLogCommand(
                 OrganizationId: msg.OrganizationId,
-                EventType: AuditEventType.EntryUpdated,
+                EventType: msg.Operation == EntryOperation.Deleted
+                    ? AuditEventType.EntryDeleted
+                    : AuditEventType.EntryUpdated,
                 ActorType: AuditActorType.User, Result: AuditResult.Succeeded,
                 OccurredAt: msg.UpdatedAt,
                 UserId: msg.UserId, AgentId: null, VaultId: msg.VaultId, EntryId: msg.EntryId,

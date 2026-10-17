@@ -10,6 +10,7 @@ internal sealed class VaultOrganizationLifecycleConfiguration
     public void Configure(EntityTypeBuilder<VaultOrganizationLifecycle> builder)
     {
         builder.HasKey(x => x.OrganizationId);
+        builder.Property(x => x.SharingDisabled);
         builder.Property(x => x.MutationVersion)
             .HasConversion(x => (decimal)x, x => (ulong)x)
             .HasPrecision(20, 0)

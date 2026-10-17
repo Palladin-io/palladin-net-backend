@@ -7,6 +7,46 @@
 ## Business responsibility
 Owns user identity and authentication: email+password sign-up/sign-in (zero-knowledge, Variant A — the login password *is* the master password), OAuth sign-in, TOTP second factor, email verification, the double-opt-in waitlist and its one-time personal Developer benefit, JWT issuance/refresh, sessions, and the organization + user profile lifecycle. It is the system's source of truth for who a user is; every other module keeps a read-only replica fed from Identity events.
 
+### Browser sessions (CVT-198)
+
+The web panel uses separate `/api/browser/` endpoints. Existing `/api/auth/`
+and `/api/account/shared-unlock/` JSON contracts remain available to mobile,
+CLI and the extension. Shared domain operations preserve their existing proof,
+second-factor, expiry, rotation and revocation rules.
+
+Browser issuance (registration, password/TOTP, OAuth, organization switch,
+invitation acceptance and Shared Unlock commit) returns an access token and
+logical `sessionId`, never a refresh token. The raw refresh credential is only
+written as `__Host-palladin-refresh; HttpOnly; Secure; SameSite=Strict; Path=/`,
+without Domain. It expires with the authoritative refresh row. Refresh accepts
+`{}` or an `expectedSessionId` fence; seven-day rotation and 365-day lifetime
+remain unchanged. Cookie presence does not authenticate general JWT endpoints.
+
+Every browser request requires one exact configured `Origin` and
+`X-Palladin-Browser: 1` before endpoint binding or side effects. The guard and
+credentialed CORS share `Networking.AllowedOrigins`; wildcard, null and sibling
+origins are not accepted. Responses use `Cache-Control: no-store`. HTTPS is
+required locally too; serve the panel and API on the same site. Deploy the
+backward-compatible backend before the web cutover.
+
+`auth/migrate` alone accepts a legacy JSON refresh token. It rejects an existing
+cookie, forces rotation within the same logical lineage and revokes the old raw
+credential. The web removes legacy storage before this one-time exchange and
+never restores it after failure. `auth/logout` uses cookie authority without a
+JWT, optionally fenced by the expected logical session. A mismatched newer
+cookie gets 409 without mutation. `auth/discard` revokes only the lineage named
+by the issued JWT's signed `browser_session_id`, bound to its user and org; it
+never emits Set-Cookie, so late cleanup cannot delete a newer browser session.
+
+Browser Shared Unlock own-session adapters resolve the raw token internally from
+the cookie and require it to match the signed JWT, account, org and expected
+logical session ID. Web offers are web-to-extension only; web commits are
+extension-to-web only and compare the current cookie with the receiver's captured
+session. Both bind the web origin independently to the request Origin. The
+extension's native response still contains its own refresh token. Neither peer
+receives the web cookie or plaintext keys. Existing membership exceptions remain
+limited to account exit/switch/invitation and read-only session-state repair.
+
 ### Versioned password-only Identity KDF
 Security version 1 uses the immutable `identity-argon2id-password-v1` profile. The exact password UTF-8 bytes (no normalization, pre-hash or terminator) are passed to Argon2id 1.3 with 32,768 KiB, `t=2`, `p=1`, a random 16-byte per-account salt and a 32-byte output (`AccountRoot`). HKDF-SHA-256 uses the RFC 4122 network-order AccountId bytes as its extract salt and expands two independent 32-byte outputs with the exact UTF-8 labels `palladin/identity/password-v1/auth-credential` and `palladin/identity/password-v1/master-key`. Only `AuthCredential` crosses TLS; Identity re-hashes it with an independent server salt in `PasswordCredential`. AccountRoot, MK, plaintext private keys, VK and VDK are structurally absent from every backend DTO. The frozen cross-client vector is `tests/Fixtures/IdentityKdf/password-only-v1.json`.
 
@@ -103,6 +143,41 @@ EF Core + Postgres, MassTransit publish, custom JWT (`TokenService`), Google OAu
 - Existing accounts are all OAuth, so the `AddEmailPasswordAuth` migration backfills `EmailVerified = true`; the OAuth sign-in path sets it true going forward.
 - A user can belong to multiple organizations, but each JWT and refresh-token lineage carries exactly one `org_id`. JWT authentication validates `(sub, org_id, authz_ver)` against the current `OrganizationMember` on every request. A normal role-assignment or effective-permission change increments `AuthorizationVersion` and revokes all unrevoked refresh tokens for that membership in the same Identity commit, so old access and refresh tokens stop working immediately. A no-op does not invalidate sessions. A staged membership-removal row deliberately remains authorization-current for reads until its Vault removal workflow completes; every unsafe HTTP verb carrying the complete user-JWT claim set requires an `Active` membership by default. Only explicitly reviewed account/exit operations and the read-only Member snapshot/delta and GlobalSearch POSTs opt out through `AllowNonActiveOrganizationMembershipMetadata` in the endpoint's `Configure()` method. Login, TOTP completion, OAuth, refresh and organization switch never issue a session for a non-active membership.
 - **Current fail-closed `GrantManage` stage:** Identity and Vault do not yet have the durable role-change operation, staged `VaultReasonRecipientSet` wire/client material or `CutoverPending` protocol required for an honest cross-module recipient cutover. Therefore any role definition or member-role replacement that would change a member's effective `GrantManage` eligibility returns `409` with `organization-role-grant-manage-cutover-unavailable` before any role, version or refresh-token mutation. A role containing `GrantManage` is not invitation-assignable, and acceptance revalidates the current role and returns the same `409` with zero invitation or membership mutation if the role would grant it. This is an intentional safe restriction, not the final `202 + operationId` saga described by the target PRD; it must not be relaxed to a synchronous role write.
+
+### Individual Entry sharing revocation
+
+Before member removal or an effective loss of `VaultManage`, Identity sends the
+Vault-owned `RevokeMemberEntrySharingCommand` and waits for
+`MemberEntrySharingRevoked`. Both member-role replacement and custom-role
+definition updates calculate the effective permission union, so losing an
+unrelated permission or retaining `VaultManage` through another role does not
+revoke shares. The command binds the organization, Member and pre-change
+authorization version. Identity accepts only an acknowledgement for that scope
+whose committed revocation floor covers the requested version.
+
+The request runs before the Identity domain mutation/commit, with no open
+database transaction across the broker. Existing Organization membership and
+Member authorization concurrency stamps still arbitrate racing Identity writes.
+Vault serializes the revocation with recipient delivery through its own local
+optimistic authority fence. An acknowledgement timeout or fault returns a
+retryable conflict and leaves Identity roles, authorization version and removal
+status unchanged. Timeout defaults to ten seconds, configured and validated at
+`Modules:Identity:EntrySharingRevocation:RequestTimeoutSeconds` (1–60).
+
+If Vault committed but its acknowledgement was lost, or the later Identity commit
+loses a race, old sharing authority remains revoked. There is no unsafe rollback
+or automatic resurrection. Retrying the original authorized Identity operation
+is idempotent at the Vault fence and can finish the transition. Restoring sharing
+permission later permits creation under the new authorization version, not use
+of the old links. An abandoned failed transition can leave that old generation
+unable to create shares until a subsequent authorized version change; callers
+must not present the failed operation as a completed permission change.
+
+Tests cover all three access-loss paths over HTTP, preserved sharing after an
+unrelated permission change, regained authority without old-link resurrection,
+and injected lost acknowledgements both before and after the real Vault consumer
+commits. No account/organization deletion endpoint is introduced by this work;
+future access-losing lifecycle paths must use the same pre-commit boundary.
 
 ### Candidate shared-unlock receiver proof
 
@@ -267,6 +342,15 @@ X25519 offers and receiver Ed25519 public key. The browser/configuration is the
 independent authority for extension ID, origins, document and generation; request
 shape checks on Identity do not attest browser identity. Owner-approved same-ID
 extension substitution/full-profile compromise remains outside this boundary.
+
+Origin syntax accepts canonical HTTPS and HTTP origins, including self-hosted LAN,
+IPv6 and public hosts. Identity never fetches these addresses. HTTP consent is
+an explicit setting for the exact API/panel pair in the extension-owned UI; the
+browser adapter and crypto transport policy enforce it before handoff. Accepting
+an origin string here is not transport consent or proof of browser identity.
+Paths, credentials, queries, fragments and other schemes remain invalid.
+Deployment CORS/HTTPS settings and the staging configuration prerequisite are
+documented in [self-hosted browser origins](../../../docs/architecture/self-hosted-browser-origins.md).
 
 - `POST api/account/shared-unlock/operations` requires source JWT, its own current
   refresh token, bound authorization nonce/link epoch/preference revision, explicit

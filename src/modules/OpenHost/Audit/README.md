@@ -15,6 +15,7 @@ Audit does NOT listen to `Vault*`/`Agent*`/`Identity*` events. Each owning modul
 | Vault | `On{Vault,Entry}Upserted{,Audit}`, `On{Vault,Entry}Deleted…Audit`, `OnVaultExportedAudit`, `OnGrant{Created,Requested,Approved,Denied,Revoked,Consumed,Expired}Audit`, `OnCredentialAccessed{,Denied}Audit` | `vault.*`, `entry.*`, `grant.*`, `credential.*` |
 | Agents | `OnAgentUpsertedAudit` (pending→`agent.enrolled`), `OnAgent{Deactivated,Reactivated,Deleted}Audit`, `OnApiKey{Created,Activated,Deleted,Revoked}Audit` | `agent.*`, `apikey.*` |
 | Identity | `OnLoginAttemptFailedAudit`, `OnOrganization{Created,Updated}Audit`, `OnUserSignedUpAudit`, `OnAccount{SetupCompleted,RecoveryCompleted}Audit` | `auth.login-failed`, `org.*`, `user.*`, `account.*` |
+| Vault sharing | `OnEntryShareActivityAudit` | `entry-share.created`, `.delivered`, `.confirmed`, `.protection-changed`, `.expired`, `.revoked`, `.ended`, `.source-access-removed` |
 
 Vault's entry / credential-denied events carry no `OrganizationId`; that owning trigger resolves it from the Vault read-model before publishing.
 
@@ -42,3 +43,24 @@ EF Core + Postgres, MassTransit, **Hangfire** (export job), **S3 via `ICdnServic
 - CSV export uses `AsNoTracking` projection and keyset pages of 500 rows; only the current page is materialized. The tracked export job is independent of row paging, so EF tracking cannot retain the full result set.
 - The canonical opaque cutover truncates legacy audit rows and export-job references, then the startup cutover purges prior external CSV objects before marking completion. This intentionally destructive migration has no downgrade path. Normal retention operates only on post-cutover opaque records and exports.
 - One polymorphic command (`EventType` + `Metadata`) covers every event type — Open-Closed. Metadata is restricted to non-sensitive structural facts.
+
+## Explicit occurrence identity and guest sharing
+
+`HasExplicitOccurrenceId` distinguishes producer-supplied occurrence IDs from the
+legacy natural-key path. Explicit IDs use the existing row PK for uniqueness;
+the timestamp-based unique index applies only to rows without an explicit ID.
+The incremental `AddExplicitAuditOccurrenceIdentity` migration keeps historical
+rows unchanged and adds the discriminator plus filtered index. A PostgreSQL test
+reproduced the former unique violation for two legitimate receipts at the same
+timestamp before the repair. Independent same-time occurrences now survive;
+retries deduplicate, and natural-key producers retain their existing semantics.
+Append uses one domain write context for idempotency lookup and insertion.
+
+Vault derives a stable UUIDv8 occurrence from the domain-separated SHA-256 digest
+of the share ID and monotonic sequence, not from time or a fresh random ID.
+Sharing metadata contains only `shareId` and `sequence`; subject scope occupies
+the existing opaque columns. Delivery, confirmation and recipient termination
+use the explicit `ExternalRecipient` actor without a User ID, name, address or IP.
+Sender operations use the sender's User ID; expiry and source access removal use
+System. Client display/export support for the new event and actor values is a
+coordinated release gate, not yet accepted by backend tests.

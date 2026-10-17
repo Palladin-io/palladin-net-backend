@@ -3,6 +3,7 @@
 ASPNETCORE_ENVIRONMENT
 AllowedHosts
 Networking__TrustForwardedHeaders
+Networking__AllowedOrigins__0
 Networking__KnownNetworks__0
 Hangfire__ConnectionString
 Hangfire__DashboardLogin

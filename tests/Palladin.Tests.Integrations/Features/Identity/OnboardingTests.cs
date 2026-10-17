@@ -80,7 +80,7 @@ public sealed class OnboardingTests(ApiFactory apiFactory) : TestBase
         await new OnEntryCreatedOnboarding(endpoint).Consume(
             apiFactory.MockConsumeContext(
                 new EntryUpsertedEvent(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), creator,
-                    EntityChange.Created, 1, apiFactory.FakeClock.GetCurrentInstant())));
+                    EntityChange.Created, EntryOperation.Created, 1, apiFactory.FakeClock.GetCurrentInstant())));
 
         // Then
         var cmd = get().ShouldNotBeNull();
@@ -182,7 +182,7 @@ public sealed class OnboardingTests(ApiFactory apiFactory) : TestBase
         await new OnEntryCreatedOnboarding(endpoint).Consume(
             apiFactory.MockConsumeContext(
                 new EntryUpsertedEvent(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-                    EntityChange.Updated, 2, apiFactory.FakeClock.GetCurrentInstant())));
+                    EntityChange.Updated, EntryOperation.Updated, 2, apiFactory.FakeClock.GetCurrentInstant())));
 
         // Then
         get().ShouldBeNull();

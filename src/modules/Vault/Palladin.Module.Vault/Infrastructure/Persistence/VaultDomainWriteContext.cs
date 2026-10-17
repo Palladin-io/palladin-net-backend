@@ -22,6 +22,11 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<EntryCreationChallenge> EntryCreationChallenges => Track<EntryCreationChallenge>();
     public IQueryable<MemberKeyDirectoryEntry> MemberKeyDirectory => Track<MemberKeyDirectoryEntry>();
     public IQueryable<VaultEntry> Entries => Track<VaultEntry>();
+    public IQueryable<EntryShare> EntryShares => Track<EntryShare>();
+    public IQueryable<EntryShareSenderAuthority> EntryShareSenderAuthorities => Track<EntryShareSenderAuthority>();
+    public IQueryable<EntryShareCreationChallenge> EntryShareCreationChallenges => Track<EntryShareCreationChallenge>();
+    public IQueryable<EntryShareSession> EntryShareSessions => Track<EntryShareSession>();
+    public IQueryable<EntryShareActivity> EntryShareActivities => Track<EntryShareActivity>();
     public IQueryable<VaultEntryKey> EntryKeys => Track<VaultEntryKey>();
     public IQueryable<VaultEntryVersion> EntryVersions => Track<VaultEntryVersion>();
     public IQueryable<AgentVaultDiscoveryEnvelope> AgentVaultDiscoveryEnvelopes => Track<AgentVaultDiscoveryEnvelope>();
@@ -38,6 +43,19 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<EncryptedPresentationAsset> EncryptedPresentationAssets => Track<EncryptedPresentationAsset>();
     public IQueryable<VaultPresentationAssetCutoverState> VaultPresentationAssetCutoverStates =>
         Track<VaultPresentationAssetCutoverState>();
+
+    internal void StageEntryShareActivities(EntryShare share) =>
+        AddRange(share.FetchUnstagedActivities());
+
+    protected override Task PrepareEventsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var share in writeContext.ChangeTracker.Entries<EntryShare>().Select(x => x.Entity).ToArray())
+        {
+            StageEntryShareActivities(share);
+        }
+
+        return Task.CompletedTask;
+    }
 
     public IQueryable<Agent> LockAgent(Guid organizationId, Guid agentId) =>
         FromSqlInterpolated<Agent>(

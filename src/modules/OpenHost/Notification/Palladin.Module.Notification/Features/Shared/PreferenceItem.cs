@@ -20,6 +20,7 @@ internal static class PreferenceItemFactory
     {
         return Enum.GetValues<NotificationType>()
             .Where(NotificationDefaults.IsUserFacing)
+            .Where(type => type != NotificationType.EntryShareReceived)
             .OrderBy(t => (int)t)
             .Select(type =>
             {

@@ -9,6 +9,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Palladin.Module.Identity.Infrastructure.Sharing;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -28,6 +29,7 @@ internal sealed class RemoveOrganizationMemberValidator : Validator<RemoveOrgani
 internal sealed class RemoveOrganizationMemberEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,
+    EntrySharingRevocation sharingRevocation,
     IClock clock) : Endpoint<RemoveOrganizationMemberRequest>
 {
     public override void Configure()
@@ -97,6 +99,8 @@ internal sealed class RemoveOrganizationMemberEndpoint(
 
 
         var now = clock.GetCurrentInstant();
+        await sharingRevocation.RevokeMemberAsync(
+            organizationId.Value, member.UserId, member.AuthorizationVersion, now, ct);
         member.RequestRemoval(guidProvider.Generate(), removedBy.Value, now);
         await domainWriteContext.CommitAsync(ct);
 

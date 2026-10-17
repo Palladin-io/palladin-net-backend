@@ -17,12 +17,8 @@ internal sealed class AppendAuditLogConsumerDefinition : ConsumerDefinition<Appe
     public AppendAuditLogConsumerDefinition() => EndpointName = AuditEndpoints.General;
 }
 
-// Audit's ONLY inbound consumer (OpenHost): appends one opaque row. It resolves nothing — the
-// publishing module supplies tenant/subject ids and permitted attribution. Idempotent on the natural key so a MassTransit redelivery
-// does not duplicate the row; the append-only DB constraint is the safety net for a true race.
 [UsedImplicitly]
 internal sealed class AppendAuditLogConsumer(
-    AuditDomainReadContext domainReadContext,
     AuditDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider,
     IClock clock) : IConsumer<AppendAuditLogCommand>
@@ -33,9 +29,9 @@ internal sealed class AppendAuditLogConsumer(
         var ct = context.CancellationToken;
 
         var alreadyLogged = msg.IdempotencyKey is { } idempotencyKey
-            ? await domainReadContext.AuditLogEntries.AnyAsync(e => e.Id == idempotencyKey, ct)
-            : await domainReadContext.AuditLogEntries.AnyAsync(
-                e => e.OrganizationId == msg.OrganizationId
+            ? await domainWriteContext.AuditLogEntries.AnyAsync(e => e.Id == idempotencyKey, ct)
+            : await domainWriteContext.AuditLogEntries.AnyAsync(
+                e => !e.HasExplicitOccurrenceId && e.OrganizationId == msg.OrganizationId
                      && e.EventType == msg.EventType
                      && e.VaultId == msg.VaultId
                      && e.AgentId == msg.AgentId
@@ -62,7 +58,8 @@ internal sealed class AppendAuditLogConsumer(
             msg.AgentName,
             msg.ActorName,
             msg.IpAddress,
-            msg.Metadata));
+            msg.Metadata,
+            hasExplicitOccurrenceId: msg.IdempotencyKey.HasValue));
 
         await domainWriteContext.CommitAsync(ct);
     }

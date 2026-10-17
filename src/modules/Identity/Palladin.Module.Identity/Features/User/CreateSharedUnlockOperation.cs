@@ -99,14 +99,12 @@ internal sealed class CreateSharedUnlockOperationValidator : Validator<CreateSha
     }
 
     private static bool IsOrigin(string value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
-        && (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.Host is "localhost" or "127.0.0.1" or "[::1]"))
+        && uri.Scheme is "https" or "http"
         && uri.UserInfo.Length == 0 && uri.GetLeftPart(UriPartial.Authority) == value;
 }
 
 [PublicAPI]
-internal sealed class CreateSharedUnlockOperationEndpoint(IdentityDomainWriteContext context,
-    IGuidProvider guidProvider, IClock clock, IOptionsMonitor<SharedUnlockOptions> options)
-    : Endpoint<CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>
+internal sealed class CreateSharedUnlockOperationEndpoint(CreateSharedUnlockOperationHandler operation) : IdentityOperationEndpoint<CreateSharedUnlockOperationRequest, SharedUnlockOperationResponse>
 {
     public override void Configure()
     {
@@ -119,76 +117,7 @@ internal sealed class CreateSharedUnlockOperationEndpoint(IdentityDomainWriteCon
     public override async Task HandleAsync(CreateSharedUnlockOperationRequest req, CancellationToken ct)
     {
         HttpContext.Response.Headers.CacheControl = "no-store";
-        if (!options.CurrentValue.Enabled)
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
-            return;
-        }
-
-        var userId = User.GetUserId();
-        var organizationId = User.GetOrganizationId();
-        var hash = TokenService.HashToken(req.RefreshToken);
-        var session = await context.RefreshTokens.SingleOrDefaultAsync(token =>
-            token.UserId == userId && token.OrganizationId == organizationId && token.TokenHash == hash, ct);
-        if (session is null)
-        {
-            await Send.UnauthorizedAsync(ct);
-            return;
-        }
-        var direction = req.Direction == "web-to-extension"
-            ? SharedUnlockDirection.WebToExtension : SharedUnlockDirection.ExtensionToWeb;
-        var now = clock.GetCurrentInstant();
-        var authority = await SharedUnlockOperationAuthority.LoadAsync(context, session, req.AuthorizationId,
-            req.RecipientOrganizationId, req.LinkId, req.LinkEpoch, req.ExpectedPreferenceRevision,
-            direction == SharedUnlockDirection.WebToExtension ? req.WebGeneration : req.ExtensionGeneration, now, ct);
-        if (authority is null || authority.SourceMember.AuthorizationVersion != User.GetAuthorizationVersion())
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        var idleDeadline = Instant.FromUnixTimeMilliseconds(req.IdleDeadlineMs);
-        var absoluteDeadline = Instant.FromUnixTimeMilliseconds(req.AbsoluteDeadlineMs);
-        var offlineDeadline = Instant.FromUnixTimeMilliseconds(req.OfflineDeadlineMs);
-        if (idleDeadline <= now || absoluteDeadline <= now || offlineDeadline <= now)
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        var operation = SharedUnlockOperation.Create(guidProvider.Generate(), authority.User, authority.Source,
-            session, authority.SourceOrganization, authority.TargetOrganization, authority.TargetMember, authority.Link,
-            new SharedUnlockChannel(direction, req.ApiOrigin, req.WebOrigin, req.ExtensionId, req.DocumentBinding,
-                req.WebGeneration, req.ExtensionGeneration, req.SourcePublicKey, req.RecipientPublicKey,
-                req.RecipientProofPublicKey), SharedUnlockKeyContextDigest.Hash(authority.KeyContext),
-            SharedUnlockTranscript.Challenge(), idleDeadline, absoluteDeadline, offlineDeadline,
-            Instant.FromUnixTimeMilliseconds(now.ToUnixTimeMilliseconds()));
-        operation.BindTranscriptHash(SharedUnlockTranscript.Hash(operation));
-        context.Add(operation);
-        authority.Fence(context);
-        if (clock.GetCurrentInstant() >= operation.ExpiresAt)
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        if (!options.CurrentValue.Enabled)
-        {
-            await Send.StatusCodeAsync(StatusCodes.Status503ServiceUnavailable, ct);
-            return;
-        }
-        try
-        {
-            await context.CommitAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            await SendUnavailableAsync(ct);
-            return;
-        }
-        await Send.OkAsync(SharedUnlockOperationResponse.From(operation, authority.KeyContext), ct);
-    }
-
-    private async Task SendUnavailableAsync(CancellationToken ct)
-    {
-        AddError(ErrorResponses.General("shared-unlock-operation-unavailable"));
-        await Send.ErrorsAsync(StatusCodes.Status409Conflict, ct);
+        var result = await operation.ExecuteAsync(req, HttpContext, ct);
+        await SendResultAsync(result, ct);
     }
 }

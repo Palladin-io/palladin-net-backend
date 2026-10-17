@@ -17,15 +17,22 @@ regexes = [
 ]
 
 [[allowlists]]
-description = "Deterministic SharedUnlock vectors; see tests/Fixtures/SharedUnlock/PROVENANCE.md"
-condition = "AND"
+description = "Frozen public SharedUnlock derivedKey fixture values; see tests/Fixtures/SharedUnlock/PROVENANCE.md"
 targetRules = ["generic-api-key"]
+condition = "AND"
 regexTarget = "secret"
-paths = [
-  '''^tests/Fixtures/SharedUnlock/(transport|session-api)-v1\.json$''',
-]
+paths = ['''^tests/Fixtures/SharedUnlock/transport-v1\.json$''']
 regexes = [
-  '''^9FfyDALwGrZQqN3mlVD4Jo2qPRDdk8qC2RIiWS3c8Io$''',
-  '''^x4puAvksU7wwTMOo8n5\-OrMZUlXYA5dwaWNhqd7ovX0$''',
   '''^xuPH9ggKBiyRGfLCU5iV_kBLBZwB0eoD3csScCd7fBQ$''',
+  '''^9FfyDALwGrZQqN3mlVD4Jo2qPRDdk8qC2RIiWS3c8Io$''',
+]
+
+[[allowlists]]
+description = "Frozen public SharedUnlock keyContextDigest fixture values; see tests/Fixtures/SharedUnlock/PROVENANCE.md"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^tests/Fixtures/SharedUnlock/session-api-v1\.json$''']
+regexes = [
+  '''^x4puAvksU7wwTMOo8n5-OrMZUlXYA5dwaWNhqd7ovX0$''',
 ]

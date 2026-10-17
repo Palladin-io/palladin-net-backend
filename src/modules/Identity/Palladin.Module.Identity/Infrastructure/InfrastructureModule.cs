@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Hangfire;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.SharedUnlock;
+using Palladin.Module.Identity.Infrastructure.Sharing;
 
 namespace Palladin.Module.Identity.Infrastructure;
 
@@ -29,11 +30,31 @@ internal static class InfrastructureModule
         services.AddIdentityPersistence(configuration);
         services.AddIdentityOAuth(configuration);
         services.AddIdentityJwt(configuration);
+        services.AddScoped<RefreshAccessTokenOperation>();
+        services.AddScoped<CommitSharedUnlockOperationHandler>();
+        services.AddScoped<GetSharedUnlockSessionStateOperation>();
+        services.AddScoped<CreateSharedUnlockOperationHandler>();
+        services.AddScoped<RecordSharedUnlockActivityOperation>();
+        services.AddScoped<ActivateSharedUnlockLinkOperation>();
+        services.AddScoped<AuthorizeSharedUnlockOperation>();
+        services.AddScoped<BrowserSessions.BrowserSessionResponseWriter>();
+        services.AddScoped<AcceptOrganizationInvitationOperation>();
+        services.AddScoped<SwitchOrganizationOperation>();
+        services.AddScoped<OAuthAuthenticateOperation>();
+        services.AddScoped<LoginTotpOperation>();
+        services.AddScoped<LoginOperation>();
+        services.AddScoped<RegisterOperation>();
         services.AddIdentityWaitlist(configuration);
         services.AddIdentityPasswordAuth(configuration);
         services.AddIdentityTotp(configuration);
         services.AddIdentityLogin(configuration);
         services.AddOrganizationInvitations(configuration);
+        services.AddOptions<EntrySharingRevocationOptions>()
+            .Bind(configuration.GetSection(EntrySharingRevocationOptions.Position))
+            .Validate(options => options.RequestTimeoutSeconds is >= 1 and <= 60,
+                "Sharing revocation timeout must be between 1 and 60 seconds.")
+            .ValidateOnStart();
+        services.AddScoped<EntrySharingRevocation>();
         services.Configure<SharedUnlockOptions>(configuration.GetSection(SharedUnlockOptions.Position));
         services.AddScopedCronJob<CleanupSharedUnlockOperationsJob, CleanupSharedUnlockOperationsJobOptions>(
             configuration.GetSection(CleanupSharedUnlockOperationsJobOptions.Position));

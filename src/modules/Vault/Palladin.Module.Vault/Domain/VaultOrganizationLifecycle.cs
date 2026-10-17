@@ -6,6 +6,7 @@ internal sealed class VaultOrganizationLifecycle
 {
     internal Guid OrganizationId { get; private set; }
     internal ulong MutationVersion { get; private set; }
+    internal bool SharingDisabled { get; private set; }
 
     private VaultOrganizationLifecycle() { }
 
@@ -31,5 +32,14 @@ internal sealed class VaultOrganizationLifecycle
         }
 
         MutationVersion++;
+    }
+
+    internal void DisableSharing()
+    {
+        if (!SharingDisabled)
+        {
+            SharingDisabled = true;
+            FenceMutation();
+        }
     }
 }

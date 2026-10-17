@@ -1,6 +1,7 @@
 ---
 version: 2
 
+# Security updates remain enabled; routine dependency maintenance is manual and monthly.
 updates:
   - package-ecosystem: nuget
     directory: /
@@ -8,7 +9,7 @@ updates:
       interval: monthly
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     labels:
       - dependencies
       - dotnet
@@ -19,7 +20,7 @@ updates:
       interval: monthly
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     labels:
       - dependencies
       - docker
@@ -30,7 +31,7 @@ updates:
       interval: monthly
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     labels:
       - dependencies
       - github-actions

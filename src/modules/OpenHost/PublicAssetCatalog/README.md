@@ -96,3 +96,17 @@ revision, rather than the delivery URL in encrypted presentation. This supports
 staging and self-hosted storage without client cloud-host allowlists or extra
 catalog metadata calls. Existing direct delivery URLs remain in catalog contracts
 for web consumers. Deploy this endpoint before the updated mobile/extension clients.
+
+## ImageSharp build license
+
+ImageSharp validates its license during compilation. The `sixlabors.lic` beside
+`Palladin.Module.PublicAssetCatalog.csproj` is an assembly-scoped Community license
+for `Palladin.Module.PublicAssetCatalog`, valid until 2028-01-15. Six Labors explicitly
+permits committing this scoped license to the public repository for contributor and
+CI builds; it is not an unrestricted license or a runtime credential.
+
+The package discovers the file automatically. Keep the assembly name unchanged or
+request a matching license. Renew through <https://licensing.sixlabors.com/> during
+the final 90 days before expiry. Do not replace this file with an unrestricted or
+commercial key in source control. CI builds and tests Release because Debug can
+turn license validation failures into warnings.

@@ -20,6 +20,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
 ENV ASPNETCORE_URLS=http://+:8080
 
 COPY --from=build /app/publish .
+COPY certificates/rds-eu-west-1.pem /app/certificates/rds-eu-west-1.pem
 
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Palladin.Api.dll"]

@@ -18,6 +18,9 @@ readonly PUBLIC_HEALTH_URL="${PALLADIN_STAGE_PUBLIC_HEALTH_URL:-https://api.stag
 readonly DEPLOYMENT_LOCK_FILE="${PALLADIN_STAGE_LOCK_FILE:-/var/lock/palladin-stage-api-deploy.lock}"
 readonly DEPLOYMENT_LOCK_WAIT_SECONDS="${PALLADIN_STAGE_LOCK_WAIT_SECONDS:-3600}"
 
+readonly DATABASE_CUTOVER="${PALLADIN_STAGE_DATABASE_CUTOVER:-false}"
+readonly CUTOVER_MARKER="$DEPLOYMENT_DIRECTORY/database-cutover"
+
 workdir=""
 candidate=""
 old_upstream=""
@@ -80,6 +83,13 @@ on_error() {
     fi
   fi
 
+  if [[ "$DATABASE_CUTOVER" == true && -n "$candidate" ]] && container_exists "$candidate"; then
+    # Routing recovery must never leave target jobs writing during a failed cutover.
+    docker stop --time 30 "$candidate" >/dev/null 2>&1 \
+      || docker kill "$candidate" >/dev/null 2>&1 \
+      || log "CRITICAL: Cannot stop the target writer; operator intervention required."
+  fi
+
   if [[ "$candidate_started" == true && "$rollback_succeeded" == true ]] \
     && container_exists "$candidate"; then
     docker rm --force "$candidate" >/dev/null 2>&1 || true
@@ -97,7 +107,7 @@ cleanup() {
 trap 'on_error "$?"' ERR
 trap cleanup EXIT
 
-for command_name in aws chmod cp curl date docker flock grep install mktemp mv sed seq sleep; do
+for command_name in aws chmod cp curl date docker flock grep install mktemp mv sed seq sleep sync; do
   command -v "$command_name" >/dev/null || fail "Required command is unavailable: $command_name"
 done
 
@@ -112,9 +122,18 @@ done
 [[ -r "$REQUIRED_ENV_KEYS_FILE" ]] || fail "Required environment-key manifest is unavailable."
 [[ -f "$CADDYFILE" ]] || fail "Caddy configuration is unavailable."
 
+[[ "$DATABASE_CUTOVER" == true || "$DATABASE_CUTOVER" == false ]] \
+  || fail "Database cutover must be true or false."
+
 exec 9> "$DEPLOYMENT_LOCK_FILE"
 flock --exclusive --wait "$DEPLOYMENT_LOCK_WAIT_SECONDS" 9 \
   || fail "Another stage deployment still owns the host lock."
+
+if [[ "$DATABASE_CUTOVER" == true ]]; then
+  [[ -f "$CUTOVER_MARKER" ]] || fail "Database cutover requires an operator maintenance marker."
+else
+  [[ ! -e "$CUTOVER_MARKER" ]] || fail "Database maintenance blocks ordinary deployments."
+fi
 
 docker network inspect "$DOCKER_NETWORK" >/dev/null
 container_is_running "$CADDY_CONTAINER" || fail "Caddy is not running."
@@ -124,7 +143,18 @@ old_upstream="$(sed -nE 's/^[[:space:]]*reverse_proxy[[:space:]]+([^[:space:]:]+
   || fail "Caddy must contain exactly one supported backend upstream."
 [[ "$(grep -Ec '^[[:space:]]*reverse_proxy[[:space:]]+' "$CADDYFILE")" == "1" ]] \
   || fail "Caddy must contain exactly one reverse_proxy directive."
-container_is_running "$old_upstream" || fail "The current backend upstream is not running."
+if [[ "$DATABASE_CUTOVER" == true ]]; then
+  old_running="$(docker inspect --format '{{.State.Running}}' "$old_upstream")" \
+    || fail "Cannot inspect the source API writer."
+  [[ "$old_running" == false ]] || fail "The source API writer must be stopped."
+  running_containers="$(docker ps --format '{{.Names}}')" \
+    || fail "Cannot discover running API writers."
+  if grep -Eq '^palladin-api(-blue|-green)?$' <<< "$running_containers"; then
+    fail "Database cutover requires every API writer to be stopped."
+  fi
+else
+  container_is_running "$old_upstream" || fail "The current backend upstream is not running."
+fi
 
 case "$old_upstream" in
   palladin-api-blue) candidate="palladin-api-green" ;;
@@ -196,7 +226,13 @@ if container_exists "$candidate"; then
   docker rm --force "$candidate" >/dev/null
 fi
 
+if [[ "$DATABASE_CUTOVER" == true ]]; then
+  # Startup migrations and background jobs can write before health succeeds.
+  printf 'target-started=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$CUTOVER_MARKER"
+  sync
+fi
 log "Starting the candidate in the inactive slot."
+candidate_started=true
 docker run --detach \
   --name "$candidate" \
   --restart unless-stopped \
@@ -208,8 +244,6 @@ docker run --detach \
   --log-opt max-file=3 \
   --label "io.palladin.stage.source-sha=$SOURCE_SHA" \
   "$IMAGE_URI" >/dev/null
-candidate_started=true
-
 candidate_healthy=false
 for _ in $(seq 1 60); do
   if ! container_is_running "$candidate"; then
@@ -231,6 +265,11 @@ done
 log "Candidate is healthy; switching the Caddy upstream."
 sed -E "s#^([[:space:]]*reverse_proxy[[:space:]]+)[^[:space:]]+#\\1${candidate}:8080#" \
   "$workdir/Caddyfile.before" > "$workdir/Caddyfile.candidate"
+if [[ "$DATABASE_CUTOVER" == true ]]; then
+  sed '/^[[:space:]]*respond "Database maintenance" 503[[:space:]]*$/d' \
+    "$workdir/Caddyfile.candidate" > "$workdir/Caddyfile.ready"
+  mv "$workdir/Caddyfile.ready" "$workdir/Caddyfile.candidate"
+fi
 cp "$workdir/Caddyfile.candidate" "$CADDYFILE"
 caddy_switched=true
 docker exec "$CADDY_CONTAINER" caddy validate --config /etc/caddy/Caddyfile >/dev/null

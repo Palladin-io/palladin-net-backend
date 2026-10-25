@@ -98,7 +98,7 @@ if [[ "${MOCK_FAIL_AFTER_SWITCH:-false}" == "true" ]]; then
 fi
 printf "%s\n" "{\"status\":\"Healthy\"}"'
 
-  create_mock "$case_dir/bin/sleep" 'exit 0'
+  create_mock "$case_dir/bin/sleep" 'if [[ "${MOCK_TERMINATE:-false}" == true && "${1:-}" == 10 ]]; then kill -TERM "$PPID"; fi; exit 0'
   create_mock "$case_dir/bin/flock" 'exit 0'
   printf '%s\n' "$case_dir"
 }
@@ -216,4 +216,15 @@ test -f "$prestart_case/deployments/database-cutover"
 if grep -q '^target-started=' "$prestart_case/deployments/database-cutover"; then
   echo "Pre-start failure must not claim target writes." >&2; exit 1
 fi
+signal_case="$(prepare_case cutover-signal)"
+touch "$signal_case/deployments/database-cutover"
+sed -i.bak '/reverse_proxy/i\
+  respond "Database maintenance" 503
+' "$signal_case/Caddyfile"
+if run_case "$signal_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true MOCK_TERMINATE=true >/dev/null 2>&1; then
+  echo "Terminated cutover must fail." >&2; exit 1
+fi
+grep -q '^palladin-api-blue$' "$signal_case/state/stopped"
+grep -q 'respond "Database maintenance" 503' "$signal_case/Caddyfile"
+grep -q '^target-started=' "$signal_case/deployments/database-cutover"
 printf 'Stage deployment and database cutover scenarios passed.\n'

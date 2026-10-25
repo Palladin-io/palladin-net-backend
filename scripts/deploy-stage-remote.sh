@@ -67,7 +67,7 @@ restore_caddy() {
 on_error() {
   local exit_code="$1"
   local rollback_succeeded=true
-  trap - ERR
+  trap - ERR TERM INT HUP
   set +e
 
   if [[ "$candidate_started" == true ]] && container_exists "$candidate"; then
@@ -106,6 +106,11 @@ cleanup() {
 
 trap 'on_error "$?"' ERR
 trap cleanup EXIT
+if [[ "$DATABASE_CUTOVER" == true ]]; then
+  trap 'on_error 143' TERM
+  trap 'on_error 130' INT
+  trap 'on_error 129' HUP
+fi
 
 for command_name in aws chmod cp curl date docker flock grep install mktemp mv sed seq sleep sync; do
   command -v "$command_name" >/dev/null || fail "Required command is unavailable: $command_name"

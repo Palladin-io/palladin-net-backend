@@ -16,7 +16,7 @@ internal sealed class AgentPairingOptions
     internal static bool IsValidApprovalUrlBase(string value)
     {
         var normalized = value.TrimEnd('/');
-        if (normalized is "https://palladin.io" or "https://stage.palladin.io")
+        if (normalized is "https://palladin.io" or "https://panel.palladin.io" or "https://stage.palladin.io")
         {
             return true;
         }

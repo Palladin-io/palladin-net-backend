@@ -17,6 +17,8 @@ public sealed class AgentPairingOptionsTests
     [InlineData("https://palladin.io")]
     [InlineData("https://palladin.io/")]
     [InlineData("https://stage.palladin.io")]
+    [InlineData("https://panel.palladin.io")]
+    [InlineData("https://panel.palladin.io/")]
     [InlineData("http://127.0.0.1:5173")]
     [InlineData("http://[::1]:45173")]
     public void AcceptedApprovalBasesMatchTheNativeRuntimeContract(string value) =>
@@ -24,6 +26,9 @@ public sealed class AgentPairingOptionsTests
 
     [Theory]
     [InlineData("https://example.com")]
+    [InlineData("https://panel.palladin.io.evil.example")]
+    [InlineData("https://panel.palladin.io/app")]
+    [InlineData("http://panel.palladin.io")]
     [InlineData("https://palladin.io/app")]
     [InlineData("https://palladin.io:443")]
     [InlineData("http://localhost:5173")]

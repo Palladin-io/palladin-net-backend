@@ -94,6 +94,11 @@ increase schema and retry complexity without reducing the invariant.
   attribute usage to the logical key.
 - Canonical 32-byte Base64 is required for both X25519 and Ed25519 public keys. Whitespace or another
   textual representation of the same bytes is rejected before identity lookup or persistence.
+- Pairing approval URLs allow only the exact HTTPS origins `panel.palladin.io`,
+  `palladin.io` (legacy) and `stage.palladin.io`, plus the existing explicit-port
+  loopback development URLs. The preproduction domain cutover uses
+  `https://panel.palladin.io`; coordinate this setting with the native runtime
+  approval-URL contract before deployment.
 - Pairing approval lasts exactly 30 minutes; startup rejects shorter or longer configured lifetimes.
   Standard enrollment retries organization name-fence conflicts at most twice, rechecking the
   requested name rather than silently dropping it. Exhausted contention fails without creating an unnamed Agent.

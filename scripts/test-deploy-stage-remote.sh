@@ -63,11 +63,22 @@ case "${1:-}" in
     if [[ "${2:-}" == "inspect" ]]; then printf "%s\n" "$PALLADIN_STAGE_SOURCE_SHA"; fi
     exit 0
     ;;
+  ps)
+    [[ "${MOCK_DISCOVERY_FAILURE:-false}" != true ]] || exit 42
+    [[ "${MOCK_OTHER_WRITER:-false}" != true ]] || printf "palladin-api-green\n"
+    exit 0
+    ;;
   inspect)
-    if [[ "$*" == *"--format"* ]]; then printf "true\n"; fi
+    [[ "${MOCK_INSPECT_FAILURE:-false}" != true || "${@: -1}" != palladin-api ]] || exit 42
+    if [[ "$*" == *"--format"* ]]; then
+      if [[ "${MOCK_OLD_STOPPED:-false}" == true && "${@: -1}" == palladin-api ]]; then
+        printf "false\n"
+      else printf "true\n"; fi
+    fi
     exit 0
     ;;
   exec)
+    if [[ "${MOCK_CADDY_RELOAD_FAILURE:-false}" == true && "$*" == *"caddy reload"* ]]; then exit 42; fi
     if [[ "$*" == *" wget "* ]]; then printf "%s\n" "{\"status\":\"Healthy\"}"; fi
     exit 0
     ;;
@@ -87,7 +98,7 @@ if [[ "${MOCK_FAIL_AFTER_SWITCH:-false}" == "true" ]]; then
 fi
 printf "%s\n" "{\"status\":\"Healthy\"}"'
 
-  create_mock "$case_dir/bin/sleep" 'exit 0'
+  create_mock "$case_dir/bin/sleep" 'if [[ "${MOCK_TERMINATE:-false}" == true && "${1:-}" == 10 ]]; then kill -TERM "$PPID"; fi; exit 0'
   create_mock "$case_dir/bin/flock" 'exit 0'
   printf '%s\n' "$case_dir"
 }
@@ -131,4 +142,89 @@ if [[ -f "$rollback_case/state/stopped" ]]; then
 fi
 grep -q 'rm --force palladin-api-blue' "$rollback_case/state/docker-calls"
 
-printf 'Stage deployment success and rollback scenarios passed.\n'
+blocked_case="$(prepare_case cutover-blocks-normal)"
+touch "$blocked_case/deployments/database-cutover"
+if run_case "$blocked_case" >/dev/null 2>&1; then
+  echo "Normal deployment must not run during database maintenance." >&2; exit 1
+fi
+if grep -q '^run ' "$blocked_case/state/docker-calls" 2>/dev/null; then
+  echo "Maintenance gate must precede starting any writer." >&2; exit 1
+fi
+
+cutover_case="$(prepare_case cutover)"
+touch "$cutover_case/deployments/database-cutover"
+sed -i.bak '/reverse_proxy/i\
+  respond "Database maintenance" 503
+' "$cutover_case/Caddyfile"
+run_case "$cutover_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true >/dev/null
+grep -q 'reverse_proxy palladin-api-blue:8080' "$cutover_case/Caddyfile"
+if grep -q 'Database maintenance' "$cutover_case/Caddyfile"; then
+  echo "Successful cutover must restore traffic." >&2; exit 1
+fi
+grep -q '^target-started=' "$cutover_case/deployments/database-cutover"
+
+unsafe_case="$(prepare_case cutover-running-source)"
+touch "$unsafe_case/deployments/database-cutover"
+if run_case "$unsafe_case" PALLADIN_STAGE_DATABASE_CUTOVER=true >/dev/null 2>&1; then
+  echo "Cutover must reject a running source writer." >&2; exit 1
+fi
+
+failure_case="$(prepare_case cutover-failure)"
+touch "$failure_case/deployments/database-cutover"
+sed -i.bak '/reverse_proxy/i\
+  respond "Database maintenance" 503
+' "$failure_case/Caddyfile"
+if run_case "$failure_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true MOCK_FAIL_AFTER_SWITCH=true >/dev/null 2>&1; then
+  echo "Failed cutover must fail closed." >&2; exit 1
+fi
+grep -q '^target-started=' "$failure_case/deployments/database-cutover"
+grep -q 'respond "Database maintenance" 503' "$failure_case/Caddyfile"
+if grep -Eq '^(start|restart) palladin-api$' "$failure_case/state/docker-calls"; then
+  echo "Failure must never restart stale source." >&2; exit 1
+fi
+for discovery_kind in DISCOVERY INSPECT; do
+  discovery_case="$(prepare_case "cutover-$discovery_kind-failure")"
+  touch "$discovery_case/deployments/database-cutover"
+  if run_case "$discovery_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true "MOCK_${discovery_kind}_FAILURE=true" >/dev/null 2>&1; then
+    echo "Failed writer discovery must block cutover." >&2; exit 1
+  fi
+  if grep -q '^run ' "$discovery_case/state/docker-calls"; then
+    echo "No target may start when source state is unknown." >&2; exit 1
+  fi
+done
+
+caddy_failure_case="$(prepare_case cutover-caddy-failure)"
+touch "$caddy_failure_case/deployments/database-cutover"
+if run_case "$caddy_failure_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true MOCK_CADDY_RELOAD_FAILURE=true >/dev/null 2>&1; then
+  echo "Failed Caddy rollback must fail cutover." >&2; exit 1
+fi
+grep -q '^palladin-api-blue$' "$caddy_failure_case/state/stopped"
+grep -q '^target-started=' "$caddy_failure_case/deployments/database-cutover"
+other_writer_case="$(prepare_case cutover-other-writer)"
+touch "$other_writer_case/deployments/database-cutover"
+if run_case "$other_writer_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true MOCK_OTHER_WRITER=true >/dev/null 2>&1; then
+  echo "A running inactive slot must also block cutover." >&2; exit 1
+fi
+
+prestart_case="$(prepare_case cutover-prestart-failure)"
+touch "$prestart_case/deployments/database-cutover"
+sed -i.bak 's/^Modules__Identity__Waitlist__Enabled=.*/Modules__Identity__Waitlist__Enabled=false/' "$prestart_case/runtime.env"
+if run_case "$prestart_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true >/dev/null 2>&1; then
+  echo "Invalid runtime config must block cutover." >&2; exit 1
+fi
+test -f "$prestart_case/deployments/database-cutover"
+if grep -q '^target-started=' "$prestart_case/deployments/database-cutover"; then
+  echo "Pre-start failure must not claim target writes." >&2; exit 1
+fi
+signal_case="$(prepare_case cutover-signal)"
+touch "$signal_case/deployments/database-cutover"
+sed -i.bak '/reverse_proxy/i\
+  respond "Database maintenance" 503
+' "$signal_case/Caddyfile"
+if run_case "$signal_case" PALLADIN_STAGE_DATABASE_CUTOVER=true MOCK_OLD_STOPPED=true MOCK_TERMINATE=true >/dev/null 2>&1; then
+  echo "Terminated cutover must fail." >&2; exit 1
+fi
+grep -q '^palladin-api-blue$' "$signal_case/state/stopped"
+grep -q 'respond "Database maintenance" 503' "$signal_case/Caddyfile"
+grep -q '^target-started=' "$signal_case/deployments/database-cutover"
+printf 'Stage deployment and database cutover scenarios passed.\n'

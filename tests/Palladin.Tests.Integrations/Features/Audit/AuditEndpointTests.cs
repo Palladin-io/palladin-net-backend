@@ -1,10 +1,14 @@
 using System.Net;
 using Palladin.Core.Security;
 using Palladin.Module.Audit.Features;
+using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
+using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Audit;
@@ -241,6 +245,25 @@ public sealed class AuditEndpointTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_VaultMemberListsVaultAuditLogsWithOtherOrganizationToken_Then_Returns404()
+    {
+        // Given
+        var (owner, vaultOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(vaultOrganization.Id, owner.Id);
+        await SeedGrantApprovedAsync(vaultOrganization.Id, vault.Id, owner.Id);
+        var (member, _, _) = await apiFactory.Services.SeedUserAsync();
+        await AddVaultMemberAsync(vaultOrganization.Id, vault.Id, member.Id);
+        var client = apiFactory.CreateAuthenticatedClient(member);
+
+        // When
+        var response = await client.GetAsync($"api/vaults/{vault.Id}/audit-logs");
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).ShouldNotContain("grant.approved");
+    }
+
+    [Fact]
     public async Task When_ListingAuditLogsForMissingVault_Then_Returns404()
     {
         // Given
@@ -252,5 +275,17 @@ public sealed class AuditEndpointTests(ApiFactory apiFactory) : TestBase
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private async Task AddVaultMemberAsync(Guid organizationId, Guid vaultId, Guid userId)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        var vault = await writeContext.Vaults
+            .Include(x => x.VaultMembers)
+            .Include(x => x.VaultMemberKeyEnvelopes)
+            .SingleAsync(x => x.OrganizationId == organizationId && x.Id == vaultId);
+        vault.AddMember(userId, VaultFaker.CreateMemberKey(vault.Scope, userId), apiFactory.FakeClock.GetCurrentInstant());
+        await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 }

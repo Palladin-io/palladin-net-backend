@@ -55,7 +55,7 @@ internal sealed class ListVaultAuditLogsEndpoint(
         Summary(summary =>
         {
             summary.Summary = "List a vault's audit logs";
-            summary.Description = "Returns audit events scoped to a single vault, newest-first, for the Vault Detail audit tab. Caller must be a member of the vault.";
+            summary.Description = "Returns audit events scoped to a single vault, newest-first, for the Vault Detail audit tab. The vault must belong to the caller's organization and the caller must be a member of the vault.";
         });
         Tags("Audit/AuditLogs");
     }
@@ -63,9 +63,9 @@ internal sealed class ListVaultAuditLogsEndpoint(
     public override async Task HandleAsync(ListVaultAuditLogsRequest req, CancellationToken ct)
     {
         var userId = User.GetUserId()!.Value;
+        var organizationId = User.GetOrganizationId()!.Value;
 
-        var organizationId = await vaultDirectory.GetOrganizationIdAsync(req.VaultId, ct);
-        if (organizationId is null)
+        if (await vaultDirectory.GetOrganizationIdAsync(req.VaultId, ct) != organizationId)
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -89,7 +89,7 @@ internal sealed class ListVaultAuditLogsEndpoint(
         // membership check can't widen the blast radius across orgs. Also makes the existing
         // (OrganizationId, CreatedAt, Id) index reachable for this query shape.
         var query = domainReadContext.AuditLogEntries.Where(e =>
-            e.OrganizationId == organizationId.Value && e.VaultId == req.VaultId);
+            e.OrganizationId == organizationId && e.VaultId == req.VaultId);
         query = AuditLogQuery.ApplyFilters(query, vaultIds: [], agentIds, userIds, req.EntryId, eventTypes, req.From, req.To);
 
         var (items, nextCursor) = await AuditLogQuery.PageNewestFirstAsync(query, cursor, pageSize, ct);

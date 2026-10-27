@@ -30,7 +30,7 @@ internal sealed class DeleteVaultEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Delete a vault";
-            summary.Description = "Permanently removes the vault and its membership rows. Returns 404 when the vault does not belong to the caller's organization.";
+            summary.Description = "Permanently removes the vault and its membership rows. The caller must have VaultManage and be a structural Vault Member; otherwise returns 404.";
         });
         Tags("Vault/Vaults");
     }
@@ -43,6 +43,7 @@ internal sealed class DeleteVaultEndpoint(
         var vault = await domainWriteContext.Vaults
             .IgnoreQueryFilters()
             .Include(v => v.VaultMembers)
+            .Where(v => v.VaultMembers.Any(m => m.UserId == userId))
             .FirstOrDefaultAsync(v => v.Id == req.Id && v.OrganizationId == organizationId, ct);
         if (vault is null)
         {

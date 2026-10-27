@@ -22,7 +22,7 @@ public sealed record SearchEntriesRequest
 }
 
 // Metadata only — discovery layer, never delivery. No EncryptedBlob/Nonce/DEK or any crypto field.
-// VaultId is included so the agent can target request-access at the right vault. AgentFields are
+// VaultId is included so the agent can request the credential from the right vault. AgentFields are
 // custom fields the owner explicitly marked agent-visible — metadata, never secrets.
 [PublicAPI]
 public sealed record EntryDiscoveryItem(
@@ -64,7 +64,7 @@ internal sealed class SearchEntriesEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Agent entry discovery (org-wide, metadata only)";
-            summary.Description = "Returns metadata (entryId, vaultId, label, type, urlDomain, description) for entries across every vault in the agent's own organization that match the query. The agent does not need to know the vault — it discovers an entry, then uses the returned vaultId to request access. No ciphertext or secrets are ever returned — this is the discovery step before request-access. Authenticated via X-Api-Key + X-Agent-Key.";
+            summary.Description = "Returns metadata (entryId, vaultId, label, type, urlDomain, description) for entries across every vault in the agent's own organization that match the query. The agent does not need to know the vault — it discovers an entry, then uses the returned vaultId to request access. No ciphertext or secrets are ever returned — this is the discovery step before the credential request. Authenticated via X-Api-Key + X-Agent-Key.";
         });
         Tags("Vault/Entries");
     }

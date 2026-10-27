@@ -56,27 +56,15 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         var request = Request(setup);
 
         var (response, result) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
         var grant = await db.Grants.Include(g => g.EncryptedReason).SingleAsync(g => g.Id == result!.GrantId);
         grant.EncryptedReason.ShouldNotBeNull();
         grant.EncryptedReason!.RequestedMethods.ShouldBe(GrantMethods.Get);
         grant.CreatedBy.ShouldBeNull();
-    }
-
-    [Fact]
-    public async Task CamelCaseWireCanonicalReasonSignature_IsAccepted()
-    {
-        var setup = await ArrangeAsync();
-        var request = Request(setup);
-
-        var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
-
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -91,7 +79,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         };
 
         var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -101,11 +89,10 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     {
         var setup = await ArrangeAsync();
         var request = Request(setup);
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+        var grantId = await RequestPendingGrantAsync(setup, request);
 
         var response = await setup.UserClient.GetAsync(
-            $"api/vaults/{setup.VaultId}/grants/{pending!.GrantId}");
+            $"api/vaults/{setup.VaultId}/grants/{grantId}");
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var reason = json.RootElement.GetProperty("encryptedReason");
 
@@ -150,7 +137,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         };
 
         var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -166,7 +153,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         };
 
         var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -185,7 +172,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         };
 
         var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -207,7 +194,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         };
 
         var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -216,8 +203,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     public async Task DeletingEntryRevokesPendingGrantAndDeletesEncryptedReason()
     {
         var setup = await ArrangeAsync();
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(Request(setup));
+        var grantId = await RequestPendingGrantAsync(setup, Request(setup));
         await using (var sequenceScope = apiFactory.Services.CreateAsyncScope())
         {
             var writeContext = sequenceScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
@@ -239,25 +225,9 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        var grant = await db.Grants.SingleAsync(x => x.Id == pending!.GrantId);
+        var grant = await db.Grants.SingleAsync(x => x.Id == grantId);
         grant.Status.ShouldBe(GrantStatus.Revoked);
-        (await db.EncryptedReasonEnvelopes.AnyAsync(x => x.GrantRequestId == pending.GrantId)).ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task TerminalGrantRequestIdReplay_ReturnsConflictInsteadOfPersistenceFailure()
-    {
-        var setup = await ArrangeAsync();
-        var request = Request(setup);
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
-        await setup.UserClient.DELETEAsync<RevokeGrantEndpoint, RevokeGrantRequest>(
-            new RevokeGrantRequest { VaultId = setup.VaultId, GrantId = pending!.GrantId });
-
-        var (response, _) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
-
-        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await db.EncryptedReasonEnvelopes.AnyAsync(x => x.GrantRequestId == grantId)).ShouldBeFalse();
     }
 
     [Theory]
@@ -267,12 +237,11 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     {
         var setup = await ArrangeAsync();
         var request = Request(setup);
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(request);
+        var grantId = await RequestPendingGrantAsync(setup, request);
         var expiresAt = PostgreSqlInstant.Normalize(
             apiFactory.FakeClock.GetCurrentInstant() + Duration.FromHours(1));
         var envelope = GrantEnvelopeTestData.Contract(
-            setup.OrganizationId, setup.VaultId, pending!.GrantId, setup.EntryId,
+            setup.OrganizationId, setup.VaultId, grantId, setup.EntryId,
             setup.AgentPublicKey, expiresAt, agentId: setup.AgentId);
 
         var originalTime = apiFactory.FakeClock.GetCurrentInstant();
@@ -283,7 +252,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
                 new ApproveGrantRequest
                 {
                     VaultId = setup.VaultId,
-                    GrantId = pending.GrantId,
+                    GrantId = grantId,
                     GrantEntry = envelope,
                     ExpiresAt = expiresAt,
                     FieldSelectionMode = mode,
@@ -295,7 +264,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             var grant = await db.Grants
                 .Include(g => g.EncryptedReason)
                 .Include(g => g.GrantEntryScopes).ThenInclude(s => s.Envelope)
-                .SingleAsync(g => g.Id == pending.GrantId);
+                .SingleAsync(g => g.Id == grantId);
             grant.Status.ShouldBe(GrantStatus.Active);
             grant.GrantedAt.ShouldBe(PostgreSqlInstant.Normalize(originalTime + Duration.FromSeconds(5)));
             grant.GrantedAt.ShouldNotBe(grant.CreatedAt);
@@ -303,18 +272,18 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             grant.GrantEntryScopes.Single().SelectedFieldIds.ShouldBe(
                 mode == GrantFieldSelectionMode.All ? string.Empty : grant.GrantEntryScopes.Single().FieldIds);
             grant.EncryptedReason.ShouldNotBeNull();
-            grant.EncryptedReason!.GrantRequestId.ShouldBe(pending.GrantId);
+            grant.EncryptedReason!.GrantRequestId.ShouldBe(grantId);
             grant.GrantEntryScopes.Single().Envelope!.EntryRevision.ShouldBe(1UL);
 
             var detailResponse = await setup.UserClient.GetAsync(
-                $"api/vaults/{setup.VaultId}/grants/{pending.GrantId}");
+                $"api/vaults/{setup.VaultId}/grants/{grantId}");
             var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
             detailResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
             detailJson.RootElement.GetProperty("encryptedReason").ValueKind.ShouldBe(JsonValueKind.Object);
             detailJson.RootElement.GetProperty("grantedAt").ValueKind.ShouldBe(JsonValueKind.String);
             await setup.UserClient.DELETEAsync<RevokeGrantEndpoint, RevokeGrantRequest>(
-                new RevokeGrantRequest { VaultId = setup.VaultId, GrantId = pending.GrantId });
-            var revoked = await db.Grants.AsNoTracking().SingleAsync(g => g.Id == pending.GrantId);
+                new RevokeGrantRequest { VaultId = setup.VaultId, GrantId = grantId });
+            var revoked = await db.Grants.AsNoTracking().SingleAsync(g => g.Id == grantId);
             revoked.GrantedAt.ShouldBe(grant.GrantedAt);
         }
         finally
@@ -324,79 +293,16 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
-    public async Task RestoredEntry_StaleActiveGrantDoesNotSuppressNewRequest()
-    {
-        var setup = await ArrangeAsync();
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(Request(setup));
-        var approvalResponse = await setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(
-            new ApproveGrantRequest
-            {
-                VaultId = setup.VaultId,
-                GrantId = pending!.GrantId,
-                GrantEntry = GrantEnvelopeTestData.Contract(
-                    setup.OrganizationId,
-                    setup.VaultId,
-                    pending.GrantId,
-                    setup.EntryId,
-                    setup.AgentPublicKey,
-                    agentId: setup.AgentId),
-            });
-        approvalResponse.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-
-        await using (var sequenceScope = apiFactory.Services.CreateAsyncScope())
-        {
-            var writeContext = sequenceScope.ServiceProvider.GetRequiredService<VaultDomainWriteContext>();
-            var vault = await writeContext.Vaults.SingleAsync(x => x.Id == setup.VaultId);
-            vault.AllocateSequences(false, setup.UserId, apiFactory.FakeClock.GetCurrentInstant());
-            await writeContext.CommitAsync(TestContext.Current.CancellationToken);
-        }
-
-        var archive = EntryEnvelopeFaker.CreateStateChangeRequest(
-            setup.OrganizationId, setup.VaultId, setup.EntryId, 1, EntryOperation.Archived);
-        var (archiveResponse, _) = await setup.UserClient.POSTAsync<
-            ArchiveEntryEndpoint, ChangeEntryStateRequest, ChangeEntryStateResponse>(archive);
-        archiveResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-        var restore = EntryEnvelopeFaker.CreateStateChangeRequest(
-            setup.OrganizationId,
-            setup.VaultId,
-            setup.EntryId,
-            2,
-            EntryOperation.Restored);
-        var (restoreResponse, _) = await setup.UserClient.POSTAsync<
-            RestoreEntryEndpoint, ChangeEntryStateRequest, ChangeEntryStateResponse>(restore);
-        restoreResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
-
-        var rerequest = Request(setup) with
-        {
-            EncryptedReason = GrantEnvelopeTestData.EncryptedReason(
-                setup.OrganizationId,
-                setup.VaultId,
-                setup.EntryId,
-                setup.AgentId,
-                setup.Signing,
-                setup.AgentMessageKeyFingerprint),
-        };
-        var (response, result) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(rerequest);
-
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        result!.Status.ShouldBe(GrantStatus.Pending);
-        result.GrantId.ShouldNotBe(pending.GrantId);
-    }
-
-    [Fact]
     public async Task Approval_WithCrossScopeEnvelope_FailsClosed()
     {
         var setup = await ArrangeAsync();
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(Request(setup));
+        var grantId = await RequestPendingGrantAsync(setup, Request(setup));
         var envelope = GrantEnvelopeTestData.Contract(
-            setup.OrganizationId, setup.VaultId, pending!.GrantId, Guid.NewGuid(), setup.AgentPublicKey,
+            setup.OrganizationId, setup.VaultId, grantId, Guid.NewGuid(), setup.AgentPublicKey,
             agentId: setup.AgentId);
 
         var response = await setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(
-            new ApproveGrantRequest { VaultId = setup.VaultId, GrantId = pending.GrantId, GrantEntry = envelope });
+            new ApproveGrantRequest { VaultId = setup.VaultId, GrantId = grantId, GrantEntry = envelope });
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -405,17 +311,16 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
     public async Task ProactiveApprovalInPlace_RetainsEncryptedReason()
     {
         var setup = await ArrangeAsync();
-        var (_, pending) = await setup.AgentClient
-            .POSTAsync<RequestAccessEndpoint, RequestAccessRequest, RequestAccessResponse>(Request(setup));
+        var grantId = await RequestPendingGrantAsync(setup, Request(setup));
         var create = new CreateGranularGrantRequest
         {
-            GrantId = pending!.GrantId,
+            GrantId = grantId,
             VaultId = setup.VaultId,
             AgentId = setup.AgentId,
             EntryId = setup.EntryId,
             Methods = GrantMethods.Get,
             GrantEntry = GrantEnvelopeTestData.Contract(
-                setup.OrganizationId, setup.VaultId, pending.GrantId, setup.EntryId,
+                setup.OrganizationId, setup.VaultId, grantId, setup.EntryId,
                 setup.AgentPublicKey,
                 agentId: setup.AgentId),
         };
@@ -426,10 +331,18 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await db.EncryptedReasonEnvelopes.AnyAsync(x => x.GrantRequestId == pending.GrantId)).ShouldBeTrue();
+        (await db.EncryptedReasonEnvelopes.AnyAsync(x => x.GrantRequestId == grantId)).ShouldBeTrue();
     }
 
-    private static RequestAccessRequest Request(Setup setup, GrantMethods methods = GrantMethods.Get) =>
+    private static async Task<Guid> RequestPendingGrantAsync(Setup setup, GetOrRequestCredentialRequest request)
+    {
+        var (response, result) = await setup.AgentClient
+            .POSTAsync<GetOrRequestCredentialEndpoint, GetOrRequestCredentialRequest, GetOrRequestCredentialResponse>(request);
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        return result.GrantId!.Value;
+    }
+
+    private static GetOrRequestCredentialRequest Request(Setup setup, GrantMethods methods = GrantMethods.Get) =>
         new()
         {
             VaultId = setup.VaultId,

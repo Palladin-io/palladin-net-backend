@@ -52,6 +52,28 @@ public sealed class DeleteVaultTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_OrganizationMemberOutsideVault_DeletesVault_Then_Returns404AndKeepsVault()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, owner.Id);
+        var entry = await apiFactory.Services.SeedEntryAsync(vault.Id, owner.Id);
+        var outsider = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        var client = apiFactory.CreateAuthenticatedClient(outsider);
+
+        // When
+        var response = await client.DeleteAsync($"api/vaults/{vault.Id}");
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.Vaults.AnyAsync(v => v.Id == vault.Id)).ShouldBeTrue();
+        (await readContext.Entries.AnyAsync(e => e.Id == entry.Id)).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task When_DeletingDefaultVault_Then_Returns409()
     {
         // Given

@@ -21,6 +21,9 @@ public sealed record RequestScriptExecutionAccessRequest
     public EncryptedReasonEnvelopeContract EncryptedReason { get; init; } = null!;
 }
 
+[PublicAPI]
+public sealed record RequestAccessResponse(Guid GrantId, GrantStatus Status);
+
 [UsedImplicitly]
 internal sealed class RequestScriptExecutionAccessValidator
     : Validator<RequestScriptExecutionAccessRequest>

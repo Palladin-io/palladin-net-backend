@@ -107,7 +107,7 @@ internal static class AgentSubmissionCrypto
         {
             ["schema"] = contract.Schema,
             ["submissionRevision"] = CanonicalUInt64String(contract.SubmissionRevision),
-            ["agentAccessEpoch"] = CanonicalUInt64String(contract.AgentAccessEpoch, allowZero: true),
+            ["agentAccessEpoch"] = CanonicalUInt64String(contract.AgentAccessEpoch),
             ["agentKeyVersion"] = contract.AgentKeyVersion,
             ["agentKeyFingerprint"] = contract.AgentKeyFingerprint,
             ["approverKeyVersion"] = contract.ApproverKeyVersion,
@@ -127,7 +127,7 @@ internal static class AgentSubmissionCrypto
             (AgentSubmissionEntryType)contract.EntryType,
             target,
             ParseUInt64(contract.SubmissionRevision),
-            ParseUInt64(contract.AgentAccessEpoch, allowZero: true),
+            ParseUInt64(contract.AgentAccessEpoch),
             contract.AgentKeyVersion,
             agentKeyFingerprint,
             contract.ApproverKeyVersion,

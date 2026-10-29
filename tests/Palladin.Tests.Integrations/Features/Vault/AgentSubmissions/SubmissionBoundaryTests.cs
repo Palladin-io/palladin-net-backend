@@ -429,6 +429,45 @@ public sealed class SubmissionBoundaryTests(ApiFactory apiFactory) : TestBase
             TestContext.Current.CancellationToken)).ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("zeroAccessEpoch")]
+    [InlineData("targetIsNotAnObject")]
+    [InlineData("stringKeyVersion")]
+    [InlineData("missingField")]
+    public async Task When_SubmissionBreaksWireEncodingOverHttp_Then_ItIsRejectedWith400BeforePersistence(string violation)
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var agent = await scenario.CreateAgentAsync();
+        await scenario.BootstrapAsync();
+        var valid = scenario.NewSubmission(agent);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(violation == "zeroAccessEpoch"
+            ? AgentSubmissionScenario.Sign(agent, valid with { AgentAccessEpoch = "0" })
+            : valid, JsonSerializerOptions.Web))!.AsObject();
+        switch (violation)
+        {
+            case "targetIsNotAnObject":
+                node["target"] = "new";
+                break;
+            case "stringKeyVersion":
+                node["agentKeyVersion"] = "1";
+                break;
+            case "missingField":
+                node.Remove("approverManifestRevision");
+                break;
+        }
+
+        // When
+        var response = await agent.Client.PostAsJsonAsync("api/agent/submissions", node, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.AgentEntrySubmissions.AnyAsync(x => x.OrganizationId == scenario.OrganizationId,
+            TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
     [Fact]
     public async Task When_ConsumedChallengeIsReused_Then_TheNextKeySetChangeIsRejected()
     {

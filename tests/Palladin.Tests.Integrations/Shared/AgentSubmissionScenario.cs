@@ -349,6 +349,13 @@ internal sealed class AgentSubmissionScenario
         await context.SaveChangesAsync();
     }
 
+    internal async Task<int> LoadSubmissionCountAsync()
+    {
+        await using var scope = _apiFactory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        return await context.AgentEntrySubmissions.CountAsync(x => x.OrganizationId == OrganizationId);
+    }
+
     internal async Task<AgentEntrySubmission> LoadSubmissionAsync(Guid submissionId)
     {
         await using var scope = _apiFactory.Services.CreateAsyncScope();

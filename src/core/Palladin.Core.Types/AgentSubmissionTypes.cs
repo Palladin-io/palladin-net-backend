@@ -29,4 +29,5 @@ public enum AgentSubmissionAction
     Denied = 5,
     Restored = 6,
     Purged = 7,
+    RewrapSourceServed = 8,
 }

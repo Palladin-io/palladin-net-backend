@@ -132,6 +132,14 @@ internal sealed class AgentEntrySubmission : EventEntityBase
 
     internal AgentSubmissionChangedEvent UseEvent(Instant now) => ToEvent(AgentSubmissionAction.Used, now);
 
+    // Contract preApprovalUse.reWrapSource: suspension blocks use but never the re-wrap that keeps a restored
+    // submission decidable after an approver key change.
+    internal bool IsRewrappableBy(uint accessEpoch) =>
+        State == AgentSubmissionState.Pending && AgentAccessEpoch == accessEpoch && Document is not null;
+
+    internal AgentSubmissionChangedEvent RewrapSourceEvent(Instant now) =>
+        ToEvent(AgentSubmissionAction.RewrapSourceServed, now);
+
     internal bool IsApprovedAs(Guid decidedBy, Guid vaultId, Guid entryId) =>
         State == AgentSubmissionState.Approved
         && DecidedBy == decidedBy

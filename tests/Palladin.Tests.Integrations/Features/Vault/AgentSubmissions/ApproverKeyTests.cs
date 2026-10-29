@@ -386,12 +386,15 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
             .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
 
         // When
+        var whileUnavailable = await AgentSubmissionScenario.PostSubmissionAsync(agent, scenario.NewSubmission(agent));
         var rotate = await scenario.RotateAsync(scenario.Owner);
         var withContinuity = await scenario.RebootstrapAsync(scenario.Owner, includeContinuity: true);
         var rebootstrap = await scenario.RebootstrapAsync(scenario.Owner);
 
         // Then
         unavailable!.Status.ShouldBe("unavailable");
+        whileUnavailable.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(whileUnavailable)).ShouldBe("approver-key-unavailable");
         unavailable.RotationRequired.ShouldBeTrue();
         unavailable.MyWraps.ShouldBeEmpty();
         rotate.StatusCode.ShouldBe(HttpStatusCode.Forbidden);

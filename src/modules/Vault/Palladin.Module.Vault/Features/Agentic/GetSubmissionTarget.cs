@@ -2,6 +2,7 @@ using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NodaTime;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -22,7 +23,7 @@ public sealed record SubmissionTargetResponse(Guid VaultId, Guid EntryId, string
 // access request, never consumes a grant use and emits no access event. Entry type is not returned:
 // it exists only inside client-encrypted projections, so the runtime takes it from its authenticated grant.
 [PublicAPI]
-internal sealed class GetSubmissionTargetEndpoint(VaultDomainReadContext domainReadContext)
+internal sealed class GetSubmissionTargetEndpoint(VaultDomainReadContext domainReadContext, IClock clock)
     : Endpoint<GetSubmissionTargetRequest, SubmissionTargetResponse>
 {
     public override void Configure()
@@ -58,7 +59,8 @@ internal sealed class GetSubmissionTargetEndpoint(VaultDomainReadContext domainR
             .SingleOrDefaultAsync(ct);
         if (!agentIsCurrent || revision is null
             || !await domainReadContext.HasActiveEntryCoverageAsync(
-                agentId.Value, accessEpoch.Value, req.VaultId, req.EntryId, excludingGrantId: null, ct))
+                agentId.Value, accessEpoch.Value, req.VaultId, req.EntryId, excludingGrantId: null, ct,
+                notExpiredAt: clock.GetCurrentInstant()))
         {
             await new SubmissionRejection(StatusCodes.Status403Forbidden, "update-not-granted").SendAsync(HttpContext, ct);
             return;

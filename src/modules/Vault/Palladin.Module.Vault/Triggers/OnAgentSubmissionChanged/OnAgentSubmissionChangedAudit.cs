@@ -32,7 +32,7 @@ internal sealed class OnAgentSubmissionChangedAudit(
         var actorType = msg.Action switch
         {
             AgentSubmissionAction.Submitted or AgentSubmissionAction.Rewrapped or AgentSubmissionAction.Used
-                => AuditActorType.Agent,
+                or AgentSubmissionAction.RewrapSourceServed => AuditActorType.Agent,
             AgentSubmissionAction.Purged => AuditActorType.System,
             _ => AuditActorType.User,
         };
@@ -80,7 +80,9 @@ internal sealed class OnAgentSubmissionChangedAudit(
         AgentSubmissionAction.Approved => AuditEventType.AgentSubmissionApproved,
         AgentSubmissionAction.Denied => AuditEventType.AgentSubmissionDenied,
         AgentSubmissionAction.Restored => AuditEventType.AgentSubmissionRestored,
-        _ => AuditEventType.AgentSubmissionPurged,
+        AgentSubmissionAction.RewrapSourceServed => AuditEventType.AgentSubmissionRewrapSourceServed,
+        AgentSubmissionAction.Purged => AuditEventType.AgentSubmissionPurged,
+        _ => throw new ArgumentOutOfRangeException(nameof(action)),
     };
 
     private static Guid OccurrenceId(AgentSubmissionChangedEvent msg)

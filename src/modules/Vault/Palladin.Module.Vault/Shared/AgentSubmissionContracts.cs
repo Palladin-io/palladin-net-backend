@@ -9,7 +9,7 @@ namespace Palladin.Module.Vault.Shared;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 [JsonNumberHandling(JsonNumberHandling.Strict)]
 public sealed record AgentSubmissionTargetContract(
-    string Kind,
+    [property: JsonRequired] string Kind,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SuggestedVaultId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VaultId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EntryId = null,
@@ -19,45 +19,45 @@ public sealed record AgentSubmissionTargetContract(
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 [JsonNumberHandling(JsonNumberHandling.Strict)]
 public sealed record AgentEntrySubmissionContract(
-    string Schema,
-    uint ContractVersion,
-    ushort ProtocolVersion,
-    string OrganizationId,
-    string SubmissionId,
-    string AgentId,
-    ushort SubmissionKind,
-    ushort EntryType,
-    AgentSubmissionTargetContract Target,
-    string SubmissionRevision,
-    string AgentAccessEpoch,
-    uint AgentKeyVersion,
-    string AgentKeyFingerprint,
-    uint ApproverKeyVersion,
-    string ApproverMessageKeyFingerprint,
-    string ApproverManifestRevision,
-    string EncodedPayload,
-    string EncodedAgentWrappedDek,
-    string EncodedApproverWrappedDek,
-    string AgentSignature);
+    [property: JsonRequired] string Schema,
+    [property: JsonRequired] uint ContractVersion,
+    [property: JsonRequired] ushort ProtocolVersion,
+    [property: JsonRequired] string OrganizationId,
+    [property: JsonRequired] string SubmissionId,
+    [property: JsonRequired] string AgentId,
+    [property: JsonRequired] ushort SubmissionKind,
+    [property: JsonRequired] ushort EntryType,
+    [property: JsonRequired] AgentSubmissionTargetContract Target,
+    [property: JsonRequired] string SubmissionRevision,
+    [property: JsonRequired] string AgentAccessEpoch,
+    [property: JsonRequired] uint AgentKeyVersion,
+    [property: JsonRequired] string AgentKeyFingerprint,
+    [property: JsonRequired] uint ApproverKeyVersion,
+    [property: JsonRequired] string ApproverMessageKeyFingerprint,
+    [property: JsonRequired] string ApproverManifestRevision,
+    [property: JsonRequired] string EncodedPayload,
+    [property: JsonRequired] string EncodedAgentWrappedDek,
+    [property: JsonRequired] string EncodedApproverWrappedDek,
+    [property: JsonRequired] string AgentSignature);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 [JsonNumberHandling(JsonNumberHandling.Strict)]
 public sealed record OrganizationApproverManifestContract(
-    string Schema,
-    uint ContractVersion,
-    ushort ProtocolVersion,
-    string OrganizationId,
-    uint KeyVersion,
-    string ManifestRevision,
-    string ApproverSetRevision,
-    string ApproverSetDigest,
-    string MessagePublicKey,
-    string MessageKeyFingerprint,
-    string SigningPublicKey,
-    string SigningKeyFingerprint,
-    string IssuedAt,
-    string Signature,
+    [property: JsonRequired] string Schema,
+    [property: JsonRequired] uint ContractVersion,
+    [property: JsonRequired] ushort ProtocolVersion,
+    [property: JsonRequired] string OrganizationId,
+    [property: JsonRequired] uint KeyVersion,
+    [property: JsonRequired] string ManifestRevision,
+    [property: JsonRequired] string ApproverSetRevision,
+    [property: JsonRequired] string ApproverSetDigest,
+    [property: JsonRequired] string MessagePublicKey,
+    [property: JsonRequired] string MessageKeyFingerprint,
+    [property: JsonRequired] string SigningPublicKey,
+    [property: JsonRequired] string SigningKeyFingerprint,
+    [property: JsonRequired] string IssuedAt,
+    [property: JsonRequired] string Signature,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PreviousSigningKeyFingerprint = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContinuitySignature = null);
 
@@ -65,21 +65,21 @@ public sealed record OrganizationApproverManifestContract(
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 [JsonNumberHandling(JsonNumberHandling.Strict)]
 public sealed record ApproverKeyWrapDescriptorContract(
-    ushort Purpose,
-    ushort ScopeBitmap,
-    string OrganizationId,
-    string MemberId,
-    string ResourceRevision,
-    uint WrappedKeyVersion,
-    ushort RecipientKeyKind,
-    uint RecipientKeyVersion,
-    string RecipientFingerprint);
+    [property: JsonRequired] ushort Purpose,
+    [property: JsonRequired] ushort ScopeBitmap,
+    [property: JsonRequired] string OrganizationId,
+    [property: JsonRequired] string MemberId,
+    [property: JsonRequired] string ResourceRevision,
+    [property: JsonRequired] uint WrappedKeyVersion,
+    [property: JsonRequired] ushort RecipientKeyKind,
+    [property: JsonRequired] uint RecipientKeyVersion,
+    [property: JsonRequired] string RecipientFingerprint);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ApproverKeyWrapContract(
-    ApproverKeyWrapDescriptorContract Descriptor,
-    string EncodedSealedKeyPackage);
+    [property: JsonRequired] ApproverKeyWrapDescriptorContract Descriptor,
+    [property: JsonRequired] string EncodedSealedKeyPackage);
 
 [PublicAPI]
 public sealed record ApproverContract(

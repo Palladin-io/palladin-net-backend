@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using NodaTime;
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -75,13 +76,14 @@ internal static class AgentSubmissionIntake
     {
         var state = await domainWriteContext.LoadApproverStateAsync(submission.OrganizationId, ct);
         var keySet = state.KeySet;
-        if (keySet is null || !state.HasServedApprover)
+        if (keySet is null)
         {
             throw new SubmissionRejection(StatusCodes.Status404NotFound, "no-approvers");
         }
 
-        // A removed approver may still hold the current private key; new DEKs wait for the rotation.
-        if (state.HasRemovedApproverWrap)
+        // A removed approver may still hold the current private key, and an unavailable key set has no approver
+        // able to open new DEKs; both wait for rotation or re-bootstrap (contract noRemainingApprover).
+        if (!state.HasServedApprover || state.HasRemovedApproverWrap)
         {
             throw new SubmissionRejection(StatusCodes.Status409Conflict, "approver-key-unavailable");
         }
@@ -99,6 +101,7 @@ internal static class AgentSubmissionIntake
         VaultDomainWriteContext domainWriteContext,
         ParsedAgentSubmission submission,
         AuthenticatedAgent agent,
+        Instant now,
         CancellationToken ct)
     {
         if (submission.Kind != AgentSubmissionKind.Update)
@@ -108,7 +111,7 @@ internal static class AgentSubmissionIntake
 
         if (!await domainWriteContext.HasActiveEntryCoverageAsync(
                 agent.AgentId, agent.AccessEpoch, submission.Target.VaultId!.Value, submission.Target.EntryId!.Value,
-                excludingGrantId: null, ct))
+                excludingGrantId: null, ct, notExpiredAt: now))
         {
             throw new SubmissionRejection(StatusCodes.Status403Forbidden, "update-not-granted");
         }

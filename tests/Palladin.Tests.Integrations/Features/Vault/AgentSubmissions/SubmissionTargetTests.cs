@@ -64,6 +64,35 @@ public sealed class SubmissionTargetTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_GrantExpiredButIsNotYetSwept_Then_TargetAndUpdateAreNotGranted()
+    {
+        // Given
+        var (scenario, agent, entryId, grantId) = await ArrangeGrantedAsync();
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            var expired = apiFactory.FakeClock.GetCurrentInstant() - NodaTime.Duration.FromMinutes(1);
+            await db.Grants.Where(x => x.Id == grantId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.ExpiresAt, expired)
+                    .SetProperty(x => x.QueryLimit, (int?)null), TestContext.Current.CancellationToken);
+        }
+
+        var before = await SnapshotAsync(scenario, agent.Id, grantId);
+
+        // When
+        var target = await agent.Client.GetAsync(TargetPath(scenario, entryId), TestContext.Current.CancellationToken);
+        var submit = await AgentSubmissionScenario.PostSubmissionAsync(agent, scenario.UpdateSubmission(agent, entryId, 1));
+
+        // Then
+        target.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await AgentSubmissionScenario.ErrorCodeAsync(target)).ShouldBe("update-not-granted");
+        submit.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await AgentSubmissionScenario.ErrorCodeAsync(submit)).ShouldBe("update-not-granted");
+        (await SnapshotAsync(scenario, agent.Id, grantId)).ShouldBe(before);
+    }
+
+    [Fact]
     public async Task When_GrantedEntryIsNoLongerActive_Then_UpdateIsNotGranted()
     {
         // Given

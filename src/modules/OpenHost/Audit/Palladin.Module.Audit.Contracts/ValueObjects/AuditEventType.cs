@@ -41,6 +41,7 @@ public static class AuditEventType
     public const string AgentSubmissionSubmitted = "agent-submission.submitted";
     public const string AgentSubmissionRewrapped = "agent-submission.rewrapped";
     public const string AgentSubmissionUsed = "agent-submission.used";
+    public const string AgentSubmissionRewrapSourceServed = "agent-submission.rewrap-source-served";
     public const string AgentSubmissionApproved = "agent-submission.approved";
     public const string AgentSubmissionDenied = "agent-submission.denied";
     public const string AgentSubmissionRestored = "agent-submission.restored";

@@ -49,7 +49,7 @@ internal sealed class SubmitAgentEntryEndpoint(
 
             await AgentSubmissionIntake.VerifyAgentAsync(domainWriteContext, submission, agent, ct);
             await AgentSubmissionIntake.VerifyApproverKeyAsync(domainWriteContext, submission, ct);
-            await AgentSubmissionIntake.VerifyUpdateGrantAsync(domainWriteContext, submission, agent, ct);
+            await AgentSubmissionIntake.VerifyUpdateGrantAsync(domainWriteContext, submission, agent, clock.GetCurrentInstant(), ct);
 
             var created = AgentEntrySubmission.Submit(
                 submission.OrganizationId,

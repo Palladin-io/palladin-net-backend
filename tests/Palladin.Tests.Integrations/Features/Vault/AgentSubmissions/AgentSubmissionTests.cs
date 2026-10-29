@@ -140,6 +140,25 @@ public sealed class AgentSubmissionTests(ApiFactory apiFactory) : TestBase
     public async Task When_NoApproverKeySetExists_Then_SubmissionFailsWithNoApprovers()
     {
         // Given
+        var keyed = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        await keyed.BootstrapAsync();
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var agent = await scenario.CreateAgentAsync();
+        var submission = AgentSubmissionScenario.Sign(agent,
+            keyed.NewSubmission(agent) with { OrganizationId = scenario.OrganizationId.ToString("D") });
+
+        // When
+        var response = await AgentSubmissionScenario.PostSubmissionAsync(agent, submission);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("no-approvers");
+    }
+
+    [Fact]
+    public async Task When_KeySetExistsButNoApproverIsServed_Then_SubmissionFailsWithApproverKeyUnavailable()
+    {
+        // Given
         var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
         var agent = await scenario.CreateAgentAsync();
         await scenario.BootstrapAsync();
@@ -150,8 +169,35 @@ public sealed class AgentSubmissionTests(ApiFactory apiFactory) : TestBase
         var response = await AgentSubmissionScenario.PostSubmissionAsync(agent, submission);
 
         // Then
-        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("no-approvers");
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("approver-key-unavailable");
+    }
+
+    [Theory]
+    [InlineData("entryType")]
+    [InlineData("submissionKind")]
+    [InlineData("contractVersion")]
+    [InlineData("protocolVersion")]
+    [InlineData("agentKeyVersion")]
+    [InlineData("approverKeyVersion")]
+    public async Task When_SignedSubmissionOmitsANumericField_Then_ItIsRejectedInsteadOfDefaulted(string field)
+    {
+        // Given
+        var (scenario, agent) = await ArrangeAsync();
+        var signedWithDefault = AgentSubmissionScenario.Sign(agent, scenario.NewSubmission(agent, entryType: 0) with
+        {
+            ContractVersion = field == "contractVersion" ? 0 : 1u,
+        });
+        var node = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(
+            signedWithDefault, System.Text.Json.JsonSerializerOptions.Web))!.AsObject();
+        node.Remove(field);
+
+        // When
+        var response = await agent.Client.PostAsJsonAsync("api/agent/submissions", node, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await scenario.LoadSubmissionCountAsync()).ShouldBe(0);
     }
 
     [Fact]

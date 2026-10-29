@@ -135,8 +135,6 @@ public sealed class AgentSubmissionContractNegativeTests
         { "unknown manifest schema", """{"schema":"palladin.organization-approver-manifest.v2"}""", "invalid-manifest" },
         { "unknown manifest contract version", """{"contractVersion":2}""", "invalid-manifest" },
         { "unknown manifest protocol version", """{"protocolVersion":3}""", "invalid-manifest" },
-        { "missing approver set digest", """{"approverSetDigest":null}""", "invalid-manifest" },
-        { "missing issuedAt", """{"issuedAt":null}""", "invalid-manifest" },
         { "malformed issuedAt", """{"issuedAt":"2026-10-29 08:00:00"}""", "invalid-manifest" },
         { "noncanonical manifest revision", """{"manifestRevision":"01"}""", "invalid-manifest" },
         { "zero manifest revision", """{"manifestRevision":"0"}""", "invalid-manifest" },
@@ -164,6 +162,21 @@ public sealed class AgentSubmissionContractNegativeTests
 
         // Then
         exception.Code.ShouldBe(code, name);
+    }
+
+    [Theory]
+    [InlineData("approverSetDigest")]
+    [InlineData("issuedAt")]
+    [InlineData("keyVersion")]
+    [InlineData("signature")]
+    public void When_ManifestOmitsARequiredField_Then_DeserializationRejectsIt(string field)
+    {
+        // Given
+        var candidate = ResignManifest(Merge(JsonNode.Parse(Fixture.ManifestJson(0))!.AsObject(), $$"""{"{{field}}":null}"""));
+        candidate.Remove(field);
+
+        // When / Then
+        Should.Throw<JsonException>(() => candidate.Deserialize<OrganizationApproverManifestContract>(JsonSerializerOptions.Web), field);
     }
 
     [Fact]

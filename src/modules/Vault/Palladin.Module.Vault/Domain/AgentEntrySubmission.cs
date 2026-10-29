@@ -110,6 +110,11 @@ internal sealed class AgentEntrySubmission : EventEntityBase
             throw new AgentSubmissionConflictException("revision-replay");
         }
 
+        if (approverKeyVersion <= ApproverKeyVersion)
+        {
+            throw new AgentSubmissionConflictException("approver-key-rotated");
+        }
+
         SubmissionRevision = submissionRevision;
         AgentAccessEpoch = agentAccessEpoch;
         ApproverKeyVersion = approverKeyVersion;

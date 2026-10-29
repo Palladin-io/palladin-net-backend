@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Shared;
@@ -248,6 +250,49 @@ public sealed class AgentSubmissionTests(ApiFactory apiFactory) : TestBase
         var stored = await scenario.LoadSubmissionAsync(Guid.Parse(original.SubmissionId));
         stored.SubmissionRevision.ShouldBe(2UL);
         stored.ApproverKeyVersion.ShouldBe(2u);
+    }
+
+    [Fact]
+    public async Task When_RewrapAdvancesRevisionWithoutApproverKeyChange_Then_ItIsRejected()
+    {
+        // Given
+        var (scenario, agent) = await ArrangeAsync();
+        var original = scenario.NewSubmission(agent);
+        await scenario.SubmitAsync(agent, original);
+        var sameKey = scenario.Rewrap(agent, original);
+
+        // When
+        var response = await AgentSubmissionScenario.PutRewrapAsync(agent, sameKey);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("approver-key-rotated");
+        (await scenario.LoadSubmissionAsync(Guid.Parse(original.SubmissionId))).SubmissionRevision.ShouldBe(1UL);
+    }
+
+    [Fact]
+    public async Task When_AgentAccessEpochChangedAfterSubmission_Then_PreApprovalUseIsRefused()
+    {
+        // Given
+        var (scenario, agent) = await ArrangeAsync();
+        var submission = scenario.NewSubmission(agent);
+        await scenario.SubmitAsync(agent, submission);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var agents = scope.ServiceProvider.GetRequiredService<Palladin.Module.Agents.Infrastructure.Persistence.AgentsDbWriteContext>();
+            await agents.Agents.Where(x => x.Id == agent.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.AccessEpoch, 2u), TestContext.Current.CancellationToken);
+            var vault = scope.ServiceProvider.GetRequiredService<Palladin.Module.Vault.Infrastructure.Persistence.VaultDbWriteContext>();
+            await vault.Agents.Where(x => x.Id == agent.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.AccessEpoch, 2u), TestContext.Current.CancellationToken);
+        }
+
+        // When
+        var response = await agent.Client.GetAsync($"api/agent/submissions/{submission.SubmissionId}", TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("submission-not-usable");
     }
 
     [Fact]

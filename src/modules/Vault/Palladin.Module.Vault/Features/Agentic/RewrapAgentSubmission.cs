@@ -69,6 +69,11 @@ internal sealed class RewrapAgentSubmissionEndpoint(
                 throw new SubmissionRejection(StatusCodes.Status409Conflict, "rewrap-changed-payload");
             }
 
+            if (submission.ApproverKeyVersion <= existing.ApproverKeyVersion)
+            {
+                throw new SubmissionRejection(StatusCodes.Status409Conflict, "approver-key-rotated");
+            }
+
             await AgentSubmissionIntake.VerifyAgentAsync(domainWriteContext, submission, agent, ct);
             await AgentSubmissionIntake.VerifyApproverKeyAsync(domainWriteContext, submission, ct);
             existing.Rewrap(

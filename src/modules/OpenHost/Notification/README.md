@@ -11,7 +11,7 @@ Owns user-facing notifications: the in-app inbox, real-time delivery, system pus
 - **ProjectReferences:** `Palladin.Module.Identity.Contracts`, `Palladin.Module.Notification.Contracts` (its own contract project).
 - **Publishes** (`Palladin.Module.Notification.Contracts.Events`): `PushTokenRegisteredEvent`, `PushTokenRemovedEvent`, `PushNotificationSentEvent`, `WebNotificationSentEvent`.
 - **Consumes commands** (`Palladin.Module.Notification.Contracts.Commands`): `BroadcastNotificationCommand` (the user-notification fan-out entry point used by Vault and Agents), `BroadcastVaultSyncInvalidationCommand` (value-free realtime-only Vault repair hint), `UpdateUserScope`, `SendEmailCommand`, `SendEntryShareVerificationEmailCommand` (expiring guest verification, no account required), `RecordEntryShareReceiptCommand` (explicit sender-only Inbox receipt).
-- **Consumes** (from Identity): `UserUpsertedEvent`.
+- **Consumes** (from Identity): `UserUpsertedEvent`, `UnverifiedAccountDiscardedEvent` (removes the user replica, scopes, inbox items, preferences and push tokens).
 
 ## Technologies used
 EF Core + Postgres, MassTransit, **SignalR** (`NotificationHub`, JWT-authenticated), **Firebase** push (web + mobile via `FirebasePushNotificationService`).

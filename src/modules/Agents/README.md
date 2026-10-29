@@ -10,7 +10,7 @@ Owns the agent (AI client) lifecycle — enrollment, approval, deactivation — 
 ## Dependencies / references
 - **ProjectReferences:** `Palladin.Core.Hangfire`, `Palladin.Module.Identity.Contracts`, `Palladin.Module.Vault.Contracts`, `Palladin.Module.Notification.Contracts`, `Palladin.Module.Search.Contracts`, `Palladin.Module.Audit.Contracts`, plus its own `Palladin.Module.Agents.Contracts`.
 - **Publishes** (`Palladin.Module.Agents.Contracts.Events`): `AgentUpsertedEvent`, `AgentBrowserPairingEnrolledEvent`, `AgentDeactivatedEvent`, `AgentReactivatedEvent`, `AgentDeletedEvent`, `ApiKeyCreatedEvent`, `ApiKeyActivatedEvent`, `ApiKeyRevokedEvent`, `ApiKeyDeletedEvent`.
-- **Consumes:** `UserUpsertedEvent` from Identity and `AgentDeactivationCompletedEvent` from Vault.
+- **Consumes:** `UserUpsertedEvent` and `UnverifiedAccountDiscardedEvent` (drops the user replica) from Identity and `AgentDeactivationCompletedEvent` from Vault.
 - **Sends command** (`Palladin.Module.Notification.Contracts`): `BroadcastNotificationCommand` (fired when a newly enrolled agent is `Pending`, awaiting approval).
 - **Sends commands** to OpenHost modules from its own `On{Event}Audit` / `On{Event}Search` / onboarding triggers: `AppendAuditLogCommand` (agent/apikey audit), `IndexSearchItemCommand`/`RemoveSearchItemCommand` (agent search), `MarkOrganizationOnboardingStepCommand` (org api-key / agent-enrolled onboarding).
 

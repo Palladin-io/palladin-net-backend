@@ -1,6 +1,7 @@
 using Palladin.Core.Events;
 using Palladin.Core.Security;
 using Palladin.Core.Types;
+using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Identity.Contracts.Events;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Vault.Contracts.Commands;
@@ -333,6 +334,16 @@ internal sealed class User : EventEntityBase
             default:
                 return false;
         }
+    }
+
+    internal void DiscardUnverifiedAccount(Instant now)
+    {
+        if (EmailVerified)
+        {
+            throw new DomainException("A verified account can never be discarded for an OAuth sign-in.");
+        }
+
+        AddEvent(new UnverifiedAccountDiscardedEvent(Id, OrganizationId, now));
     }
 
     internal void RecoverAccount(

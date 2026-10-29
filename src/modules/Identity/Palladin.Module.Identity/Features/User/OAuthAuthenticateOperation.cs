@@ -82,6 +82,19 @@ internal sealed class OAuthAuthenticateOperation(
                 c => c.Provider == provider.Provider && c.ProviderUserId == externalUser.SubjectId))
             .FirstOrDefaultAsync(ct);
 
+        // A never-verified password account cannot prove ownership of this e-mail, so it is never linked.
+        // When it is provably empty it is replaced; otherwise the sign-in fails without changing it.
+        if (user is not null && !user.EmailVerified && !HasConnection(user, provider.Provider, externalUser))
+        {
+            if (!await TryDiscardUnverifiedAccountAsync(user, now, ct))
+            {
+                logger.Warning("Rejected OAuth sign-in for provider {Provider}: e-mail belongs to a non-empty unverified account", provider.Provider);
+                return IdentityOperationResult<OAuthAuthenticateResponse>.Status(401);
+            }
+
+            user = null;
+        }
+
         bool isNewUser;
         OrganizationMember? activeMembership = null;
         Organization? createdOrganization = null;
@@ -183,12 +196,54 @@ internal sealed class OAuthAuthenticateOperation(
         return (user, organization);
     }
 
+    private async Task<bool> TryDiscardUnverifiedAccountAsync(User user, Instant now, CancellationToken ct)
+    {
+        var organization = await domainWriteContext.Organizations
+            .Include(o => o.Members)
+            .Include(o => o.Roles)
+            .Include(o => o.Invitations)
+            .SingleAsync(o => o.Id == user.OrganizationId, ct);
+        if (!IsEmptyPersonalAccount(user, organization))
+        {
+            return false;
+        }
+
+        var directoryEntries = await domainWriteContext.OrganizationMemberDirectoryEntries
+            .Where(entry => entry.OrganizationId == organization.Id)
+            .ToListAsync(ct);
+
+        user.DiscardUnverifiedAccount(now);
+        domainWriteContext.RemoveRange([
+            .. user.OrganizationMemberships.SelectMany(membership => membership.RoleAssignments),
+            .. user.OrganizationMemberships,
+            .. directoryEntries,
+            .. organization.Roles,
+            user,
+            organization,
+        ]);
+        // Frees the e-mail before the replacement account is inserted in the same transaction.
+        await domainWriteContext.FlushAsync(ct);
+        return true;
+    }
+
+    // Only Identity state can be inspected here. Vault, Agents and Entry writes require a verified e-mail,
+    // and the onboarding flags record any Agents or Vault activity of the organization.
+    private static bool IsEmptyPersonalAccount(User user, Organization organization) =>
+        user.OAuthConnections.Count == 0
+        && user.OrganizationMemberships.Count == 1
+        && user.OrganizationMemberships.Single().OrganizationId == organization.Id
+        && organization.Members.Count == 1
+        && organization.Invitations.Count == 0
+        && !organization.ApiKeyCreated
+        && !organization.AgentEnrolled
+        && !user.EntryCreated;
+
+    private static bool HasConnection(User user, AuthProvider authProvider, ExternalUserInfo externalUser) =>
+        user.OAuthConnections.Any(c => c.Provider == authProvider && c.ProviderUserId == externalUser.SubjectId);
+
     private void EnsureOAuthConnectionExists(User user, AuthProvider authProvider, ExternalUserInfo externalUser, Instant now)
     {
-        var hasConnection = user.OAuthConnections.Any(
-            c => c.Provider == authProvider && c.ProviderUserId == externalUser.SubjectId);
-
-        if (!hasConnection)
+        if (!HasConnection(user, authProvider, externalUser))
         {
             var connectionId = guidProvider.Generate();
             var oauthConnection = OAuthConnection.Create(connectionId, user.Id, authProvider, externalUser.SubjectId, externalUser.Email, now);

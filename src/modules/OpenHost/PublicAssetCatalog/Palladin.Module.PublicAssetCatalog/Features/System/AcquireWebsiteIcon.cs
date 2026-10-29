@@ -1,5 +1,8 @@
 using JetBrains.Annotations;
 using MassTransit;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NodaTime;
 using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.MassTransit;
@@ -17,11 +20,16 @@ internal sealed class AcquireWebsiteIconV2ConsumerDefinition : ConsumerDefinitio
 }
 
 [UsedImplicitly]
-internal sealed class AcquireWebsiteIconV2Consumer(IWebsiteIconAcquirer acquirer)
+internal sealed class AcquireWebsiteIconV2Consumer(
+    IWebsiteIconAcquirer acquirer,
+    IClock clock,
+    IOptions<WebsiteIconAcquisitionOptions> options,
+    ILogger<AcquireWebsiteIconV2Consumer> logger)
     : IConsumer<AcquireWebsiteIconV2Command>
 {
     public async Task Consume(ConsumeContext<AcquireWebsiteIconV2Command> context)
     {
+        WarnWhenDelayed(context);
         var result = await acquirer.AcquireAsync(
             context.Message.AssetId,
             context.Message.Hostname,
@@ -31,6 +39,21 @@ internal sealed class AcquireWebsiteIconV2Consumer(IWebsiteIconAcquirer acquirer
             return;
         }
         await acquirer.FailAsync(context.Message.AssetId, context.CancellationToken);
+    }
+
+    // The shared queue has no per-tenant fairness; a long wait is the observable signal of a flood.
+    private void WarnWhenDelayed(ConsumeContext<AcquireWebsiteIconV2Command> context)
+    {
+        if (context.SentTime is not { } sentTime)
+        {
+            return;
+        }
+
+        var wait = clock.GetCurrentInstant() - Instant.FromDateTimeUtc(DateTime.SpecifyKind(sentTime, DateTimeKind.Utc));
+        if (wait > Duration.FromSeconds(options.Value.QueueWaitWarningSeconds))
+        {
+            logger.LogWarning("Website icon acquisition delayed {WaitSeconds} {Hostname}", (int)wait.TotalSeconds, context.Message.Hostname);
+        }
     }
 }
 

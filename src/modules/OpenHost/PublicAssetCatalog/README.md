@@ -49,7 +49,7 @@ pre-production command schema/queue is intentionally retired and may be purged d
 non-production cutover; no production messages or catalog data exist to migrate. The uniqueness
 migration deterministically removes duplicate pre-production hostname assets before creating the index.
 The broker provides backpressure and retains accepted work across API restarts;
-consumer concurrency controls throughput only and is not a capacity limit. A filtered unique hostname
+consumer concurrency controls throughput only and is not a capacity limit. The queue is shared without per-tenant fairness, so the consumer logs a structured warning `Website icon acquisition delayed {WaitSeconds} {Hostname}` when a command waited longer than `Modules:PublicAssetCatalog:WebsiteIconAcquisition:QueueWaitWarningSeconds` (default 120) since it was sent. A filtered unique hostname
 index prevents duplicate website assets. Expected acquisition exhaustion moves the asset to `Failed`;
 failed assets retain their hostname alias, return `status: failed` with `asset: null`, and are not re-enqueued by readiness checks.
 Anonymous catalog search exposes only ready website icons published through an explicit service upload.

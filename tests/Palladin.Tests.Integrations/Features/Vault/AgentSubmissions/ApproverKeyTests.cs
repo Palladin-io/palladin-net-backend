@@ -306,7 +306,10 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
             "api/agent/approver-manifests?afterRevision=1", TestContext.Current.CancellationToken);
 
         // Then
-        all!.Manifests.Select(x => x.ManifestRevision).ShouldBe(["1", "2"]);
+        all!.OrganizationId.ShouldBe(scenario.OrganizationId);
+        all.AgentKeyVersion.ShouldBe(agent.KeyVersion);
+        all.AgentAccessEpoch.ShouldBe(agent.AccessEpoch.ToString());
+        all.Manifests.Select(x => x.ManifestRevision).ShouldBe(["1", "2"]);
         afterFirst!.Manifests.Single().ShouldBe(scenario.CurrentManifest);
         afterFirst.Manifests.Single().ContinuitySignature.ShouldNotBeNull();
     }

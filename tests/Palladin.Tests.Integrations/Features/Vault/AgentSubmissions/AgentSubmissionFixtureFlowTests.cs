@@ -66,6 +66,9 @@ public sealed class AgentSubmissionFixtureFlowTests(ApiFactory apiFactory) : Tes
         rotate.StatusCode.ShouldBe(HttpStatusCode.OK, await rotate.Content.ReadAsStringAsync());
         rewrap.StatusCode.ShouldBe(HttpStatusCode.OK, await rewrap.Content.ReadAsStringAsync());
         manifests!.Manifests.ShouldBe([firstManifest, secondManifest]);
+        manifests.OrganizationId.ShouldBe(Fixture.OrganizationId);
+        manifests.AgentKeyVersion.ShouldBe(Fixture.AgentKeyVersion);
+        manifests.AgentAccessEpoch.ShouldBe(Fixture.Context["agentAccessEpoch"]!.GetValue<string>());
         var served = await agent.GetStringAsync(
             $"api/agent/submissions/{Fixture.Submission(1).SubmissionId}", TestContext.Current.CancellationToken);
         JsonNode.DeepEquals(JsonNode.Parse(served), JsonNode.Parse(Fixture.SubmissionJson(1))).ShouldBeTrue();

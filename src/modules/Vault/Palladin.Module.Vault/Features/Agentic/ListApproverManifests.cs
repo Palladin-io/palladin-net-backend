@@ -2,6 +2,7 @@ using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Palladin.Core.Types;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -18,7 +19,11 @@ public sealed record ListApproverManifestsRequest
 }
 
 [PublicAPI]
-public sealed record ListApproverManifestsResponse(IReadOnlyList<OrganizationApproverManifestContract> Manifests);
+public sealed record ListApproverManifestsResponse(
+    Guid OrganizationId,
+    uint AgentKeyVersion,
+    string AgentAccessEpoch,
+    IReadOnlyList<OrganizationApproverManifestContract> Manifests);
 
 [PublicAPI]
 internal sealed class ListApproverManifestsEndpoint(VaultDomainReadContext domainReadContext)
@@ -33,17 +38,30 @@ internal sealed class ListApproverManifestsEndpoint(VaultDomainReadContext domai
         Summary(summary =>
         {
             summary.Summary = "List the organization's signed approver manifests";
-            summary.Description = "Returns append-only approver manifests after the given revision in ascending order so the Agent runtime can verify the self-signed and continuity-signed chain against its pinned key.";
+            summary.Description = "Returns the authenticated Agent's current organization, X25519 key version and access epoch required by submissions, plus append-only approver manifests after the given revision in ascending order so the Agent runtime can verify the self-signed and continuity-signed chain against its pinned key.";
         });
         Tags("Vault/Submissions");
     }
 
     public override async Task HandleAsync(ListApproverManifestsRequest req, CancellationToken ct)
     {
+        var agentId = User.GetAgentId();
         var organizationId = User.GetAgentOrganizationId();
-        if (organizationId is null)
+        var accessEpoch = User.GetAgentAccessEpoch();
+        if (agentId is null || organizationId is null || accessEpoch is null)
         {
             await Send.UnauthorizedAsync(ct);
+            return;
+        }
+
+        var agent = await domainReadContext.Agents
+            .Where(x => x.Id == agentId && x.OrganizationId == organizationId
+                        && x.Status == AgentStatus.Active && x.AccessEpoch == accessEpoch)
+            .Select(x => new { x.RecipientKeyVersion, x.AccessEpoch })
+            .SingleOrDefaultAsync(ct);
+        if (agent is null)
+        {
+            await new SubmissionRejection(StatusCodes.Status403Forbidden, "agent-not-active").SendAsync(HttpContext, ct);
             return;
         }
 
@@ -75,6 +93,9 @@ internal sealed class ListApproverManifestsEndpoint(VaultDomainReadContext domai
             .Select(x => x.Document)
             .ToListAsync(ct);
         await Send.OkAsync(new ListApproverManifestsResponse(
+            organizationId.Value,
+            agent.RecipientKeyVersion,
+            agent.AccessEpoch.ToString(System.Globalization.CultureInfo.InvariantCulture),
             documents.Select(ApproverKeyContractMapper.ToManifestContract).ToList()), ct);
     }
 }

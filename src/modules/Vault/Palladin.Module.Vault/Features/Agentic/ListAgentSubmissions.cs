@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
@@ -14,13 +15,16 @@ namespace Palladin.Module.Vault.Features;
 [PublicAPI]
 public sealed record AgentSubmissionTargetItem(
     string Kind,
-    Guid? SuggestedVaultId,
-    Guid? VaultId,
-    Guid? EntryId,
-    string? ExpectedEntryRevision);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? SuggestedVaultId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? VaultId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? EntryId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExpectedEntryRevision);
 
 [PublicAPI]
-public sealed record AgentSubmissionDecisionItem(Guid VaultId, Guid EntryId, Guid? GrantId);
+public sealed record AgentSubmissionDecisionItem(
+    Guid VaultId,
+    Guid EntryId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? GrantId);
 
 [PublicAPI]
 public sealed record AgentSubmissionItem(
@@ -32,10 +36,10 @@ public sealed record AgentSubmissionItem(
     bool AgentUseSuspended,
     string SubmissionRevision,
     uint ApproverKeyVersion,
-    uint? CurrentApproverKeyVersion,
-    AgentSubmissionDecisionItem? Decision,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? CurrentApproverKeyVersion,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AgentSubmissionDecisionItem? Decision,
     Instant CreatedAt,
-    Instant? DecidedAt);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Instant? DecidedAt);
 
 [PublicAPI]
 public sealed record ListAgentSubmissionsResponse(IReadOnlyList<AgentSubmissionItem> Items);

@@ -302,6 +302,18 @@ internal sealed class AgentSubmissionScenario
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.IsApprover, isApprover));
     }
 
+    internal async Task AddVaultMemberAsync(Guid userId)
+    {
+        await using var scope = _apiFactory.Services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        var vault = await context.Vaults
+            .Include(x => x.VaultMembers)
+            .Include(x => x.VaultMemberKeyEnvelopes)
+            .SingleAsync(x => x.OrganizationId == OrganizationId && x.Id == VaultId);
+        vault.AddMember(userId, VaultFaker.CreateMemberKey(vault.Scope, userId), _apiFactory.FakeClock.GetCurrentInstant());
+        await context.SaveChangesAsync();
+    }
+
     internal async Task<AgentEntrySubmission> LoadSubmissionAsync(Guid submissionId)
     {
         await using var scope = _apiFactory.Services.CreateAsyncScope();

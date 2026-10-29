@@ -94,6 +94,14 @@ internal sealed class ApproveSubmissionAsNewEntryEndpoint(
         {
             await new SubmissionRejection(StatusCodes.Status409Conflict, "grant-id-used").SendAsync(HttpContext, ct);
         }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+        {
+            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+        })
+        {
+            await (await SubmissionDecision.ConcurrencyRejectionAsync(domainWriteContext, organizationId, req.SubmissionId, ct))
+                .SendAsync(HttpContext, ct);
+        }
         catch (Exception ex) when (SubmissionRejection.Handles(ex))
         {
             await SubmissionRejection.From(ex).SendAsync(HttpContext, ct);

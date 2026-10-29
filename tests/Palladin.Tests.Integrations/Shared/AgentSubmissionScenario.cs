@@ -185,10 +185,10 @@ internal sealed class AgentSubmissionScenario
     }
 
     internal async Task<HttpResponseMessage> RotateAsync(
-        ScenarioMember signer, bool forgeContinuity = false, bool omitContinuity = false)
+        ScenarioMember signer, bool forgeContinuity = false, bool omitContinuity = false, uint keyVersionStep = 1)
     {
         var previous = CurrentKey!;
-        var next = new ApproverGroupKey(previous.KeyVersion + 1);
+        var next = new ApproverGroupKey(previous.KeyVersion + keyVersionStep);
         var challenge = await ChallengeAsync(signer);
         var manifest = SignManifest(next, ulong.Parse(CurrentManifest!.ManifestRevision) + 1, challenge,
             omitContinuity ? null : forgeContinuity ? new ApproverGroupKey(previous.KeyVersion) : previous);

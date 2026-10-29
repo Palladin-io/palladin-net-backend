@@ -313,6 +313,25 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_RotationSkipsAKeyVersion_Then_TheManifestChainIsNotExtended()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        await scenario.BootstrapAsync();
+
+        // When
+        var response = await scenario.RotateAsync(scenario.Owner, keyVersionStep: 2);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("approver-manifest-stale");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.OrganizationApproverManifests.CountAsync(x => x.OrganizationId == scenario.OrganizationId,
+            TestContext.Current.CancellationToken)).ShouldBe(1);
+    }
+
+    [Fact]
     public async Task When_RotationOmitsContinuity_Then_ItIsRejected()
     {
         // Given

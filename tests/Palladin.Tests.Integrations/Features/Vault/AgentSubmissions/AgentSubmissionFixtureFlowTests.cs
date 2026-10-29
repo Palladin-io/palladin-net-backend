@@ -115,18 +115,27 @@ public sealed class AgentSubmissionFixtureFlowTests(ApiFactory apiFactory) : Tes
         (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("invalid-agent-signature");
     }
 
+    // The fixture Entry is a structural stub at revision 7; remove it so global lifecycle jobs in other tests
+    // never process synthetic history.
+    protected override async ValueTask TearDownAsync() => await DeleteFixtureStateAsync();
+
+    private async Task DeleteFixtureStateAsync()
+    {
+        var organizationId = Fixture.OrganizationId;
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var vault = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        await vault.AgentEntrySubmissions.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
+        await vault.ApproverKeyChallenges.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
+        await vault.OrganizationApproverKeySets.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
+        await vault.OrganizationApprovers.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
+        await vault.Grants.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
+        await vault.Vaults.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
+    }
+
     private async Task<(HttpClient Member, HttpClient Agent)> ArrangeAsync()
     {
         var organizationId = Fixture.OrganizationId;
-        await using (var scope = apiFactory.Services.CreateAsyncScope())
-        {
-            var vault = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
-            await vault.AgentEntrySubmissions.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
-            await vault.ApproverKeyChallenges.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
-            await vault.OrganizationApproverKeySets.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
-            await vault.OrganizationApprovers.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
-            await vault.Grants.Where(x => x.OrganizationId == organizationId).ExecuteDeleteAsync();
-        }
+        await DeleteFixtureStateAsync();
 
         var user = await FixtureMemberAsync();
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, Fixture.MemberX25519PublicKey, Fixture.MemberKeyVersion);

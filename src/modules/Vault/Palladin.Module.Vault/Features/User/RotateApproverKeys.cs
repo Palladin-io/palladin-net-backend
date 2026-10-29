@@ -58,7 +58,11 @@ internal sealed class RotateApproverKeysEndpoint(
             await domainWriteContext.CommitAsync(ct);
             await Send.OkAsync(ApproverKeySetChange.ToResponse(keySet), ct);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateException ex) when (ex is DbUpdateConcurrencyException
+            || ex.InnerException is Npgsql.PostgresException
+            {
+                SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+            })
         {
             await new SubmissionRejection(StatusCodes.Status409Conflict, "approver-set-changed").SendAsync(HttpContext, ct);
         }

@@ -28,9 +28,9 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
         var authedClient = apiFactory.CreateAuthenticatedClient(user);
 
-        var enroll = await EnrollAsync(authedClient);
+        var enroll = await EnrollAsync(authedClient, authHash);
         var (confirmResponse, _) = await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
-            new ConfirmTotpRequest { Code = Code(enroll.Secret) });
+            new ConfirmTotpRequest { Code = Code(enroll.Secret), CurrentAuthCredential = authHash });
         confirmResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
 
         var anonClient = apiFactory.CreateClient();
@@ -72,10 +72,10 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         var email = $"totp-replay-{Guid.NewGuid():N}@example.com";
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
         var authedClient = apiFactory.CreateAuthenticatedClient(user);
-        var enroll = await EnrollAsync(authedClient);
+        var enroll = await EnrollAsync(authedClient, authHash);
         var confirmCode = Code(enroll.Secret);
         await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
-            new ConfirmTotpRequest { Code = confirmCode });
+            new ConfirmTotpRequest { Code = confirmCode, CurrentAuthCredential = authHash });
 
         var anonClient = apiFactory.CreateClient();
         var (_, login) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
@@ -98,9 +98,9 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         var email = $"totp-rec-{Guid.NewGuid():N}@example.com";
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
         var authedClient = apiFactory.CreateAuthenticatedClient(user);
-        var enroll = await EnrollAsync(authedClient);
+        var enroll = await EnrollAsync(authedClient, authHash);
         var (_, confirm) = await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
-            new ConfirmTotpRequest { Code = Code(enroll.Secret) });
+            new ConfirmTotpRequest { Code = Code(enroll.Secret), CurrentAuthCredential = authHash });
 
         var anonClient = apiFactory.CreateClient();
         var (_, login) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
@@ -123,9 +123,9 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         var email = $"totp-lock-{Guid.NewGuid():N}@example.com";
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
         var authedClient = apiFactory.CreateAuthenticatedClient(user);
-        var enroll = await EnrollAsync(authedClient);
+        var enroll = await EnrollAsync(authedClient, authHash);
         await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
-            new ConfirmTotpRequest { Code = Code(enroll.Secret) });
+            new ConfirmTotpRequest { Code = Code(enroll.Secret), CurrentAuthCredential = authHash });
 
         var anonClient = apiFactory.CreateClient();
         var (_, login) = await anonClient.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
@@ -167,16 +167,17 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = KeyGeneration.GenerateRandomKey(32);
         var email = $"totp-off-{Guid.NewGuid():N}@example.com";
-        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(KeyGeneration.GenerateRandomKey(32), email: email, emailVerified: true);
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
         var authedClient = apiFactory.CreateAuthenticatedClient(user);
-        var enroll = await EnrollAsync(authedClient);
+        var enroll = await EnrollAsync(authedClient, authHash);
         await authedClient.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
-            new ConfirmTotpRequest { Code = Code(enroll.Secret) });
+            new ConfirmTotpRequest { Code = Code(enroll.Secret), CurrentAuthCredential = authHash });
 
         // When — a fresh (next-step) code, since the confirm code's step is consumed
-        var response = await authedClient.PostAsJsonAsync(
-            "api/auth/totp/disable", new { Code = NextCode(enroll.Secret) }, TestContext.Current.CancellationToken);
+        var response = await authedClient.POSTAsync<DisableTotpEndpoint, DisableTotpRequest>(
+            new DisableTotpRequest { Code = NextCode(enroll.Secret), CurrentAuthCredential = authHash });
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
@@ -195,9 +196,9 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         var email = $"browser-totp-{Guid.NewGuid():N}@example.com";
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(credential, email: email, emailVerified: true);
         var authenticated = apiFactory.CreateAuthenticatedClient(user);
-        var enrollment = await EnrollAsync(authenticated);
+        var enrollment = await EnrollAsync(authenticated, credential);
         var (confirmed, _) = await authenticated.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
-            new() { Code = Code(enrollment.Secret) });
+            new() { Code = Code(enrollment.Secret), CurrentAuthCredential = credential });
         confirmed.StatusCode.ShouldBe(HttpStatusCode.OK);
         using var browser = apiFactory.CreateClient();
         browser.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
@@ -219,11 +220,99 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
         body.RootElement.GetProperty("sessionId").GetGuid().ShouldNotBe(Guid.Empty);
     }
 
-    private async Task<EnrollTotpResponse> EnrollAsync(HttpClient client)
+    [Fact]
+    public async Task When_EnrollWithBearerTokenOnly_Then_RejectedAndNoSecretIssued()
     {
-        var response = await client.PostAsync("api/auth/totp/enroll", null, TestContext.Current.CancellationToken);
+        // Given
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            KeyGeneration.GenerateRandomKey(32), email: $"totp-bearer-{Guid.NewGuid():N}@example.com", emailVerified: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var response = await client.PostAsJsonAsync("api/auth/totp/enroll", new { }, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await HasTotpCredentialAsync(user.Id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_EnrollWithWrongCurrentCredential_Then_ForbiddenAndNoSecretIssued()
+    {
+        // Given
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            KeyGeneration.GenerateRandomKey(32), email: $"totp-wrong-{Guid.NewGuid():N}@example.com", emailVerified: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var (response, _) = await client.POSTAsync<EnrollTotpEndpoint, EnrollTotpRequest, EnrollTotpResponse>(
+            new EnrollTotpRequest { CurrentAuthCredential = KeyGeneration.GenerateRandomKey(32) });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await HasTotpCredentialAsync(user.Id)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_ConfirmWithWrongCurrentCredential_Then_ForbiddenAndFactorNotEnabled()
+    {
+        // Given
+        var authHash = KeyGeneration.GenerateRandomKey(32);
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            authHash, email: $"totp-confirm-{Guid.NewGuid():N}@example.com", emailVerified: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var enroll = await EnrollAsync(client, authHash);
+
+        // When
+        var (response, _) = await client.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
+            new ConfirmTotpRequest { Code = Code(enroll.Secret), CurrentAuthCredential = KeyGeneration.GenerateRandomKey(32) });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await readContext.TotpCredentials.SingleAsync(t => t.UserId == user.Id, TestContext.Current.CancellationToken))
+            .IsEnabled.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_DisableWithWrongCurrentCredential_Then_ForbiddenAndFactorKept()
+    {
+        // Given
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = KeyGeneration.GenerateRandomKey(32);
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
+            authHash, email: $"totp-keep-{Guid.NewGuid():N}@example.com", emailVerified: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var enroll = await EnrollAsync(client, authHash);
+        await client.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
+            new ConfirmTotpRequest { Code = Code(enroll.Secret), CurrentAuthCredential = authHash });
+
+        // When
+        var response = await client.POSTAsync<DisableTotpEndpoint, DisableTotpRequest>(
+            new DisableTotpRequest { Code = NextCode(enroll.Secret), CurrentAuthCredential = KeyGeneration.GenerateRandomKey(32) });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await readContext.TotpCredentials.SingleAsync(t => t.UserId == user.Id, TestContext.Current.CancellationToken))
+            .IsEnabled.ShouldBeTrue();
+    }
+
+    private async Task<bool> HasTotpCredentialAsync(Guid userId)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .TotpCredentials.AnyAsync(t => t.UserId == userId, TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<EnrollTotpResponse> EnrollAsync(HttpClient client, byte[] currentAuthCredential)
+    {
+        var (response, result) = await client.POSTAsync<EnrollTotpEndpoint, EnrollTotpRequest, EnrollTotpResponse>(
+            new EnrollTotpRequest { CurrentAuthCredential = currentAuthCredential });
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        return (await response.Content.ReadFromJsonAsync<EnrollTotpResponse>(TestContext.Current.CancellationToken))!;
+        return result;
     }
 
     private static string Code(string secretBase32) =>

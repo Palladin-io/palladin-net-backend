@@ -7,4 +7,5 @@ internal static class VaultEndpoints
     internal const string FromIdentity = "vault.events.identity";
     internal const string MemberKeyDirectory = "vault.commands.member-key-directory";
     internal const string Sharing = "vault.commands.sharing";
+    internal const string Approvers = "vault.commands.approvers";
 }

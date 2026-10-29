@@ -17,6 +17,12 @@ internal sealed class AgentRequestSigning
             ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
         }));
 
+    public static AgentRequestSigning FromSeed(byte[] seed) =>
+        new(Key.Import(SignatureAlgorithm.Ed25519, seed, KeyBlobFormat.RawPrivateKey, new KeyCreationParameters
+        {
+            ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
+        }));
+
     public string PublicKeyBase64 =>
         Convert.ToBase64String(_key.PublicKey.Export(KeyBlobFormat.RawPublicKey));
 

@@ -138,6 +138,7 @@ internal sealed class LoginOperation(
 
         await using var transaction = await domainWriteContext.BeginTransactionAsync(ct);
         await waitlistDeveloperBenefitActivator.TryActivateAsync(user, now, ct);
+        membership.AnnounceApproverEligibility();
 
         var (accessToken, refreshToken) = sessionIssuer.Issue(
             user,

@@ -12,6 +12,7 @@ using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Module.Vault.Infrastructure.Purge;
 using Palladin.Module.Vault.Infrastructure.Sync;
 using Palladin.Module.Vault.Infrastructure.Sharing;
+using Palladin.Module.Vault.Infrastructure.Submissions;
 using Palladin.Module.Vault.Shared;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,12 @@ internal static class InfrastructureModule
         services.AddScoped<EntryShareReceiver>();
         services.AddScoped<EntryShareFailedAttemptRecorder>();
         services.AddScoped<EntryShareOtpDispatcher>();
+        services.AddOptions<AgentSubmissionOptions>()
+            .Bind(configuration.GetSection(AgentSubmissionOptions.Position))
+            .Validate(options => options.ApproverChallengeLifetimeSeconds is > 0 and <= 900
+                && options.MaximumListItems is > 0 and <= 1000,
+                "Agent submission challenge lifetime and list bound must be positive and bounded.")
+            .ValidateOnStart();
         services.AddOptions<VaultCreationOptions>()
             .Bind(configuration.GetSection(VaultCreationOptions.Position))
             .Validate(options => options.ChallengeTtlSeconds is > 0 and <= 3600,
@@ -91,6 +98,8 @@ internal static class InfrastructureModule
             configuration.GetSection(DispatchEntryShareActivityJobOptions.Position));
         services.AddScopedCronJob<DispatchEntryShareOtpJob, DispatchEntryShareOtpJobOptions>(
             configuration.GetSection(DispatchEntryShareOtpJobOptions.Position));
+        services.AddScopedCronJob<PurgeTrashedSubmissionsJob, PurgeTrashedSubmissionsJobOptions>(
+            configuration.GetSection(PurgeTrashedSubmissionsJobOptions.Position));
         services.AddScopedCronJob<VaultEntryLifecycleJob, VaultEntryLifecycleOptions>(
             configuration.GetSection(VaultEntryLifecycleOptions.Position));
 

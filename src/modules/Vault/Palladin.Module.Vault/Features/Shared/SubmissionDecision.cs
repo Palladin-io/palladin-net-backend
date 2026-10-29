@@ -120,11 +120,14 @@ internal static class SubmissionDecision
         }
     }
 
+    // A racing decision can surface as the submission's concurrency token or as whichever unique constraint
+    // (Entry, sequence, PK_Grants) the winner's rows hit first; the re-read state decides which loser it was.
     internal static async Task<SubmissionRejection> ConcurrencyRejectionAsync(
         VaultDomainWriteContext domainWriteContext,
         Guid organizationId,
         Guid submissionId,
-        CancellationToken ct)
+        CancellationToken ct,
+        string pendingCode = "concurrent-modification")
     {
         domainWriteContext.Clear();
         var state = await domainWriteContext.AgentEntrySubmissions
@@ -133,7 +136,7 @@ internal static class SubmissionDecision
             .SingleOrDefaultAsync(ct);
         return new SubmissionRejection(
             StatusCodes.Status409Conflict,
-            state == AgentSubmissionState.Pending ? "concurrent-modification" : "submission-already-decided");
+            state == AgentSubmissionState.Pending ? pendingCode : "submission-already-decided");
     }
 
     internal static ApproveSubmissionResponse ToResponse(AgentEntrySubmission submission, VaultEntry entry) => new(

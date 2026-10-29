@@ -359,6 +359,42 @@ public sealed class SubmissionBoundaryTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_IdenticalApproveNewWithGrantRacesThreeTimes_Then_LosersGetSubmissionAlreadyDecided()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var agent = await scenario.CreateAgentAsync();
+        await scenario.BootstrapAsync();
+        var submissionId = await scenario.SubmitAsync(agent, scenario.NewSubmission(agent));
+        var entryId = await scenario.ReserveEntryIdAsync(scenario.Owner.Client);
+        var grantId = Guid.NewGuid();
+        var request = new ApproveSubmissionAsNewEntryRequest
+        {
+            SubmissionId = submissionId,
+            VaultId = scenario.VaultId,
+            Entry = EntryEnvelopeFaker.CreateRequest(scenario.OrganizationId, scenario.VaultId, entryId),
+            Grant = scenario.GrantRequest(agent, entryId, grantId),
+        };
+
+        // When
+        var responses = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ =>
+            scenario.Owner.Client.PostAsJsonAsync($"api/submissions/{submissionId}/approve-new", request,
+                TestContext.Current.CancellationToken)));
+
+        // Then
+        var codes = await Task.WhenAll(responses
+            .Where(x => x.StatusCode != HttpStatusCode.OK)
+            .Select(async x => $"{(int)x.StatusCode}:{await AgentSubmissionScenario.ErrorCodeAsync(x)}"));
+        responses.Count(x => x.StatusCode == HttpStatusCode.OK).ShouldBeGreaterThanOrEqualTo(1);
+        codes.ShouldAllBe(code => code == "409:submission-already-decided");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await db.Entries.CountAsync(x => x.Id == entryId, TestContext.Current.CancellationToken)).ShouldBe(1);
+        (await db.Grants.CountAsync(x => x.Id == grantId, TestContext.Current.CancellationToken)).ShouldBe(1);
+        (await scenario.LoadSubmissionAsync(submissionId)).DecisionGrantId.ShouldBe(grantId);
+    }
+
+    [Fact]
     public async Task When_IdenticalSubmissionIsPostedConcurrently_Then_OneRowExistsAndBothCallersSeeIt()
     {
         // Given

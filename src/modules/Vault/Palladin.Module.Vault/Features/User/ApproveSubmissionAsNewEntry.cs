@@ -92,7 +92,9 @@ internal sealed class ApproveSubmissionAsNewEntryEndpoint(
         }
         catch (DbUpdateException ex) when (GranularGrantCreation.IsGrantIdentifierConflict(ex))
         {
-            await new SubmissionRejection(StatusCodes.Status409Conflict, "grant-id-used").SendAsync(HttpContext, ct);
+            await (await SubmissionDecision.ConcurrencyRejectionAsync(
+                    domainWriteContext, organizationId, req.SubmissionId, ct, pendingCode: "grant-id-used"))
+                .SendAsync(HttpContext, ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
         {

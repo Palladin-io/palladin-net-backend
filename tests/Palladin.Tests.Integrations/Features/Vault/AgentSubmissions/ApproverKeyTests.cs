@@ -312,6 +312,31 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         scenario.CurrentManifest.PreviousSigningKeyFingerprint.ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData("messageKey")]
+    [InlineData("signingKey")]
+    public async Task When_SameVersionManifestChangesAGroupKey_Then_AddApproversIsRejectedAndNothingChanges(string changedKey)
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        await scenario.BootstrapAsync();
+        await scenario.AddApproverMemberAsync();
+        var current = scenario.CurrentKey!;
+        var substituted = changedKey == "messageKey" ? current.WithNewMessageKey() : new ApproverGroupKey(current.KeyVersion);
+
+        // When
+        var response = await scenario.AddApproversAsync(scenario.Owner, manifestKey: substituted);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("approver-manifest-stale");
+        var (_, keys) = await scenario.Owner.Client
+            .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
+        keys!.Manifest!.ManifestRevision.ShouldBe("1");
+        keys.Manifest.MessageKeyFingerprint.ShouldBe(AgentSubmissionScenario.Encode(current.MessageKeyFingerprint));
+        keys.Approvers.Count(x => x.HasWrap).ShouldBe(1);
+    }
+
     [Fact]
     public async Task When_RotationSkipsAKeyVersion_Then_TheManifestChainIsNotExtended()
     {

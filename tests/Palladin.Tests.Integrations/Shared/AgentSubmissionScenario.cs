@@ -28,20 +28,32 @@ namespace Palladin.Tests.Integrations.Shared;
 // verified by the backend) and an X25519 message public key (the backend only checks its fingerprint).
 internal sealed class ApproverGroupKey
 {
-    private readonly Key _signingKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
-    {
-        ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
-    });
+    private readonly Key _signingKey;
 
-    internal ApproverGroupKey(uint keyVersion) => KeyVersion = keyVersion;
+    internal ApproverGroupKey(uint keyVersion)
+        : this(keyVersion, RandomNumberGenerator.GetBytes(32), Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
+        {
+            ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
+        }))
+    {
+    }
+
+    private ApproverGroupKey(uint keyVersion, byte[] messagePublicKey, Key signingKey)
+    {
+        KeyVersion = keyVersion;
+        MessagePublicKey = messagePublicKey;
+        _signingKey = signingKey;
+    }
 
     internal uint KeyVersion { get; }
-    internal byte[] MessagePublicKey { get; } = RandomNumberGenerator.GetBytes(32);
+    internal byte[] MessagePublicKey { get; }
     internal byte[] SigningPublicKey => _signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
     internal byte[] MessageKeyFingerprint =>
         VaultKeyFingerprint.Compute(MessagePublicKey, VaultKeyKind.OrganizationApproverX25519);
     internal byte[] SigningKeyFingerprint =>
         VaultKeyFingerprint.Compute(SigningPublicKey, VaultKeyKind.OrganizationApproverEd25519);
+
+    internal ApproverGroupKey WithNewMessageKey() => new(KeyVersion, RandomNumberGenerator.GetBytes(32), _signingKey);
 
     internal byte[] Sign(byte[] input) => SignatureAlgorithm.Ed25519.Sign(_signingKey, input);
 }
@@ -144,10 +156,11 @@ internal sealed class AgentSubmissionScenario
         return response;
     }
 
-    internal async Task<HttpResponseMessage> AddApproversAsync(ScenarioMember signer, bool includeContinuity = false)
+    internal async Task<HttpResponseMessage> AddApproversAsync(
+        ScenarioMember signer, bool includeContinuity = false, ApproverGroupKey? manifestKey = null)
     {
         var challenge = await ChallengeAsync(signer);
-        var manifest = SignManifest(CurrentKey!, ulong.Parse(CurrentManifest!.ManifestRevision) + 1, challenge,
+        var manifest = SignManifest(manifestKey ?? CurrentKey!, ulong.Parse(CurrentManifest!.ManifestRevision) + 1, challenge,
             previous: includeContinuity ? CurrentKey : null);
         var newApprovers = challenge.Approvers.Where(x => !x.HasWrap).ToList();
         var response = await signer.Client.PostAsJsonAsync(

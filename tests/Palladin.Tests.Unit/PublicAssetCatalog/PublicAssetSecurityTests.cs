@@ -10,6 +10,9 @@ using Palladin.Module.PublicAssetCatalog.Contracts.Commands;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Acquisition;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
 using NSubstitute;
+using NodaTime.Testing;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MassTransit;
 
 namespace Palladin.Tests.Unit.PublicAssetCatalog;
@@ -137,10 +140,61 @@ public sealed class PublicAssetSecurityTests
         context.CancellationToken.Returns(TestContext.Current.CancellationToken);
 
         // When
-        await new AcquireWebsiteIconV2Consumer(acquirer).Consume(context);
+        await CreateConsumer(acquirer, new FakeClock(Instant.FromUtc(2026, 10, 29, 12, 0)), new RecordingLogger()).Consume(context);
 
         // Then
         await acquirer.Received(1).FailAsync(assetId, TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData(121, true)]
+    [InlineData(5, false)]
+    public async Task When_Icon_Command_Waited_In_Queue_Then_Only_A_Long_Wait_Logs_A_Warning(int waitSeconds, bool expectWarning)
+    {
+        // Given
+        var now = Instant.FromUtc(2026, 10, 29, 12, 0);
+        var logger = new RecordingLogger();
+        var assetId = Guid.NewGuid();
+        var context = Substitute.For<ConsumeContext<AcquireWebsiteIconV2Command>>();
+        context.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
+        context.SentTime.Returns(now.Minus(Duration.FromSeconds(waitSeconds)).ToDateTimeUtc());
+        context.CancellationToken.Returns(TestContext.Current.CancellationToken);
+
+        // When
+        await CreateConsumer(Substitute.For<IWebsiteIconAcquirer>(), new FakeClock(now), logger).Consume(context);
+
+        // Then
+        if (expectWarning)
+        {
+            var warning = logger.Messages.ShouldHaveSingleItem();
+            warning.Level.ShouldBe(LogLevel.Warning);
+            warning.Message.ShouldBe($"Website icon acquisition delayed {waitSeconds} {assetId}");
+        }
+        else
+        {
+            logger.Messages.ShouldBeEmpty();
+        }
+    }
+
+    private static AcquireWebsiteIconV2Consumer CreateConsumer(
+        IWebsiteIconAcquirer acquirer, IClock clock, ILogger<AcquireWebsiteIconV2Consumer> logger) =>
+        new(acquirer, clock, Options.Create(new WebsiteIconAcquisitionOptions()), logger);
+
+    private sealed class RecordingLogger : ILogger<AcquireWebsiteIconV2Consumer>
+    {
+        internal List<(LogLevel Level, string Message)> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add((logLevel, formatter(state, exception)));
     }
 
     [Fact]

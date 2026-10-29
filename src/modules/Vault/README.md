@@ -446,7 +446,7 @@ acceptance gates; no deployment is implied by this local coverage.
 
 - Project references: Agents, Identity, Notification.Events, Audit.Events, and shared core libraries.
 - Publishes Vault, Entry, grant, credential, import, and export domain events.
-- Consumes Agent and Identity replica events.
+- Consumes Agent and Identity replica events. `UnverifiedAccountDiscardedEvent` removes the user replica and member key directory entry unless the user still holds a Vault membership.
 - Uses EF Core/Postgres, MassTransit, Hangfire for grant expiry, and `ICdnService` for existing asset flows.
 
 ## Inject metadata revision binding

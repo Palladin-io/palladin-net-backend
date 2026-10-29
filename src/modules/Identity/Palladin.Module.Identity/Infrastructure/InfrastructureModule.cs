@@ -3,6 +3,7 @@ using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Invitations;
 using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
+using Palladin.Module.Identity.Infrastructure.Recovery;
 using Palladin.Module.Identity.Infrastructure.Totp;
 using Palladin.Module.Identity.Infrastructure.Waitlist;
 using Palladin.Module.Identity.Infrastructure.OAuth;
@@ -26,6 +27,11 @@ internal static class InfrastructureModule
         services.AddOptions<ConsentOptions>()
             .Bind(configuration.GetSection(ConsentOptions.Position))
             .Validate(options => options.MaxAgeSeconds is > 0 and <= 300, "Consent freshness must be between 1 and 300 seconds.")
+            .ValidateOnStart();
+        services.AddOptions<AccountRecoveryOptions>()
+            .Bind(configuration.GetSection(AccountRecoveryOptions.Position))
+            .Validate(options => options.ChallengeTtlSeconds is >= 30 and <= 900,
+                "Recovery challenge TTL must be between 30 and 900 seconds.")
             .ValidateOnStart();
         services.AddIdentityPersistence(configuration);
         services.AddIdentityOAuth(configuration);

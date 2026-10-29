@@ -19,6 +19,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "GetMemberSnapshotEndpoint",
         "GetSharedUnlockSessionStateEndpoint",
         "GlobalSearchEndpoint",
+        "IssueRecoveryChallengeEndpoint",
         "LockSharedUnlockLinkEndpoint",
         "LogoutSharedUnlockLinkEndpoint",
         "LogoutEndpoint",

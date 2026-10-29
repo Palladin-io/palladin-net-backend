@@ -27,6 +27,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.PrivateKeyWrapRevision).IsConcurrencyToken();
         builder.Property(x => x.KdfProfileId).HasMaxLength(64);
         builder.Property(x => x.DeviceWrapperMetadata).HasMaxLength(16384);
+        builder.Property(x => x.RecoveryChallengeHash).HasMaxLength(32).IsConcurrencyToken();
 
         builder.HasOne(x => x.Organization)
             .WithMany(x => x.Users)

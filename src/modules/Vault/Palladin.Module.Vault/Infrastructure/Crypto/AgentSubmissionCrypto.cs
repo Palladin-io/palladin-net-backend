@@ -149,8 +149,8 @@ internal static class AgentSubmissionCrypto
             || contract.ContractVersion != AgentSubmissionLimits.ContractVersion
             || contract.ProtocolVersion != VaultProtocol.CurrentVersion
             || contract.KeyVersion == 0
-            || (contract.KeyVersion == 1) != (contract.ContinuitySignature is null)
-            || (contract.KeyVersion == 1) != (contract.PreviousSigningKeyFingerprint is null)
+            || (contract.ContinuitySignature is null) != (contract.PreviousSigningKeyFingerprint is null)
+            || (contract.KeyVersion == 1 && contract.ContinuitySignature is not null)
             || contract.IssuedAt is null || !IssuedAtPattern.Parse(contract.IssuedAt).Success
             || IssuedAtPattern.Format(IssuedAtPattern.Parse(contract.IssuedAt).Value) != contract.IssuedAt)
         {

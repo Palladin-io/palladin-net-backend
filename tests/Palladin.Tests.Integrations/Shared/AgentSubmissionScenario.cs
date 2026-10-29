@@ -144,11 +144,11 @@ internal sealed class AgentSubmissionScenario
         return response;
     }
 
-    internal async Task<HttpResponseMessage> AddApproversAsync(ScenarioMember signer)
+    internal async Task<HttpResponseMessage> AddApproversAsync(ScenarioMember signer, bool includeContinuity = false)
     {
         var challenge = await ChallengeAsync(signer);
         var manifest = SignManifest(CurrentKey!, ulong.Parse(CurrentManifest!.ManifestRevision) + 1, challenge,
-            previous: null, previousSigningKeyFingerprint: CurrentManifest.PreviousSigningKeyFingerprint);
+            previous: includeContinuity ? CurrentKey : null);
         var newApprovers = challenge.Approvers.Where(x => !x.HasWrap).ToList();
         var response = await signer.Client.PostAsJsonAsync(
             "api/approver-keys/add-approvers",
@@ -163,13 +163,35 @@ internal sealed class AgentSubmissionScenario
         return response;
     }
 
-    internal async Task<HttpResponseMessage> RotateAsync(ScenarioMember signer, bool forgeContinuity = false)
+    internal async Task<HttpResponseMessage> RebootstrapAsync(ScenarioMember signer, bool includeContinuity = false)
+    {
+        var previous = CurrentKey;
+        var next = new ApproverGroupKey((previous?.KeyVersion ?? 0) + 1);
+        var challenge = await ChallengeAsync(signer);
+        var manifest = SignManifest(next, ulong.Parse(CurrentManifest?.ManifestRevision ?? "0") + 1, challenge,
+            includeContinuity ? previous : null);
+        var response = await signer.Client.PostAsJsonAsync(
+            "api/approver-keys/rebootstrap",
+            new ApproverKeySetChangeRequest(challenge.ChallengeId, manifest,
+                Wraps(challenge.Approvers, next.KeyVersion, challenge.ApproverSetRevision)),
+            TestContext.Current.CancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            CurrentKey = next;
+            _manifests.Add(manifest);
+        }
+
+        return response;
+    }
+
+    internal async Task<HttpResponseMessage> RotateAsync(
+        ScenarioMember signer, bool forgeContinuity = false, bool omitContinuity = false)
     {
         var previous = CurrentKey!;
         var next = new ApproverGroupKey(previous.KeyVersion + 1);
         var challenge = await ChallengeAsync(signer);
         var manifest = SignManifest(next, ulong.Parse(CurrentManifest!.ManifestRevision) + 1, challenge,
-            forgeContinuity ? new ApproverGroupKey(previous.KeyVersion) : previous);
+            omitContinuity ? null : forgeContinuity ? new ApproverGroupKey(previous.KeyVersion) : previous);
         var response = await signer.Client.PostAsJsonAsync(
             "api/approver-keys/rotate",
             new ApproverKeySetChangeRequest(challenge.ChallengeId, manifest,
@@ -365,8 +387,7 @@ internal sealed class AgentSubmissionScenario
         ApproverGroupKey key,
         ulong manifestRevision,
         IssueApproverKeyChallengeResponse challenge,
-        ApproverGroupKey? previous,
-        string? previousSigningKeyFingerprint = null)
+        ApproverGroupKey? previous)
     {
         var unsigned = new OrganizationApproverManifestContract(
             ManifestSchema,
@@ -383,14 +404,12 @@ internal sealed class AgentSubmissionScenario
             Encode(key.SigningKeyFingerprint),
             challenge.IssuedAt,
             string.Empty,
-            previous is null ? previousSigningKeyFingerprint : Encode(previous.SigningKeyFingerprint));
+            previous is null ? null : Encode(previous.SigningKeyFingerprint));
         var members = ManifestMembers(unsigned);
         var signature = Encode(key.Sign(SignatureInput("PLDNSUB1SIG:APPROVER-MANIFEST:", members)));
-        var continuity = previous is not null
-            ? Encode(previous.Sign(SignatureInput("PLDNSUB1SIG:APPROVER-CONTINUITY:", members)))
-            : unsigned.PreviousSigningKeyFingerprint is not null
-                ? Encode(RandomNumberGenerator.GetBytes(64))
-                : null;
+        var continuity = previous is null
+            ? null
+            : Encode(previous.Sign(SignatureInput("PLDNSUB1SIG:APPROVER-CONTINUITY:", members)));
         return unsigned with { Signature = signature, ContinuitySignature = continuity };
     }
 

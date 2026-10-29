@@ -46,7 +46,8 @@ internal sealed class RotateApproverKeysEndpoint(
                 throw new SubmissionRejection(StatusCodes.Status403Forbidden, "approver-not-current");
             }
 
-            if (!AgentSubmissionCrypto.VerifyContinuity(req.Manifest, keySet.SigningPublicKey))
+            if (prepared.Manifest.PreviousSigningKeyFingerprint is null
+                || !AgentSubmissionCrypto.VerifyContinuity(req.Manifest, keySet.SigningPublicKey))
             {
                 throw new SubmissionRejection(StatusCodes.Status400BadRequest, "manifest-continuity-invalid");
             }

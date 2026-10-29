@@ -291,6 +291,110 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_ApproverIsAddedAfterRotation_Then_SameVersionManifestCarriesNoContinuity()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        await scenario.BootstrapAsync();
+        (await scenario.RotateAsync(scenario.Owner)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await scenario.AddApproverMemberAsync();
+
+        // When
+        var withContinuity = await scenario.AddApproversAsync(scenario.Owner, includeContinuity: true);
+        var withoutContinuity = await scenario.AddApproversAsync(scenario.Owner);
+
+        // Then
+        withContinuity.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await AgentSubmissionScenario.ErrorCodeAsync(withContinuity)).ShouldBe("continuity-not-allowed");
+        withoutContinuity.StatusCode.ShouldBe(HttpStatusCode.OK, await withoutContinuity.Content.ReadAsStringAsync());
+        scenario.CurrentManifest!.KeyVersion.ShouldBe(2u);
+        scenario.CurrentManifest.ContinuitySignature.ShouldBeNull();
+        scenario.CurrentManifest.PreviousSigningKeyFingerprint.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_RotationOmitsContinuity_Then_ItIsRejected()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        await scenario.BootstrapAsync();
+
+        // When
+        var response = await scenario.RotateAsync(scenario.Owner, omitContinuity: true);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("manifest-continuity-invalid");
+    }
+
+    [Fact]
+    public async Task When_NoCurrentApproverCanOpenTheKeySet_Then_ReBootstrapIntroducesNextVersionWithoutContinuity()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var agent = await scenario.CreateAgentAsync();
+        await scenario.BootstrapAsync();
+        var pending = scenario.NewSubmission(agent);
+        var submissionId = await scenario.SubmitAsync(agent, pending);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(
+            scenario.Owner.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2);
+        var (_, unavailable) = await scenario.Owner.Client
+            .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
+
+        // When
+        var rotate = await scenario.RotateAsync(scenario.Owner);
+        var withContinuity = await scenario.RebootstrapAsync(scenario.Owner, includeContinuity: true);
+        var rebootstrap = await scenario.RebootstrapAsync(scenario.Owner);
+
+        // Then
+        unavailable!.Status.ShouldBe("unavailable");
+        unavailable.RotationRequired.ShouldBeTrue();
+        unavailable.MyWraps.ShouldBeEmpty();
+        rotate.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        withContinuity.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        rebootstrap.StatusCode.ShouldBe(HttpStatusCode.OK, await rebootstrap.Content.ReadAsStringAsync());
+        var (_, ready) = await scenario.Owner.Client
+            .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
+        ready!.Status.ShouldBe("ready");
+        ready.KeyVersion.ShouldBe(2u);
+        ready.Manifest!.ContinuitySignature.ShouldBeNull();
+        ready.MyWraps!.Count.ShouldBe(2);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+            (await db.ApproverKeyWraps.Where(x => x.OrganizationId == scenario.OrganizationId)
+                .AllAsync(x => x.KeyVersion == 2, TestContext.Current.CancellationToken)).ShouldBeTrue();
+        }
+
+        var manifests = await agent.Client.GetFromJsonAsync<ListApproverManifestsResponse>(
+            "api/agent/approver-manifests?afterRevision=1", TestContext.Current.CancellationToken);
+        manifests!.Manifests.Single().KeyVersion.ShouldBe(2u);
+        (await scenario.LoadSubmissionAsync(submissionId)).State.ShouldBe(Palladin.Core.Types.AgentSubmissionState.Pending);
+        (await AgentSubmissionScenario.PutRewrapAsync(agent, scenario.Rewrap(agent, pending)))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task When_KeySetIsAvailableOrAbsent_Then_ReBootstrapIsRejected()
+    {
+        // Given
+        var absent = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var ready = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        await ready.BootstrapAsync();
+
+        // When
+        var whileReady = await ready.RebootstrapAsync(ready.Owner);
+        var whileAbsent = await absent.RebootstrapAsync(absent.Owner);
+
+        // Then
+        whileReady.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(whileReady)).ShouldBe("approver-keys-available");
+        whileAbsent.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await AgentSubmissionScenario.ErrorCodeAsync(whileAbsent)).ShouldBe("no-approvers");
+        ready.CurrentKey!.KeyVersion.ShouldBe(1u);
+    }
+
+    [Fact]
     public async Task When_AgentFetchesManifests_Then_ChainIsReturnedAfterRevisionInOrder()
     {
         // Given
@@ -335,6 +439,7 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
     [InlineData("POST", "api/approver-keys/bootstrap")]
     [InlineData("POST", "api/approver-keys/add-approvers")]
     [InlineData("POST", "api/approver-keys/rotate")]
+    [InlineData("POST", "api/approver-keys/rebootstrap")]
     public async Task When_CallerLacksGrantManageOrAuthentication_Then_ApproverKeyEndpointsAreClosed(string method, string path)
     {
         // Given

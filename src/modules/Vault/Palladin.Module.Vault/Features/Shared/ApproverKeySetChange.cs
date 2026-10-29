@@ -67,6 +67,15 @@ internal static class ApproverKeySetChange
         return new PreparedApproverKeySetChange(state, manifest);
     }
 
+    // Contract c3410c3: continuity fields appear only on the manifest that introduces a key version by rotation.
+    internal static void EnsureNoContinuity(ApproverKeySetChangeRequest req)
+    {
+        if (req.Manifest?.ContinuitySignature is not null || req.Manifest?.PreviousSigningKeyFingerprint is not null)
+        {
+            throw new SubmissionRejection(StatusCodes.Status400BadRequest, "continuity-not-allowed");
+        }
+    }
+
     internal static ApproverKeySetChangeResponse ToResponse(OrganizationApproverKeySet keySet) => new(
         keySet.KeyVersion,
         keySet.ManifestRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),

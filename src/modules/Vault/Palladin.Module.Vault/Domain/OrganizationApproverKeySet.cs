@@ -65,7 +65,7 @@ internal sealed class OrganizationApproverKeySet
             || manifest.ApproverSetRevision != ApproverSetRevision + 1
             || !manifest.SigningPublicKey.AsSpan().SequenceEqual(SigningPublicKey)
             || !manifest.MessagePublicKey.AsSpan().SequenceEqual(MessagePublicKey)
-            || !NullableBytesEqual(manifest.PreviousSigningKeyFingerprint, PreviousSigningKeyFingerprint))
+            || manifest.PreviousSigningKeyFingerprint is not null)
         {
             throw new AgentSubmissionConflictException("approver-manifest-stale");
         }
@@ -82,6 +82,28 @@ internal sealed class OrganizationApproverKeySet
             || manifest.ApproverSetRevision != ApproverSetRevision + 1
             || manifest.PreviousSigningKeyFingerprint is null
             || !manifest.PreviousSigningKeyFingerprint.AsSpan().SequenceEqual(SigningKeyFingerprint))
+        {
+            throw new AgentSubmissionConflictException("approver-manifest-stale");
+        }
+
+        foreach (var wrap in Wraps.ToArray())
+        {
+            Wraps.Remove(wrap);
+        }
+
+        Apply(manifest, now);
+        AddWraps(wraps);
+    }
+
+    // Contract approverKeySet.reBootstrap: once no current approver can open the key set, a current approver
+    // introduces the next key version without continuity; Agents must re-trust it explicitly.
+    internal void Rebootstrap(ApproverManifest manifest, IReadOnlyCollection<ApproverKeyWrap> wraps, Instant now)
+    {
+        if (KeyVersion == uint.MaxValue
+            || manifest.KeyVersion != KeyVersion + 1
+            || manifest.ManifestRevision != ManifestRevision + 1
+            || manifest.ApproverSetRevision != ApproverSetRevision + 1
+            || manifest.PreviousSigningKeyFingerprint is not null)
         {
             throw new AgentSubmissionConflictException("approver-manifest-stale");
         }
@@ -134,6 +156,4 @@ internal sealed class OrganizationApproverKeySet
         }
     }
 
-    private static bool NullableBytesEqual(byte[]? left, byte[]? right) =>
-        left is null ? right is null : right is not null && left.AsSpan().SequenceEqual(right);
 }

@@ -36,6 +36,7 @@ internal sealed class BootstrapApproverKeysEndpoint(
         var now = clock.GetCurrentInstant();
         try
         {
+            ApproverKeySetChange.EnsureNoContinuity(req);
             var prepared = await ApproverKeySetChange.PrepareAsync(
                 domainWriteContext, req, organizationId, User.GetUserId()!.Value, now, ct);
             if (prepared.State.KeySet is not null)

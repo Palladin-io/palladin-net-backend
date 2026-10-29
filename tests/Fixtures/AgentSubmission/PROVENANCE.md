@@ -8,8 +8,8 @@ credential. Every key, seed, nonce and secret in it is invalid outside tests.
 | `fixture-v1.json` | `contracts/agent-submission/v1/fixture.json` | `node test/generate-fixture.mjs` |
 
 Source: `Palladin-io/palladin-protocol` branch `feat/cvt-627-agent-submission-contract`
-at commit `de5ae396a76b9e67cd06350ea43a31a63fdf667c`. On 2026-10-29 the file was
-compared byte-for-byte with the protocol source and the protocol verifier ran
+at commit `41792eab3f7122aede705a74c551a0d8a6613596` (fixture bytes unchanged since
+`de5ae396`). On 2026-10-29 the file was compared byte-for-byte with the protocol source and the protocol verifier ran
 successfully. Re-vendor after the contract pull request merges and record the
 merged commit here.
 

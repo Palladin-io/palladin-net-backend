@@ -36,6 +36,7 @@ internal sealed class AddApproversEndpoint(
         var now = clock.GetCurrentInstant();
         try
         {
+            ApproverKeySetChange.EnsureNoContinuity(req);
             var prepared = await ApproverKeySetChange.PrepareAsync(domainWriteContext, req, organizationId, userId, now, ct);
             var state = prepared.State;
             var keySet = state.KeySet

@@ -56,6 +56,8 @@ internal static class InfrastructureModule
             .ValidateOnStart();
         services.AddScoped<EntrySharingRevocation>();
         services.Configure<SharedUnlockOptions>(configuration.GetSection(SharedUnlockOptions.Position));
+        services.AddScopedCronJob<AnnounceOrganizationApproversJob, AnnounceOrganizationApproversJobOptions>(
+            configuration.GetSection(AnnounceOrganizationApproversJobOptions.Position));
         services.AddScopedCronJob<CleanupSharedUnlockOperationsJob, CleanupSharedUnlockOperationsJobOptions>(
             configuration.GetSection(CleanupSharedUnlockOperationsJobOptions.Position));
         services.AddOptions<CleanupSharedUnlockOperationsJobOptions>()

@@ -12,6 +12,7 @@ public sealed class PostHogAnalyticsService(IPostHogClient postHogClient, IClock
         "revoked_by_system", "revision", "member_count", "reason", "code", "filters_used",
         "plan", "event_type", "success_count", "failure_count", "platform", "provider",
         "is_new_user", "language", "old_role_count", "new_role_count", "occurred_at",
+        "submission_kind", "entry_type", "with_grant",
     ];
 
     public void CaptureEvent(string distinctId, string module, string eventName, Dictionary<string, object>? properties = null)

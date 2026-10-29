@@ -6,6 +6,7 @@ using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Vault.Contracts.Commands;
 using Palladin.Module.Vault.Contracts.Events;
 using NodaTime;
+using System.Security.Cryptography;
 
 namespace Palladin.Module.Identity.Domain;
 
@@ -33,6 +34,8 @@ internal sealed class User : EventEntityBase
     public string? KdfProfileId { get; private set; }
     public uint CredentialRevision { get; private set; }
     public byte[]? DeviceWrapperMetadata { get; private set; }
+    public byte[]? RecoveryChallengeHash { get; private set; }
+    public Instant? RecoveryChallengeExpiresAt { get; private set; }
 
     public bool EmailVerified { get; private set; }
     public Instant? EmailVerifiedAt { get; private set; }
@@ -333,6 +336,24 @@ internal sealed class User : EventEntityBase
             default:
                 return false;
         }
+    }
+
+    internal void IssueRecoveryChallenge(ReadOnlySpan<byte> secret, Instant expiresAt)
+    {
+        RecoveryChallengeHash = SHA256.HashData(secret);
+        RecoveryChallengeExpiresAt = expiresAt;
+    }
+
+    // Single use: every presented proof burns the outstanding challenge, whether it matches or not.
+    internal bool ConsumeRecoveryChallenge(byte[]? proof, Instant now)
+    {
+        var isValid = proof is not null
+            && RecoveryChallengeHash is { } expectedHash
+            && RecoveryChallengeExpiresAt > now
+            && CryptographicOperations.FixedTimeEquals(SHA256.HashData(proof), expectedHash);
+        RecoveryChallengeHash = null;
+        RecoveryChallengeExpiresAt = null;
+        return isValid;
     }
 
     internal void RecoverAccount(

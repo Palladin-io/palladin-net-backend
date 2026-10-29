@@ -1,5 +1,7 @@
 using Palladin.Core.Api;
 using Palladin.Core.Security;
+using Palladin.Module.Identity.Domain;
+using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Totp;
 using FastEndpoints;
@@ -8,6 +10,8 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using System.Text.Json.Serialization;
+using Palladin.Core.Json;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -15,6 +19,7 @@ namespace Palladin.Module.Identity.Features;
 public sealed record DisableTotpRequest
 {
     public string Code { get; init; } = string.Empty;
+    [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] CurrentAuthCredential { get; init; } = [];
 }
 
 [UsedImplicitly]
@@ -23,6 +28,7 @@ internal sealed class DisableTotpValidator : Validator<DisableTotpRequest>
     public DisableTotpValidator()
     {
         RuleFor(x => x.Code).NotEmpty();
+        RuleFor(x => x.CurrentAuthCredential).Must(b => b is { Length: IdentityKdfProfiles.AuthCredentialBytes });
     }
 }
 
@@ -30,6 +36,7 @@ internal sealed class DisableTotpValidator : Validator<DisableTotpRequest>
 internal sealed class DisableTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
+    IPasswordHasher passwordHasher,
     IClock clock) : Endpoint<DisableTotpRequest>
 {
     public override void Configure()
@@ -40,7 +47,7 @@ internal sealed class DisableTotpEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Disable TOTP";
-            summary.Description = "Verifies a current TOTP or recovery code, then removes the factor and wipes recovery codes.";
+            summary.Description = "Verifies the current authCredential and a current TOTP or recovery code, then removes the factor and wipes recovery codes.";
         });
         Tags("Identity/Auth");
     }
@@ -56,7 +63,20 @@ internal sealed class DisableTotpEndpoint(
 
         var user = await domainWriteContext.Users
             .Include(u => u.TotpCredential).ThenInclude(t => t!.RecoveryCodes)
+            .Include(u => u.PasswordCredential)
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        if (user?.PasswordCredential is not { } passwordCredential)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        if (!passwordHasher.Verify(req.CurrentAuthCredential, passwordCredential.AuthHash, passwordCredential.ServerHashSalt))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
 
         if (user?.TotpCredential is not { IsEnabled: true, Secret: { } secret } credential)
         {

@@ -52,7 +52,7 @@ internal sealed class AcquireWebsiteIconV2Consumer(
         var wait = clock.GetCurrentInstant() - Instant.FromDateTimeUtc(DateTime.SpecifyKind(sentTime, DateTimeKind.Utc));
         if (wait > Duration.FromSeconds(options.Value.QueueWaitWarningSeconds))
         {
-            logger.LogWarning("Website icon acquisition delayed {WaitSeconds} {Hostname}", (int)wait.TotalSeconds, context.Message.Hostname);
+            logger.LogWarning("Website icon acquisition delayed {WaitSeconds} {AssetId}", (int)wait.TotalSeconds, context.Message.AssetId);
         }
     }
 }

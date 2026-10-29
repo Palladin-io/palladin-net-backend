@@ -154,8 +154,9 @@ public sealed class PublicAssetSecurityTests
         // Given
         var now = Instant.FromUtc(2026, 10, 29, 12, 0);
         var logger = new RecordingLogger();
+        var assetId = Guid.NewGuid();
         var context = Substitute.For<ConsumeContext<AcquireWebsiteIconV2Command>>();
-        context.Message.Returns(new AcquireWebsiteIconV2Command(Guid.NewGuid(), "example.com"));
+        context.Message.Returns(new AcquireWebsiteIconV2Command(assetId, "example.com"));
         context.SentTime.Returns(now.Minus(Duration.FromSeconds(waitSeconds)).ToDateTimeUtc());
         context.CancellationToken.Returns(TestContext.Current.CancellationToken);
 
@@ -167,7 +168,7 @@ public sealed class PublicAssetSecurityTests
         {
             var warning = logger.Messages.ShouldHaveSingleItem();
             warning.Level.ShouldBe(LogLevel.Warning);
-            warning.Message.ShouldBe($"Website icon acquisition delayed {waitSeconds} example.com");
+            warning.Message.ShouldBe($"Website icon acquisition delayed {waitSeconds} {assetId}");
         }
         else
         {

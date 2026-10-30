@@ -4,6 +4,7 @@ using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Recovery;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -55,6 +56,7 @@ internal sealed class RecoverAccountValidator : Validator<RecoverAccountRequest>
 [PublicAPI]
 internal sealed class RecoverAccountEndpoint(
     IdentityDomainWriteContext domainWriteContext,
+    RecoveryChallengeConsumer recoveryChallengeConsumer,
     IPasswordHasher passwordHasher,
     IClock clock) : Endpoint<RecoverAccountRequest>
 {
@@ -90,7 +92,7 @@ internal sealed class RecoverAccountEndpoint(
             return;
         }
 
-        if (!await ConsumeRecoveryProofAsync(user, req.RecoveryProof, ct))
+        if (!await recoveryChallengeConsumer.ConsumeAsync(user, req.RecoveryProof, ct))
         {
             AddError(ErrorResponses.General("recovery-proof-invalid"));
             await Send.ErrorsAsync(StatusCodes.Status403Forbidden, ct);
@@ -151,22 +153,5 @@ internal sealed class RecoverAccountEndpoint(
         }
 
         await Send.NoContentAsync(ct);
-    }
-
-    // Committed before the recovery write so a presented proof is burned even if that write fails;
-    // the challenge-hash concurrency token lets only one concurrent request consume it.
-    private async Task<bool> ConsumeRecoveryProofAsync(Domain.User user, byte[]? proof, CancellationToken ct)
-    {
-        var isValid = user.ConsumeRecoveryChallenge(proof, clock.GetCurrentInstant());
-        try
-        {
-            await domainWriteContext.CommitAsync(ct);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return false;
-        }
-
-        return isValid;
     }
 }

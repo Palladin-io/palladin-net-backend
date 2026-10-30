@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Recovery;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Crypto;
 using Palladin.Tests.Integrations.Shared.Extensions;
@@ -11,6 +12,9 @@ using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using Shouldly;
@@ -338,6 +342,54 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_UnrelatedAccountWriteConflictsWithConsumption_Then_ChallengeIsStillBurned()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+        var interceptor = new ConcurrentWriteBeforeFirstCommit(apiFactory, user.Id,
+            account => account.SetProperty(x => x.SharedUnlockRevision, x => x.SharedUnlockRevision + 1));
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = CreateInterceptedContext(scope, interceptor);
+        var account = await context.Users.SingleAsync(u => u.Id == user.Id, TestContext.Current.CancellationToken);
+
+        // When
+        var consumed = await CreateConsumer(context).ConsumeAsync(account, recoveryProof, TestContext.Current.CancellationToken);
+        var retried = await client.PutAsJsonAsync(
+            "api/account/recovery", RecoveryPayload(user, recoveryProof), TestContext.Current.CancellationToken);
+
+        // Then
+        consumed.ShouldBeTrue();
+        interceptor.Attempts.ShouldBe(2);
+        (await ReadRecoveryChallengeHashAsync(user.Id)).ShouldBeNull();
+        retried.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await retried.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("recovery-proof-invalid");
+        await ShouldKeepPrivateKeyWrapsAsync(user);
+    }
+
+    [Fact]
+    public async Task When_ChallengeIsReplacedDuringConsumption_Then_ReplacementStaysOutstanding()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+        var replacementHash = SHA256.HashData(RandomNumberGenerator.GetBytes(32));
+        var interceptor = new ConcurrentWriteBeforeFirstCommit(apiFactory, user.Id,
+            account => account.SetProperty(x => x.RecoveryChallengeHash, replacementHash));
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = CreateInterceptedContext(scope, interceptor);
+        var account = await context.Users.SingleAsync(u => u.Id == user.Id, TestContext.Current.CancellationToken);
+
+        // When
+        var consumed = await CreateConsumer(context).ConsumeAsync(account, recoveryProof, TestContext.Current.CancellationToken);
+
+        // Then
+        consumed.ShouldBeFalse();
+        interceptor.Attempts.ShouldBe(1);
+        (await ReadRecoveryChallengeHashAsync(user.Id)).ShouldBe(replacementHash);
+    }
+
+    [Fact]
     public async Task When_RecoveryChallengeExpired_Then_Returns403AndWrapsUnchanged()
     {
         // Given
@@ -406,6 +458,44 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         persisted.EncryptedPrivateKey.ShouldBe(user.EncryptedPrivateKey);
         persisted.EncryptedPrivateKeyByRecovery.ShouldBe(user.EncryptedPrivateKeyByRecovery);
         persisted.PrivateKeyWrapRevision.ShouldBe(user.PrivateKeyWrapRevision);
+    }
+
+    private static IdentityDomainWriteContext CreateInterceptedContext(AsyncServiceScope scope, IInterceptor interceptor)
+    {
+        var options = new DbContextOptionsBuilder<IdentityDbWriteContext>(
+            scope.ServiceProvider.GetRequiredService<DbContextOptions<IdentityDbWriteContext>>()).AddInterceptors(interceptor).Options;
+        return new IdentityDomainWriteContext(new IdentityDbWriteContext(options), []);
+    }
+
+    private RecoveryChallengeConsumer CreateConsumer(IdentityDomainWriteContext context) =>
+        new(context, apiFactory.FakeClock, Options.Create(new AccountRecoveryOptions()));
+
+    private async Task<byte[]?> ReadRecoveryChallengeHashAsync(Guid userId)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().Users
+            .Where(u => u.Id == userId).Select(u => u.RecoveryChallengeHash).SingleAsync(TestContext.Current.CancellationToken);
+    }
+
+    private sealed class ConcurrentWriteBeforeFirstCommit(
+        ApiFactory apiFactory,
+        Guid userId,
+        Action<UpdateSettersBuilder<Palladin.Module.Identity.Domain.User>> concurrentWrite) : SaveChangesInterceptor
+    {
+        internal int Attempts { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (++Attempts == 1)
+            {
+                await using var scope = apiFactory.Services.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>().Users
+                    .Where(u => u.Id == userId).ExecuteUpdateAsync(concurrentWrite, cancellationToken);
+            }
+
+            return result;
+        }
     }
 
     // Plays the client: installs a real X25519 identity key, requests a challenge and opens it with the private key.

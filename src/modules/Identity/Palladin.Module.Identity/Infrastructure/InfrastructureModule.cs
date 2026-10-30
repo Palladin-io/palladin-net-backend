@@ -32,7 +32,10 @@ internal static class InfrastructureModule
             .Bind(configuration.GetSection(AccountRecoveryOptions.Position))
             .Validate(options => options.ChallengeTtlSeconds is >= 30 and <= 900,
                 "Recovery challenge TTL must be between 30 and 900 seconds.")
+            .Validate(options => options.ConsumeConcurrencyRetryLimit is >= 1 and <= 10,
+                "Recovery challenge consumption retry limit must be between 1 and 10.")
             .ValidateOnStart();
+        services.AddScoped<RecoveryChallengeConsumer>();
         services.AddIdentityPersistence(configuration);
         services.AddIdentityOAuth(configuration);
         services.AddIdentityJwt(configuration);

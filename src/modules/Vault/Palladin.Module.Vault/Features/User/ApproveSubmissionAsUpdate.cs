@@ -131,7 +131,9 @@ internal sealed class ApproveSubmissionAsUpdateEndpoint(
         }
         catch (Exception ex) when (SubmissionRejection.Handles(ex))
         {
-            await SubmissionRejection.From(ex).SendAsync(HttpContext, ct);
+            await (await SubmissionDecision.ResolveRaceAsync(
+                    SubmissionRejection.From(ex), domainWriteContext, organizationId, req.SubmissionId, ct))
+                .SendAsync(HttpContext, ct);
         }
     }
 }

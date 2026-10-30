@@ -139,6 +139,18 @@ internal static class SubmissionDecision
             state == AgentSubmissionState.Pending ? pendingCode : "submission-already-decided");
     }
 
+    // A loser that read the pending state before the winner committed can meet the winner's rows during staging
+    // (existing Entry, grant coverage); any such conflict is reported as the lost decision it really is.
+    internal static async Task<SubmissionRejection> ResolveRaceAsync(
+        SubmissionRejection rejection,
+        VaultDomainWriteContext domainWriteContext,
+        Guid organizationId,
+        Guid submissionId,
+        CancellationToken ct) =>
+        rejection.StatusCode == StatusCodes.Status409Conflict && rejection.Code != "submission-already-decided"
+            ? await ConcurrencyRejectionAsync(domainWriteContext, organizationId, submissionId, ct, pendingCode: rejection.Code)
+            : rejection;
+
     internal static ApproveSubmissionResponse ToResponse(AgentEntrySubmission submission, VaultEntry entry) => new(
         submission.Id,
         entry.VaultId,

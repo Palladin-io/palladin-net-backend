@@ -15,6 +15,8 @@ internal static class OpaqueVaultNotificationPolicy
         NotificationType.GrantDenied,
         NotificationType.GrantRevoked,
         NotificationType.CredentialStale,
+        NotificationType.SubmissionPending,
+        NotificationType.SubmissionResolved,
     ];
 
     private static readonly HashSet<string> AllowedKeys = new(StringComparer.Ordinal)
@@ -34,6 +36,7 @@ internal static class OpaqueVaultNotificationPolicy
         "bySystem",
         "errorHint",
         "actionType",
+        "submissionId",
     };
 
     private static readonly HashSet<string> OpaqueIdKeys = new(StringComparer.Ordinal)
@@ -44,6 +47,7 @@ internal static class OpaqueVaultNotificationPolicy
         "vaultId",
         "entryId",
         "agentId",
+        "submissionId",
     };
 
     internal static void EnsureSafe(BroadcastNotificationCommand command)

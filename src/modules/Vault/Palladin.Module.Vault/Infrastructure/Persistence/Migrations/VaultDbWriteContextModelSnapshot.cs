@@ -94,6 +94,102 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.ToTable("Agents");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.AgentEntrySubmission", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AgentAccessEpoch")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AgentUseSuspended")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("ApproverKeyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DecidedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DecisionEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DecisionGrantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("DecisionVaultId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Document")
+                        .HasMaxLength(49152)
+                        .HasColumnType("character varying(49152)");
+
+                    b.Property<int>("EntryType")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("ExpectedEntryRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("SubmissionRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<byte[]>("SubmittedDigest")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<Guid?>("SuggestedVaultId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TargetEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TargetVaultId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("TrashedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Version")
+                        .IsConcurrencyToken()
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.HasKey("OrganizationId", "Id");
+
+                    b.HasIndex("TrashedAt")
+                        .HasFilter("\"State\" = 3");
+
+                    b.HasIndex("OrganizationId", "AgentId", "CreatedAt");
+
+                    b.HasIndex("OrganizationId", "State", "CreatedAt");
+
+                    b.ToTable("AgentEntrySubmissions", (string)null);
+                });
+
             modelBuilder.Entity("Palladin.Module.Vault.Domain.AgentVaultDiscoveryEnvelope", b =>
                 {
                     b.Property<Guid>("OrganizationId")
@@ -276,6 +372,75 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("AgentWrappedVaultKeys", (string)null);
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.ApproverKeyChallenge", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("IssuedTo")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("ApproverSetDigest")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<decimal>("ApproverSetRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("Id")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OrganizationId", "IssuedTo");
+
+                    b.ToTable("ApproverKeyChallenges");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.ApproverKeyWrap", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("KeyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("ApproverSetRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<byte[]>("RecipientFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<decimal>("RecipientKeyVersion")
+                        .HasPrecision(10)
+                        .HasColumnType("numeric(10,0)");
+
+                    b.Property<byte[]>("SealedPackage")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("bytea");
+
+                    b.HasKey("OrganizationId", "MemberId", "KeyVersion", "Purpose");
+
+                    b.ToTable("ApproverKeyWraps");
                 });
 
             modelBuilder.Entity("Palladin.Module.Vault.Domain.CredentialFailureReport", b =>
@@ -1012,6 +1177,105 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("MemberKeyDirectory");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.OrganizationApprover", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsApprover")
+                        .HasColumnType("boolean");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OrganizationId", "UserId");
+
+                    b.ToTable("OrganizationApprovers");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.OrganizationApproverKeySet", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ApproverSetRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("KeyVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("ManifestRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<byte[]>("MessageKeyFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("MessagePublicKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("PreviousSigningKeyFingerprint")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("SigningKeyFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("SigningPublicKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<Instant>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Version")
+                        .IsConcurrencyToken()
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.HasKey("OrganizationId");
+
+                    b.ToTable("OrganizationApproverKeySets");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.OrganizationApproverManifestRecord", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("ManifestRevision")
+                        .HasPrecision(20)
+                        .HasColumnType("numeric(20,0)");
+
+                    b.Property<string>("Document")
+                        .IsRequired()
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<long>("KeyVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("OrganizationId", "ManifestRevision");
+
+                    b.ToTable("OrganizationApproverManifests", (string)null);
                 });
 
             modelBuilder.Entity("Palladin.Module.Vault.Domain.ScriptExecutionPackage", b =>
@@ -1916,6 +2180,15 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.ApproverKeyWrap", b =>
+                {
+                    b.HasOne("Palladin.Module.Vault.Domain.OrganizationApproverKeySet", null)
+                        .WithMany("Wraps")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Palladin.Module.Vault.Domain.CredentialFailureReport", b =>
                 {
                     b.HasOne("Palladin.Module.Vault.Domain.Agent", null)
@@ -2023,6 +2296,15 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .WithMany("GrantEntryScopes")
                         .HasForeignKey("OrganizationId", "VaultId", "GrantId")
                         .HasPrincipalKey("OrganizationId", "VaultId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.OrganizationApproverManifestRecord", b =>
+                {
+                    b.HasOne("Palladin.Module.Vault.Domain.OrganizationApproverKeySet", null)
+                        .WithMany("Manifests")
+                        .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -2232,6 +2514,13 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Palladin.Module.Vault.Domain.GrantEntryScope", b =>
                 {
                     b.Navigation("Envelope");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.OrganizationApproverKeySet", b =>
+                {
+                    b.Navigation("Manifests");
+
+                    b.Navigation("Wraps");
                 });
 
             modelBuilder.Entity("Palladin.Module.Vault.Domain.Vault", b =>

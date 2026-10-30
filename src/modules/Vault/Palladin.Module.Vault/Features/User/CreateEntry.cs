@@ -2,13 +2,10 @@ using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using Palladin.Core.Security;
 using Palladin.Core.Types;
-using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Authorization;
-using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Module.Vault.Shared;
 
@@ -67,22 +64,13 @@ internal sealed class CreateEntryEndpoint(
     {
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
-        var entryKey = VaultEnvelopeContractMapper.ToDomain(req.EntryKey);
-        var memberIndex = VaultEnvelopeContractMapper.ToDomain(req.MemberIndex);
-        var memberSecret = VaultEnvelopeContractMapper.ToDomain(req.MemberSecret);
-        var agentDiscovery = req.AgentDiscovery is null
-            ? null
-            : VaultEnvelopeContractMapper.ToDomain(req.AgentDiscovery);
+        var material = EntryCreationMaterial.From(req);
 
-        var existing = await domainWriteContext.Entries
-            .Include(x => x.Keys)
-            .Include(x => x.Versions)
-            .FirstOrDefaultAsync(x => x.OrganizationId == organizationId
-                                      && x.VaultId == req.VaultId
-                                      && x.Id == req.EntryId, ct);
+        var existing = await EntryCreation.FindAsync(domainWriteContext, organizationId, req.VaultId, req.EntryId, ct);
         if (existing is not null)
         {
-            if (!existing.IsExactCreateRetry(entryKey, memberSecret, memberIndex, agentDiscovery, req.DeliveryPolicy))
+            if (!existing.IsExactCreateRetry(material.EntryKey, material.MemberSecret, material.MemberIndex,
+                    material.AgentDiscovery, req.DeliveryPolicy))
             {
                 ThrowError("Entry identifier is already bound to a different canonical transition.");
             }
@@ -91,49 +79,14 @@ internal sealed class CreateEntryEndpoint(
             return;
         }
 
-        var vault = await domainWriteContext.Vaults
-            .Where(x => x.OrganizationId == organizationId && x.Id == req.VaultId)
-            .SingleOrDefaultAsync(ct);
-        if (vault is null)
+        var entry = await EntryCreation.StageAsync(
+            domainWriteContext, req, material, organizationId, userId, clock.GetCurrentInstant(), ct);
+        if (entry is null)
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
-        var now = clock.GetCurrentInstant();
-        var scope = new EntryScope(vault.OrganizationId, vault.Id, req.EntryId);
-        var challenge = await domainWriteContext.EntryCreationChallenges
-            .FirstOrDefaultAsync(x => x.OrganizationId == scope.OrganizationId
-                                      && x.VaultId == scope.VaultId
-                                      && x.EntryId == scope.EntryId, ct);
-        if (challenge is null)
-        {
-            ThrowError("A valid Entry creation challenge is required.");
-        }
-
-        challenge.Consume(scope, userId, now);
-        var sequences = vault.AllocateSequences(agentDiscovery is not null, userId, now);
-        var version = VaultEntryVersion.Create(
-            memberSecret,
-            sequences,
-            memberIndexChanged: true,
-            now,
-            Palladin.Core.Types.ActorType.Member,
-            userId);
-        var entry = VaultEntry.Create(
-            scope,
-            entryKey,
-            version,
-            memberIndex,
-            agentDiscovery,
-            req.DeliveryPolicy,
-            vault.MemberKeyGeneration,
-            vault.CurrentVaultKeyVersion,
-            vault.CurrentVdkVersion,
-            now,
-            userId);
-
-        domainWriteContext.Add(entry);
         await domainWriteContext.CommitAsync(ct);
 
         await Send.CreatedAtAsync<GetEntryEndpoint>(

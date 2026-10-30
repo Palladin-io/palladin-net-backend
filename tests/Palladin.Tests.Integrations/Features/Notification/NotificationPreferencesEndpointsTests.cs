@@ -43,9 +43,10 @@ public sealed class NotificationPreferencesEndpointsTests(ApiFactory apiFactory)
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        var userFacingCount = Enum.GetValues<NotificationType>().Length - 3;
+        var userFacingCount = Enum.GetValues<NotificationType>().Length - 4;
         result!.Items.Count.ShouldBe(userFacingCount);
         result.Items.ShouldNotContain(i => i.Type == NotificationType.AgentResolved);
+        result.Items.ShouldNotContain(i => i.Type == NotificationType.SubmissionResolved);
         result.Items.ShouldNotContain(i => i.Type == NotificationType.AgentApproved);
         result.Items.ShouldNotContain(i => i.Type == NotificationType.EntryShareReceived);
 
@@ -54,6 +55,10 @@ public sealed class NotificationPreferencesEndpointsTests(ApiFactory apiFactory)
         grantPending.InboxEnabled.ShouldBeTrue();
         grantPending.SignalREnabled.ShouldBeTrue();
         grantPending.PushEnabled.ShouldBeTrue();
+
+        var submissionPending = result.Items.Single(i => i.Type == NotificationType.SubmissionPending);
+        submissionPending.Mandatory.ShouldBeTrue();
+        submissionPending.PushEnabled.ShouldBeTrue();
 
         var grantApproved = result.Items.Single(i => i.Type == NotificationType.GrantApproved);
         grantApproved.Mandatory.ShouldBeFalse();

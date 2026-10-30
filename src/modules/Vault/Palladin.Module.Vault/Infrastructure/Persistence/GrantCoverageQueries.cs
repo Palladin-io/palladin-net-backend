@@ -1,6 +1,7 @@
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Domain;
 using Microsoft.EntityFrameworkCore;
+using NodaTime;
 
 namespace Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -12,22 +13,24 @@ internal static class GrantCoverageQueries
 {
     // True if the agent already has an active grant covering the entry (active GRANULAR on the entry,
     // or active FULL on the vault). Optionally ignore a specific grant id (e.g. the one being approved).
+    // `notExpiredAt` additionally excludes a grant whose ExpiresAt has passed but which the expiry job has not
+    // yet moved out of Active; authorization paths that must not wait for the job pass the current instant.
     public static Task<bool> HasActiveEntryCoverageAsync(
         this VaultDomainReadContext ctx, Guid agentId, uint agentAccessEpoch,
-        Guid vaultId, Guid entryId, Guid? excludingGrantId, CancellationToken ct) =>
+        Guid vaultId, Guid entryId, Guid? excludingGrantId, CancellationToken ct, Instant? notExpiredAt = null) =>
         HasActiveEntryCoverageAsync(ctx.Entries, ctx.Grants, agentId, agentAccessEpoch,
-            vaultId, entryId, excludingGrantId, ct);
+            vaultId, entryId, excludingGrantId, notExpiredAt, ct);
 
     public static Task<bool> HasActiveEntryCoverageAsync(
         this VaultDomainWriteContext ctx, Guid agentId, uint agentAccessEpoch,
-        Guid vaultId, Guid entryId, Guid? excludingGrantId, CancellationToken ct) =>
+        Guid vaultId, Guid entryId, Guid? excludingGrantId, CancellationToken ct, Instant? notExpiredAt = null) =>
         HasActiveEntryCoverageAsync(ctx.Entries, ctx.Grants, agentId, agentAccessEpoch,
-            vaultId, entryId, excludingGrantId, ct);
+            vaultId, entryId, excludingGrantId, notExpiredAt, ct);
 
     private static async Task<bool> HasActiveEntryCoverageAsync(
         IQueryable<VaultEntry> entries, IQueryable<Grant> grants,
         Guid agentId, uint agentAccessEpoch, Guid vaultId,
-        Guid entryId, Guid? excludingGrantId, CancellationToken ct)
+        Guid entryId, Guid? excludingGrantId, Instant? notExpiredAt, CancellationToken ct)
     {
         var currentRevision = await entries
             .Where(entry => entry.VaultId == vaultId
@@ -47,6 +50,7 @@ internal static class GrantCoverageQueries
             && g.VaultId == vaultId
             && g.Status == GrantStatus.Active
             && (excludingGrantId == null || g.Id != excludingGrantId)
+            && (notExpiredAt == null || g.ExpiresAt == null || g.ExpiresAt > notExpiredAt)
             && ((g is FullGrant && g.AgentWrappedVaultKey != null)
                 || (g is GranularGrant && g.GrantEntryScopes.Any(scope =>
                     scope.EntryId == entryId

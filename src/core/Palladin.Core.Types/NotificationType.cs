@@ -33,4 +33,10 @@ public enum NotificationType
 
     [JsonStringEnumMemberName("entry_share_received")]
     EntryShareReceived = 10,
+
+    [JsonStringEnumMemberName("submission_pending")]
+    SubmissionPending = 11,
+
+    [JsonStringEnumMemberName("submission_resolved")]
+    SubmissionResolved = 12,
 }

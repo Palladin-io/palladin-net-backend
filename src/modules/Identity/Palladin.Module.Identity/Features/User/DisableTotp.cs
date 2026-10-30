@@ -1,13 +1,15 @@
+using System.Globalization;
 using Palladin.Core.Api;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
-using Palladin.Module.Identity.Infrastructure.PasswordAuth;
+using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Totp;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using System.Text.Json.Serialization;
@@ -36,7 +38,7 @@ internal sealed class DisableTotpValidator : Validator<DisableTotpRequest>
 internal sealed class DisableTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
-    IPasswordHasher passwordHasher,
+    CurrentAuthCredentialVerifier credentialVerifier,
     IClock clock) : Endpoint<DisableTotpRequest>
 {
     public override void Configure()
@@ -72,7 +74,15 @@ internal sealed class DisableTotpEndpoint(
             return;
         }
 
-        if (!passwordHasher.Verify(req.CurrentAuthCredential, passwordCredential.AuthHash, passwordCredential.ServerHashSalt))
+        var credentialCheck = await credentialVerifier.VerifyAsync(user, passwordCredential, req.CurrentAuthCredential, HttpContext, ct);
+        if (credentialCheck.RetryAfterSeconds is { } retryAfter)
+        {
+            HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
+            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            return;
+        }
+
+        if (!credentialCheck.IsVerified)
         {
             await Send.ForbiddenAsync(ct);
             return;

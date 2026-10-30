@@ -73,7 +73,8 @@ internal static class RateLimitingExtensions
 
                 if (path.StartsWithSegments("/api/account/password")
                     || path.StartsWithSegments("/api/account/recovery")
-                    || path.StartsWithSegments("/api/account/setup"))
+                    || path.StartsWithSegments("/api/account/setup")
+                    || path.StartsWithSegments("/api/auth/totp"))
                 {
                     var userId = context.User.GetUserId()?.ToString() ?? ip;
                     return FixedWindow($"identity-security-write:{userId}", permitLimit: 5);

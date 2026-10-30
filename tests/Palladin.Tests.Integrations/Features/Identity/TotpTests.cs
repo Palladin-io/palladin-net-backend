@@ -300,6 +300,39 @@ public sealed class TotpTests(ApiFactory apiFactory) : TestBase
             .IsEnabled.ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task When_WrongCurrentCredentialsReachLockoutThreshold_Then_TotpChangesAndLoginAreLocked()
+    {
+        // Given
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = KeyGeneration.GenerateRandomKey(32);
+        var email = $"totp-guess-{Guid.NewGuid():N}@example.com";
+        var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: true);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var wrong = KeyGeneration.GenerateRandomKey(32);
+        (await client.POSTAsync<EnrollTotpEndpoint, EnrollTotpRequest, EnrollTotpResponse>(
+            new EnrollTotpRequest { CurrentAuthCredential = wrong })).Response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await client.POSTAsync<ConfirmTotpEndpoint, ConfirmTotpRequest, ConfirmTotpResponse>(
+            new ConfirmTotpRequest { Code = "000000", CurrentAuthCredential = wrong })).Response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await client.POSTAsync<DisableTotpEndpoint, DisableTotpRequest>(
+            new DisableTotpRequest { Code = "000000", CurrentAuthCredential = wrong })).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        // When
+        var (thresholdResponse, _) = await client.POSTAsync<EnrollTotpEndpoint, EnrollTotpRequest, EnrollTotpResponse>(
+            new EnrollTotpRequest { CurrentAuthCredential = wrong });
+        var (correctResponse, _) = await client.POSTAsync<EnrollTotpEndpoint, EnrollTotpRequest, EnrollTotpResponse>(
+            new EnrollTotpRequest { CurrentAuthCredential = authHash });
+        var (loginResponse, _) = await apiFactory.CreateClient().POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = authHash });
+
+        // Then
+        thresholdResponse.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        thresholdResponse.Headers.RetryAfter?.Delta.ShouldNotBeNull();
+        correctResponse.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        loginResponse.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        (await HasTotpCredentialAsync(user.Id)).ShouldBeFalse();
+    }
+
     private async Task<bool> HasTotpCredentialAsync(Guid userId)
     {
         await using var scope = apiFactory.Services.CreateAsyncScope();

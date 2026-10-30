@@ -13,7 +13,7 @@ using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Vault.AgentSubmissions;
 
-// Contract preApprovalUse.reWrapSource (f3bdfdc): a suspended pending submission must stay re-wrappable after
+// Contract preApprovalUse.reWrapSource: a suspended pending submission must stay re-wrappable after
 // an approver key change, while pre-approval use stays refused.
 [Collection<ApiFactoryCollection>]
 public sealed class RewrapSourceTests(ApiFactory apiFactory) : TestBase

@@ -11,7 +11,7 @@ using Shouldly;
 namespace Palladin.Tests.Integrations.Features.Vault.AgentSubmissions;
 
 // Backend-relevant negative cases of palladin-protocol contracts/agent-submission/test/generate-fixture.mjs
-// (runNegativeCases, contract 597535b). Candidates are re-signed with the fixture's deterministic keys, so a
+// (runNegativeCases, see tests/Fixtures/AgentSubmission/PROVENANCE.md). Candidates are re-signed with the fixture's deterministic keys, so a
 // rejection proves the closed-shape/encoding rule rather than a broken signature. Cases that require opening a
 // sealed DEK or decrypting the payload (wrapper-context, payload content) are client-only by design.
 public sealed class AgentSubmissionContractNegativeTests

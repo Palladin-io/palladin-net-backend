@@ -5,6 +5,7 @@ using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain.Enums;
 using Palladin.Module.Identity.Infrastructure.Jwt;
+using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.OAuth;
 using Palladin.Module.Identity.Infrastructure.Options;
 using Palladin.Module.Identity.Infrastructure.Persistence;
@@ -29,6 +30,7 @@ internal sealed class OAuthAuthenticateOperation(
     IGuidProvider guidProvider,
     IClock clock,
     IOptions<JwtOptions> jwtOptions,
+    IOptions<EmailVerificationOptions> emailVerificationOptions,
     ITransportContext transportContext,
     WaitlistDeveloperBenefitActivator waitlistDeveloperBenefitActivator,
     ILogger logger)
@@ -198,6 +200,13 @@ internal sealed class OAuthAuthenticateOperation(
 
     private async Task<bool> TryDiscardUnverifiedAccountAsync(User user, Instant now, CancellationToken ct)
     {
+        // Without the gate an unverified user can write Agents, Vault and Entry data that Identity cannot see
+        // synchronously, and the onboarding flags trail those writes asynchronously, so emptiness is unprovable.
+        if (!emailVerificationOptions.Value.GateEnabled)
+        {
+            return false;
+        }
+
         var organization = await domainWriteContext.Organizations
             .Include(o => o.Members)
             .Include(o => o.Roles)
@@ -226,8 +235,8 @@ internal sealed class OAuthAuthenticateOperation(
         return true;
     }
 
-    // Only Identity state can be inspected here. Vault, Agents and Entry writes require a verified e-mail,
-    // and the onboarding flags record any Agents or Vault activity of the organization.
+    // Only Identity state can be inspected here. With the gate enabled, Vault, Agents and Entry writes require
+    // a verified e-mail; the onboarding flags additionally cover activity recorded before the gate was enabled.
     private static bool IsEmptyPersonalAccount(User user, Organization organization) =>
         user.OAuthConnections.Count == 0
         && user.OrganizationMemberships.Count == 1

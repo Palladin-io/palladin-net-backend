@@ -48,13 +48,13 @@ internal static class RateLimitingExtensions
 
                 // Each registration persists an account and sends a verification e-mail; keep both tight.
                 if (HttpMethods.IsPost(context.Request.Method)
-                    && path.Equals(new PathString("/api/auth/register")))
+                    && path.StartsWithSegments("/api/auth/register"))
                 {
                     return FixedWindow($"auth-register:{ip}", permitLimit: 5);
                 }
 
                 if (HttpMethods.IsPost(context.Request.Method)
-                    && path.Equals(new PathString("/api/auth/verify-email/resend")))
+                    && path.StartsWithSegments("/api/auth/verify-email/resend"))
                 {
                     return FixedWindow($"auth-verify-resend:{ip}", permitLimit: 3);
                 }

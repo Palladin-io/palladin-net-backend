@@ -49,6 +49,46 @@ public sealed class RegistrationRateLimitTests(EntrySharingRateLimitApiFactory a
     }
 
     [Fact]
+    public async Task When_RegistrationRoutesUseTrailingSlashOrDifferentCasing_Then_TheyShareTheRegistrationBudget()
+    {
+        // Given
+        using var client = CreateClient("192.0.2.214");
+        var routes = new[] { "api/auth/register/", "api/browser/auth/register/", "API/Auth/Register", "api/BROWSER/auth/register/" };
+        for (var i = 0; i < 5; i++)
+        {
+            using var allowed = await client.PostAsJsonAsync(routes[i % routes.Length], new { }, TestContext.Current.CancellationToken);
+            allowed.StatusCode.ShouldNotBe(HttpStatusCode.TooManyRequests, routes[i % routes.Length]);
+        }
+
+        // When
+        using var response = await client.PostAsJsonAsync("api/auth/register/", new { }, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task When_VerificationResendUsesTrailingSlashOrDifferentCasing_Then_ItSharesTheResendBudget()
+    {
+        // Given
+        using var client = CreateClient("192.0.2.215");
+        var routes = new[] { "api/auth/verify-email/resend/", "API/Auth/Verify-Email/Resend" };
+        for (var i = 0; i < 3; i++)
+        {
+            using var allowed = await client.PostAsJsonAsync(routes[i % routes.Length], new { }, TestContext.Current.CancellationToken);
+            allowed.StatusCode.ShouldNotBe(HttpStatusCode.TooManyRequests, routes[i % routes.Length]);
+        }
+
+        // When
+        using var response = await client.PostAsJsonAsync("api/auth/verify-email/resend/", new { }, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter.ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task When_RegistrationBudgetIsExhausted_Then_LoginKeepsItsOwnThirtyRequestBudget()
     {
         // Given

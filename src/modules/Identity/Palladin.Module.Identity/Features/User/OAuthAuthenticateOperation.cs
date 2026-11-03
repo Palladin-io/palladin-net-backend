@@ -112,6 +112,7 @@ internal sealed class OAuthAuthenticateOperation(
 
             EnsureOAuthConnectionExists(user, provider.Provider, externalUser, now);
             user.RecordLogin(provider.Provider.ToString(), platform);
+            activeMembership.AnnounceApproverEligibility();
             isNewUser = false;
         }
         else

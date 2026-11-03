@@ -1,11 +1,10 @@
 using Palladin.Core.Security;
 using Palladin.Core.Types;
-using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Authorization;
-using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using Palladin.Module.Vault.Shared;
 using FastEndpoints;
+using Microsoft.AspNetCore.Http;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -80,116 +79,26 @@ internal sealed class CreateGranularGrantEndpoint(
         var userId = User.GetUserId()!.Value;
         var organizationId = User.GetOrganizationId()!.Value;
 
-        var agent = await domainWriteContext.Agents
-            .SingleOrDefaultAsync(a => a.Id == req.AgentId && a.OrganizationId == organizationId, ct);
-        if (agent is null)
+        var staging = await GranularGrantCreation.StageAsync(
+            domainWriteContext, req, organizationId, userId, clock.GetCurrentInstant(), ct);
+        if (staging.Failure is { } failure)
         {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-
-        if (agent.Status != AgentStatus.Active)
-        {
-            AddError(r => r.AgentId, "Agent is not active.");
-            await Send.ErrorsAsync(cancellation: ct);
-            return;
-        }
-
-        if (await domainWriteContext.VaultPrincipalDeprovisionings.AnyAsync(x =>
-                x.OrganizationId == organizationId
-                && x.PrincipalType == VaultPrincipalType.Agent
-                && x.PrincipalId == req.AgentId
-                && x.Status != VaultPrincipalDeprovisioningStatus.Completed, ct))
-        {
-            AddError(r => r.AgentId, "Agent deactivation is in progress.");
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
-        var vault = await domainWriteContext.Vaults.SingleOrDefaultAsync(
-            x => x.OrganizationId == organizationId && x.Id == req.VaultId, ct);
-        var entry = await domainWriteContext.Entries.SingleOrDefaultAsync(
-            x => x.OrganizationId == organizationId && x.VaultId == req.VaultId && x.Id == req.EntryId, ct);
-        if (vault is null || entry is null)
-        {
-            await Send.NotFoundAsync(ct);
-            return;
-        }
-
-        if (entry.State != EntryState.Active)
-        {
-            AddError(r => r.EntryId, "Entry is no longer active.");
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-
-        if (await domainWriteContext.HasActiveEntryCoverageAsync(
-                req.AgentId, agent.AccessEpoch, req.VaultId, req.EntryId, excludingGrantId: null, ct))
-        {
-            throw new AgentAlreadyHasActiveAccessException("entry");
-        }
-
-        var now = clock.GetCurrentInstant();
-        var expirySource = ExpirySource.From(req.ExpiresAt, req.QueryLimit);
-        var names = await domainWriteContext.ResolveAsync(req.AgentId, req.EntryId, req.VaultId, userId, ct);
-        GrantEntryScope scope;
-        try
-        {
-            scope = ToScope(req, organizationId, agent.PublicKey, vault.MemberKeyGeneration.Value,
-                agent.RecipientKeyVersion, entry.CurrentRevision.Value);
-        }
-        catch (StaleGrantEnvelopeException)
-        {
-            AddError(r => r.GrantEntry, "Grant envelope is invalid or stale.");
-            await Send.ErrorsAsync(409, ct);
-            return;
-        }
-        catch (Exception ex) when (ex is FormatException
-            or Palladin.Core.Types.Exceptions.DomainException)
-        {
-            AddError(r => r.GrantEntry, "Grant envelope is invalid or stale.");
-            await Send.ErrorsAsync(cancellation: ct);
-            return;
-        }
-
-        var pending = await domainWriteContext.FindPendingForEntryAsync(
-            req.AgentId, agent.AccessEpoch, req.VaultId, req.EntryId, ct);
-        if (pending is not null)
-        {
-            if (req.GrantId != pending.Id)
+            if (failure.StatusCode == StatusCodes.Status404NotFound)
             {
-                AddError(r => r.GrantId, "Grant envelope must target the existing pending request.");
-                await Send.ErrorsAsync(409, ct);
+                await Send.NotFoundAsync(ct);
                 return;
             }
 
-            pending.Approve(userId, names, scope, req.ExpiresAt, req.QueryLimit, expirySource, req.Methods, now);
-            agent.FenceAccessMutation();
-            vault.FenceAccessMutation(userId, now);
-            await domainWriteContext.CommitAsync(ct);
-            await Send.CreatedAtAsync<GetGrantEndpoint>(
-                new { vaultId = req.VaultId, grantId = pending.Id },
-                new CreateGranularGrantResponse(pending.Id),
-                cancellation: ct);
+            AddError(failure.Message);
+            await Send.ErrorsAsync(failure.StatusCode, ct);
             return;
         }
 
-        var grant = GranularGrant.CreateProactively(
-            req.GrantId, req.VaultId, organizationId, req.AgentId, agent.PublicKey, req.EntryId,
-            scope, req.ExpiresAt, req.QueryLimit, expirySource, req.Methods, userId, names, now,
-            agent.AccessEpoch);
-        domainWriteContext.Add(grant);
-        agent.FenceAccessMutation();
-        vault.FenceAccessMutation(userId, now);
         try
         {
             await domainWriteContext.CommitAsync(ct);
         }
-        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
-        {
-            SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
-            ConstraintName: "PK_Grants",
-        })
+        catch (DbUpdateException ex) when (GranularGrantCreation.IsGrantIdentifierConflict(ex))
         {
             AddError(r => r.GrantId, "Grant identifier has already been used.");
             await Send.ErrorsAsync(409, ct);
@@ -197,45 +106,8 @@ internal sealed class CreateGranularGrantEndpoint(
         }
 
         await Send.CreatedAtAsync<GetGrantEndpoint>(
-            new { vaultId = req.VaultId, grantId = grant.Id },
-            new CreateGranularGrantResponse(grant.Id),
+            new { vaultId = req.VaultId, grantId = staging.GrantId },
+            new CreateGranularGrantResponse(staging.GrantId),
             cancellation: ct);
     }
-
-    private static GrantEntryScope ToScope(
-        CreateGranularGrantRequest req,
-        Guid organizationId,
-        string agentPublicKey,
-        uint memberKeyGeneration,
-        uint recipientAgentKeyVersion,
-        ulong currentEntryRevision)
-    {
-        var contract = req.GrantEntry;
-        if (contract.OrganizationId != organizationId || contract.VaultId != req.VaultId
-            || contract.EntryId != req.EntryId || contract.GrantId != req.GrantId
-            || contract.ExpiresAt != req.ExpiresAt || contract.RemainingUses != req.QueryLimit
-            || contract.GrantEnvelopeRevision != "1" || contract.GrantKeyVersion != 1
-            || contract.MemberKeyGeneration != memberKeyGeneration
-            || contract.RecipientAgentKeyVersion != recipientAgentKeyVersion)
-        {
-            throw new Palladin.Core.Types.Exceptions.DomainException("Grant envelope scope or lifecycle is invalid.");
-        }
-        if (contract.EntryRevision != currentEntryRevision.ToString(System.Globalization.CultureInfo.InvariantCulture))
-        {
-            throw new StaleGrantEnvelopeException();
-        }
-
-        var scope = GrantEnvelopeContractMapper.ToDomain(contract, req.Methods, req.AgentId);
-        var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519);
-        if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))
-        {
-            throw new Palladin.Core.Types.Exceptions.DomainException("Grant envelope Agent key fingerprint is invalid.");
-        }
-        scope.SetFieldSelectionMode(req.FieldSelectionMode);
-        return scope;
-    }
-
-    private sealed class StaleGrantEnvelopeException()
-        : Palladin.Core.Types.Exceptions.ConflictException("Grant envelope entry revision is stale.");
 }

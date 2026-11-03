@@ -16,6 +16,7 @@ Audit does NOT listen to `Vault*`/`Agent*`/`Identity*` events. Each owning modul
 | Agents | `OnAgentUpsertedAudit` (pending→`agent.enrolled`), `OnAgent{Deactivated,Reactivated,Deleted}Audit`, `OnApiKey{Created,Activated,Deleted,Revoked}Audit` | `agent.*`, `apikey.*` |
 | Identity | `OnLoginAttemptFailedAudit`, `OnOrganization{Created,Updated}Audit`, `OnUserSignedUpAudit`, `OnAccount{SetupCompleted,RecoveryCompleted}Audit` | `auth.login-failed`, `org.*`, `user.*`, `account.*` |
 | Vault sharing | `OnEntryShareActivityAudit` | `entry-share.created`, `.delivered`, `.confirmed`, `.protection-changed`, `.expired`, `.revoked`, `.ended`, `.source-access-removed` |
+| Vault Agent submissions | `OnAgentSubmissionChangedAudit` | `agent-submission.submitted`, `.rewrapped`, `.used`, `.approved`, `.denied`, `.restored`, `.purged` |
 
 Vault's entry / credential-denied events carry no `OrganizationId`; that owning trigger resolves it from the Vault read-model before publishing.
 

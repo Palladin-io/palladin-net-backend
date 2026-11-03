@@ -4,6 +4,7 @@ using Palladin.Module.Vault.Infrastructure.Purge;
 using Palladin.Module.Vault.Infrastructure.Assets;
 using Palladin.Module.Audit.Infrastructure.Exports;
 using Palladin.Module.Agents.Infrastructure.PublicAssets;
+using Palladin.Core.Analytics;
 using Palladin.Core.Guid;
 using Palladin.Core.Json;
 using Palladin.Module.PublicAssetCatalog.Infrastructure.Storage;
@@ -41,6 +42,7 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
     internal IPublicAssetCatalogClient PublicAssetCatalogClient { get; } = Substitute.For<IPublicAssetCatalogClient>();
 
     internal IPublicAssetStorage PublicAssetStorage { get; } = Substitute.For<IPublicAssetStorage>();
+    public IAnalyticsService AnalyticsService { get; } = Substitute.For<IAnalyticsService>();
 
     protected override void ConfigureServices(IServiceCollection services)
     {
@@ -72,6 +74,14 @@ public class ApiFactory : AppFixture<Palladin.Api.Program>
         services.RemoveAll<IPublicAssetCatalogClient>();
         services.AddSingleton(PublicAssetCatalogClient);
         services.Replace(ServiceDescriptor.Singleton(PublicAssetStorage));
+        services.RemoveAll<IAnalyticsService>();
+        services.AddSingleton(AnalyticsService);
+        services.Replace(ServiceDescriptor.Singleton<Microsoft.Extensions.Logging.ILoggerFactory>(
+            new Serilog.Extensions.Logging.SerilogLoggerFactory(new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.Sink(new CapturedLogSink())
+                .WriteTo.Logger(Log.Logger)
+                .CreateLogger())));
     }
 
     protected override void ConfigureApp(IWebHostBuilder a)

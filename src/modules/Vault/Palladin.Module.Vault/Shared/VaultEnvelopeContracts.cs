@@ -56,6 +56,9 @@ public enum X25519WrapperPurposeContract : ushort
     ReasonDek = 3,
     GrantDek = 4,
     AgentVaultKey = 5,
+    SubmissionDek = 7,
+    ApproverMessagePrivateKey = 8,
+    ApproverSigningPrivateKey = 9,
 }
 
 [PublicAPI]

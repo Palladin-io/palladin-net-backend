@@ -479,7 +479,7 @@ An active Agent proposes a new Entry, or the next revision of an Entry it is gra
 
 - Project references: Agents, Identity, Notification.Events, Audit.Events, and shared core libraries.
 - Publishes Vault, Entry, grant, credential, import, and export domain events.
-- Consumes Agent and Identity replica events.
+- Consumes Agent and Identity replica events. `UnverifiedAccountDiscardedEvent` removes the user replica and member key directory entry unless the user still holds a Vault membership, and records a permanent `DiscardedUsers` fence: a delayed `UserUpsertedEvent` or `UpsertMemberKeyDirectoryCommand` (separate queue) never recreates them.
 - Uses EF Core/Postgres, MassTransit, Hangfire for grant expiry, and `ICdnService` for existing asset flows.
 
 ## Inject metadata revision binding

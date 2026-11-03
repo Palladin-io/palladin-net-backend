@@ -15,6 +15,7 @@ internal static class InfrastructureModule
         services.Configure<PublicAssetStorageOptions>(config.GetSection(PublicAssetStorageOptions.Position));
         services.AddSingleton<IPublicAssetStorage, S3PublicAssetStorage>();
         services.AddHostedService<LocalPublicAssetBucketInitializer>();
+        services.Configure<WebsiteIconAcquisitionOptions>(config.GetSection(WebsiteIconAcquisitionOptions.Position));
         services.AddScoped<IWebsiteIconAcquirer, WebsiteIconAcquirer>();
         services.AddSingleton<WebsiteIconEnsureLimiter>();
         return services;

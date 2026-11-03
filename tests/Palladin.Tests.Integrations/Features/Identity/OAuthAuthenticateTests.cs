@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
 using Palladin.Core.Security;
+using Palladin.Module.Identity.Contracts.Events;
 using Palladin.Module.Identity.Contracts.ValueObjects;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Domain.Enums;
@@ -12,7 +13,10 @@ using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Mocks;
 using Palladin.Tests.Integrations.Shared.Seeders;
+using MassTransit.Testing;
 using NSubstitute;
+using NodaTime;
+using FastEndpoints;
 using NSubstitute.ExceptionExtensions;
 using Shouldly;
 using Microsoft.EntityFrameworkCore;
@@ -186,5 +190,117 @@ public sealed class OAuthAuthenticateTests(ApiFactory apiFactory) : TestBase
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task When_GoogleEmailMatchesEmptyUnverifiedPasswordAccount_Then_DiscardsItAndCreatesNewAccount()
+    {
+        // Given
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = RandomCredential();
+        var email = $"preregistered-{Guid.NewGuid():N}@example.com";
+        var (squatter, squatterOrganization) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: false);
+        MockGoogleIdentity($"google-victim-{Guid.NewGuid():N}", email);
+
+        // When
+        var response = await apiFactory.CreateClient().PostAsJsonAsync(
+            "api/auth/oauth/google", new { Token = "valid-google-token" }, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var result = (await response.Content.ReadFromJsonAsync<OAuthAuthenticateResponse>(TestContext.Current.CancellationToken))!;
+        result.IsNewUser.ShouldBeTrue();
+        result.UserId.ShouldNotBe(squatter.Id);
+        await ShouldBeDiscardedAsync(squatter.Id, squatterOrganization.Id, result.UserId);
+        (await LoginWithPasswordAsync(email, authHash)).ShouldBe(HttpStatusCode.Unauthorized);
+        (await apiFactory.Services.GetRequiredService<ITestHarness>().Published
+            .Any<UnverifiedAccountDiscardedEvent>(
+                x => x.Context.Message.UserId == squatter.Id && x.Context.Message.OrganizationId == squatterOrganization.Id,
+                TestContext.Current.CancellationToken))
+            .ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_BrowserGoogleEmailMatchesEmptyUnverifiedPasswordAccount_Then_DiscardsItAndCreatesNewAccount()
+    {
+        // Given
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var email = $"preregistered-browser-{Guid.NewGuid():N}@example.com";
+        var (squatter, squatterOrganization) = await apiFactory.Services.SeedPasswordUserAsync(RandomCredential(), email: email, emailVerified: false);
+        MockGoogleIdentity($"google-browser-victim-{Guid.NewGuid():N}", email);
+        using var client = apiFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("Origin", "https://panel.example.test");
+        client.DefaultRequestHeaders.Add("X-Palladin-Browser", "1");
+
+        // When
+        var response = await client.PostAsJsonAsync(
+            "api/browser/auth/oauth/google", new { token = "valid-google-token" }, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var newUserId = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().Users
+            .Where(u => u.Email == email).Select(u => u.Id).SingleAsync(TestContext.Current.CancellationToken);
+        await ShouldBeDiscardedAsync(squatter.Id, squatterOrganization.Id, newUserId);
+    }
+
+    [Fact]
+    public async Task When_GoogleEmailMatchesUnverifiedAccountWithOtherMembership_Then_Returns401AndChangesNothing()
+    {
+        // Given
+        apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
+        var authHash = RandomCredential();
+        var email = $"preregistered-member-{Guid.NewGuid():N}@example.com";
+        var (squatter, _) = await apiFactory.Services.SeedPasswordUserAsync(authHash, email: email, emailVerified: false);
+        var (_, otherOrganization, _) = await apiFactory.Services.SeedUserAsync();
+        await AddMembershipAsync(otherOrganization.Id, squatter);
+        MockGoogleIdentity($"google-member-{Guid.NewGuid():N}", email);
+
+        // When
+        var response = await apiFactory.CreateClient().PostAsJsonAsync(
+            "api/auth/oauth/google", new { Token = "valid-google-token" }, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await readContext.Users.SingleAsync(u => u.Email == email, TestContext.Current.CancellationToken)).Id.ShouldBe(squatter.Id);
+        (await readContext.OAuthConnections.AnyAsync(c => c.UserId == squatter.Id, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await LoginWithPasswordAsync(email, authHash)).ShouldBe(HttpStatusCode.OK);
+    }
+
+    private void MockGoogleIdentity(string subject, string email) =>
+        apiFactory.GoogleOAuthProvider.ValidateTokenAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new ExternalUserInfo(subject, email, true, "Google Victim", null));
+
+    private static byte[] RandomCredential() => System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+
+    private async Task ShouldBeDiscardedAsync(Guid oldUserId, Guid oldOrganizationId, Guid newUserId)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>();
+        (await readContext.Users.AnyAsync(u => u.Id == oldUserId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await readContext.Organizations.AnyAsync(o => o.Id == oldOrganizationId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await readContext.OrganizationMembers.AnyAsync(m => m.UserId == newUserId && m.OrganizationId == oldOrganizationId, TestContext.Current.CancellationToken))
+            .ShouldBeFalse();
+        (await readContext.PasswordCredentials.AnyAsync(c => c.UserId == newUserId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    private async Task<HttpStatusCode> LoginWithPasswordAsync(string email, byte[] authHash)
+    {
+        var (response, _) = await apiFactory.CreateClient().POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest { Email = email, SecurityVersion = 1, KdfProfileId = "identity-argon2id-password-v1", AuthCredential = authHash });
+        return response.StatusCode;
+    }
+
+    private async Task AddMembershipAsync(Guid organizationId, User user)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+        var role = (await writeContext.Roles.Where(r => r.OrganizationId == organizationId)
+            .ToListAsync(TestContext.Current.CancellationToken)).Single(r => r.IsDefaultUser);
+        writeContext.OrganizationMembers.Add(OrganizationMember.Create(
+            organizationId, user.Id, role, user.DisplayName, user.Email, SystemClock.Instance.GetCurrentInstant()));
+        await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 }

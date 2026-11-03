@@ -23,6 +23,20 @@ namespace Palladin.Module.Notification.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Palladin.Module.Notification.Domain.DiscardedUser", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("DiscardedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("DiscardedUsers");
+                });
+
             modelBuilder.Entity("Palladin.Module.Notification.Domain.EmailDelivery", b =>
                 {
                     b.Property<string>("IdempotencyKey")

@@ -28,6 +28,11 @@ internal sealed class OnUserUpserted(
 
         if (existing is null)
         {
+            if (await domainWriteContext.DiscardedUsers.AnyAsync(discarded => discarded.UserId == msg.UserId, context.CancellationToken))
+            {
+                return;
+            }
+
             domainWriteContext.Add(User.Create(msg.UserId, msg.DisplayName, clock.GetCurrentInstant(), msg.UpdatedAt));
             await domainWriteContext.CommitAsync(context.CancellationToken);
             return;

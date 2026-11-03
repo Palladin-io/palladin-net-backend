@@ -30,6 +30,11 @@ internal sealed class OnUserUpserted(
         var existing = await domainWriteContext.Users.FirstOrDefaultAsync(u => u.UserId == msg.UserId, ct);
         if (existing is null)
         {
+            if (await domainWriteContext.DiscardedUsers.AnyAsync(discarded => discarded.UserId == msg.UserId, ct))
+            {
+                return;
+            }
+
             domainWriteContext.Add(User.Create(
                 msg.UserId, msg.OrganizationId, msg.DisplayName, msg.Email, msg.Permissions, msg.UpdatedAt));
         }

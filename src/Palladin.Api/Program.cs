@@ -309,7 +309,10 @@ app.Run();
 
 void ConfigureLogging()
 {
-    Log.Logger = new LoggerConfiguration().ReadFrom.Configuration(builder.Configuration).CreateLogger();
+    Log.Logger = new LoggerConfiguration()
+        .ReadFrom.Configuration(builder.Configuration)
+        .WriteToPostHogLogs(builder.Configuration)
+        .CreateLogger();
     builder.Host.UseSerilog(Log.Logger);
 }
 

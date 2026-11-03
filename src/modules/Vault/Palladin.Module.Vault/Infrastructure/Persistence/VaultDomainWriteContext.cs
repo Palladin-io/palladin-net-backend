@@ -39,6 +39,7 @@ internal sealed class VaultDomainWriteContext(
     public IQueryable<EncryptedReasonEnvelope> EncryptedReasonEnvelopes => Track<EncryptedReasonEnvelope>();
     public IQueryable<Agent> Agents => Track<Agent>();
     public IQueryable<User> Users => Track<User>();
+    public IQueryable<DiscardedUser> DiscardedUsers => Track<DiscardedUser>();
     public IQueryable<CredentialFailureReport> CredentialFailureReports => Track<CredentialFailureReport>();
     public IQueryable<EncryptedPresentationAsset> EncryptedPresentationAssets => Track<EncryptedPresentationAsset>();
     public IQueryable<OrganizationApprover> OrganizationApprovers => Track<OrganizationApprover>();

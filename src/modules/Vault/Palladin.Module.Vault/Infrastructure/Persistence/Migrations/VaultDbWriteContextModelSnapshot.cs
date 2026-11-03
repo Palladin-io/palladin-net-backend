@@ -479,6 +479,20 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.ToTable("CredentialFailureReports");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.DiscardedUser", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("DiscardedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("DiscardedUsers");
+                });
+
             modelBuilder.Entity("Palladin.Module.Vault.Domain.EncryptedPresentationAsset", b =>
                 {
                     b.Property<Guid>("OrganizationId")

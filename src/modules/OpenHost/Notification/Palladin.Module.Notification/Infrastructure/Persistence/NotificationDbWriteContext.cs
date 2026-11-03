@@ -9,6 +9,7 @@ internal sealed class NotificationDbWriteContext(DbContextOptions<NotificationDb
     public DbSet<InboxItem> InboxItems => Set<InboxItem>();
     public DbSet<Scope> Scopes => Set<Scope>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<DiscardedUser> DiscardedUsers => Set<DiscardedUser>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<SuppressedEmail> SuppressedEmails => Set<SuppressedEmail>();
     public DbSet<EmailDelivery> EmailDeliveries => Set<EmailDelivery>();

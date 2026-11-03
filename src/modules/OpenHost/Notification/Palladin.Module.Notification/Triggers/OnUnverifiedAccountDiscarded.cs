@@ -1,4 +1,5 @@
 using Palladin.Module.Identity.Contracts.Events;
+using Palladin.Module.Notification.Domain;
 using Palladin.Module.Notification.Infrastructure.MassTransit;
 using Palladin.Module.Notification.Infrastructure.Persistence;
 using JetBrains.Annotations;
@@ -22,6 +23,12 @@ internal sealed class OnUnverifiedAccountDiscarded(NotificationDomainWriteContex
         var userId = context.Message.UserId;
         var ct = context.CancellationToken;
 
+        if (await domainWriteContext.DiscardedUsers.AnyAsync(discarded => discarded.UserId == userId, ct))
+        {
+            return;
+        }
+
+        domainWriteContext.Add(DiscardedUser.Create(userId, context.Message.OccurredAt));
         domainWriteContext.RemoveRange([
             .. await domainWriteContext.Users.Where(user => user.UserId == userId).ToListAsync(ct),
             .. await domainWriteContext.Scopes.Where(scope => scope.UserId == userId).ToListAsync(ct),

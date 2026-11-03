@@ -418,6 +418,22 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                     b.ToTable("api_key_credentials", (string)null);
                 });
 
+            modelBuilder.Entity("Palladin.Module.Agents.Domain.DiscardedUser", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Instant>("DiscardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("discarded_at");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("agent_discarded_users", (string)null);
+                });
+
             modelBuilder.Entity("Palladin.Module.Agents.Domain.FormDiscoveryMap", b =>
                 {
                     b.Property<Guid>("Id")

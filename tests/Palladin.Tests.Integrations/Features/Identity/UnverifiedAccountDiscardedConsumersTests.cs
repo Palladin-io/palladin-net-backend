@@ -33,15 +33,40 @@ public sealed class UnverifiedAccountDiscardedConsumersTests(ApiFactory apiFacto
         await DiscardAsync(userId, organizationId);
 
         // Then
-        await using var scope = apiFactory.Services.CreateAsyncScope();
-        var vault = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
-        (await vault.Users.AnyAsync(u => u.Id == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
-        (await vault.MemberKeyDirectory.AnyAsync(e => e.UserId == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
-        (await scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>().Users
-            .AnyAsync(u => u.Id == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
-        var notification = scope.ServiceProvider.GetRequiredService<NotificationDbReadContext>();
-        (await notification.Users.AnyAsync(u => u.UserId == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
-        (await notification.Scopes.AnyAsync(s => s.UserId == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        await ShouldHaveNoReplicasAsync(userId);
+    }
+
+    [Fact]
+    public async Task When_RegistrationUpsertsArriveAfterDiscard_Then_NoModuleRecreatesTheUserReplicas()
+    {
+        // Given
+        var (userId, organizationId) = (Guid.NewGuid(), Guid.NewGuid());
+        await DiscardAsync(userId, organizationId);
+
+        // When
+        await ConsumeAsync<VaultTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
+        await ConsumeAsync<UpsertMemberKeyDirectoryConsumer, UpsertMemberKeyDirectoryCommand>(
+            new UpsertMemberKeyDirectoryCommand(userId, 1, Enumerable.Repeat((byte)9, 32).ToArray(), Now()));
+        await ConsumeAsync<AgentsTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
+        await ConsumeAsync<NotificationTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
+
+        // Then
+        await ShouldHaveNoReplicasAsync(userId);
+    }
+
+    [Fact]
+    public async Task When_DiscardIsRedelivered_Then_ItStaysIdempotent()
+    {
+        // Given
+        var (userId, organizationId) = (Guid.NewGuid(), Guid.NewGuid());
+        await SeedReplicasAsync(userId, organizationId);
+        await DiscardAsync(userId, organizationId);
+
+        // When
+        await DiscardAsync(userId, organizationId);
+
+        // Then
+        await ShouldHaveNoReplicasAsync(userId);
     }
 
     [Fact]
@@ -62,6 +87,19 @@ public sealed class UnverifiedAccountDiscardedConsumersTests(ApiFactory apiFacto
         await using var scope = apiFactory.Services.CreateAsyncScope();
         (await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>().MemberKeyDirectory
             .AnyAsync(e => e.UserId == owner.Id, TestContext.Current.CancellationToken)).ShouldBeTrue();
+    }
+
+    private async Task ShouldHaveNoReplicasAsync(Guid userId)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var vault = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await vault.Users.AnyAsync(u => u.Id == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await vault.MemberKeyDirectory.AnyAsync(e => e.UserId == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>().Users
+            .AnyAsync(u => u.Id == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        var notification = scope.ServiceProvider.GetRequiredService<NotificationDbReadContext>();
+        (await notification.Users.AnyAsync(u => u.UserId == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await notification.Scopes.AnyAsync(s => s.UserId == userId, TestContext.Current.CancellationToken)).ShouldBeFalse();
     }
 
     private async Task SeedReplicasAsync(Guid userId, Guid organizationId)

@@ -1,4 +1,5 @@
 using Palladin.Module.Identity.Contracts.Events;
+using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.MassTransit;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 using JetBrains.Annotations;
@@ -23,11 +24,13 @@ internal sealed class OnUnverifiedAccountDiscarded(VaultDomainWriteContext domai
         var ct = context.CancellationToken;
 
         // Vault membership requires a verified e-mail; a member's directory key must never disappear.
-        if (await domainWriteContext.VaultMembers.AnyAsync(member => member.UserId == userId, ct))
+        if (await domainWriteContext.VaultMembers.AnyAsync(member => member.UserId == userId, ct)
+            || await domainWriteContext.DiscardedUsers.AnyAsync(discarded => discarded.UserId == userId, ct))
         {
             return;
         }
 
+        domainWriteContext.Add(DiscardedUser.Create(userId, context.Message.OccurredAt));
         domainWriteContext.RemoveRange([
             .. await domainWriteContext.Users.Where(user => user.Id == userId).ToListAsync(ct),
             .. await domainWriteContext.MemberKeyDirectory.Where(entry => entry.UserId == userId).ToListAsync(ct),

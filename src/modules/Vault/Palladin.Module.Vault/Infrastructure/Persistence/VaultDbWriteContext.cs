@@ -36,6 +36,7 @@ internal sealed class VaultDbWriteContext(DbContextOptions<VaultDbWriteContext> 
     public DbSet<EncryptedReasonEnvelope> EncryptedReasonEnvelopes => Set<EncryptedReasonEnvelope>();
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<DiscardedUser> DiscardedUsers => Set<DiscardedUser>();
     public DbSet<CredentialFailureReport> CredentialFailureReports => Set<CredentialFailureReport>();
     public DbSet<EncryptedPresentationAsset> EncryptedPresentationAssets => Set<EncryptedPresentationAsset>();
     public DbSet<OrganizationApprover> OrganizationApprovers => Set<OrganizationApprover>();

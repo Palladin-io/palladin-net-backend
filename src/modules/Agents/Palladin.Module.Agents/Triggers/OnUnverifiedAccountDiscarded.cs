@@ -1,3 +1,4 @@
+using Palladin.Module.Agents.Domain;
 using Palladin.Module.Agents.Infrastructure.MassTransit;
 using Palladin.Module.Agents.Infrastructure.Persistence;
 using Palladin.Module.Identity.Contracts.Events;
@@ -19,10 +20,16 @@ internal sealed class OnUnverifiedAccountDiscarded(AgentsDomainWriteContext doma
 {
     public async Task Consume(ConsumeContext<UnverifiedAccountDiscardedEvent> context)
     {
-        var replicas = await domainWriteContext.Users
-            .Where(user => user.Id == context.Message.UserId)
-            .ToListAsync(context.CancellationToken);
-        domainWriteContext.RemoveRange(replicas);
-        await domainWriteContext.CommitAsync(context.CancellationToken);
+        var userId = context.Message.UserId;
+        var ct = context.CancellationToken;
+
+        if (await domainWriteContext.DiscardedUsers.AnyAsync(discarded => discarded.UserId == userId, ct))
+        {
+            return;
+        }
+
+        domainWriteContext.Add(DiscardedUser.Create(userId, context.Message.OccurredAt));
+        domainWriteContext.RemoveRange(await domainWriteContext.Users.Where(user => user.Id == userId).ToListAsync(ct));
+        await domainWriteContext.CommitAsync(ct);
     }
 }

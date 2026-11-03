@@ -11,6 +11,7 @@ internal sealed class AgentsDbWriteContext(DbContextOptions<AgentsDbWriteContext
     public DbSet<AgentPairingRequest> AgentPairingRequests => Set<AgentPairingRequest>();
     public DbSet<AgentDisplayNameFence> AgentDisplayNameFences => Set<AgentDisplayNameFence>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<DiscardedUser> DiscardedUsers => Set<DiscardedUser>();
     public DbSet<FormDiscoveryMap> FormDiscoveryMaps => Set<FormDiscoveryMap>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

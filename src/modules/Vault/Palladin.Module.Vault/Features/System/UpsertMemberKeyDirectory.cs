@@ -31,6 +31,11 @@ internal sealed class UpsertMemberKeyDirectoryConsumer(VaultDomainWriteContext d
 
         if (existing is null)
         {
+            if (await domainWriteContext.DiscardedUsers.AnyAsync(discarded => discarded.UserId == msg.UserId, context.CancellationToken))
+            {
+                return;
+            }
+
             domainWriteContext.Add(MemberKeyDirectoryEntry.Create(
                 msg.UserId,
                 version,

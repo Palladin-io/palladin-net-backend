@@ -15,5 +15,6 @@ internal sealed class AgentsDomainWriteContext(
     public IQueryable<AgentPairingRequest> AgentPairingRequests => Track<AgentPairingRequest>();
     public IQueryable<AgentDisplayNameFence> AgentDisplayNameFences => Track<AgentDisplayNameFence>();
     public IQueryable<User> Users => Track<User>();
+    public IQueryable<DiscardedUser> DiscardedUsers => Track<DiscardedUser>();
     public IQueryable<FormDiscoveryMap> FormDiscoveryMaps => Track<FormDiscoveryMap>();
 }

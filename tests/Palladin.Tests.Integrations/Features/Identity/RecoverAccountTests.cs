@@ -4,13 +4,19 @@ using System.Security.Cryptography;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Jwt;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Recovery;
 using Palladin.Tests.Integrations.Shared;
+using Palladin.Tests.Integrations.Shared.Crypto;
 using Palladin.Tests.Integrations.Shared.Extensions;
 using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Identity;
@@ -31,6 +37,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
             .RuleFor(x => x.DeviceWrapperMetadata, Enumerable.Repeat((byte)0xD0, 32).ToArray());
         var (user, _, _) = await apiFactory.Services.SeedUserAsync(userFaker);
         var client = apiFactory.CreateAuthenticatedClient(user);
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
 
         var newSalt = Enumerable.Range(0, 16).Select(i => (byte)(i + 0x80)).ToArray();
         var newEncryptedPrivateKey = Enumerable.Range(0, 64).Select(i => (byte)(i + 0x90)).ToArray();
@@ -47,6 +54,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
             NewEncryptedPrivateKey = newEncryptedPrivateKey,
             NewRecoverySalt = newRecoverySalt,
             NewEncryptedPrivateKeyByRecovery = newEncryptedPrivateKeyByRecovery,
+            RecoveryProof = recoveryProof,
         };
 
         // When
@@ -135,6 +143,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         var rawToken = Convert.ToBase64String(Enumerable.Range(0, 32).Select(i => (byte)(i + 0x50)).ToArray());
         await apiFactory.Services.SeedRefreshTokenAsync(user.Id, rawToken);
         var client = apiFactory.CreateAuthenticatedClient(user);
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
 
         var payload = new RecoverAccountRequest
         {
@@ -146,6 +155,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
             NewEncryptedPrivateKey = Enumerable.Range(0, 64).Select(i => (byte)(i + 0x90)).ToArray(),
             NewRecoverySalt = Enumerable.Range(0, 16).Select(i => (byte)(i + 0xA0)).ToArray(),
             NewEncryptedPrivateKeyByRecovery = Enumerable.Range(0, 64).Select(i => (byte)(i + 0xB0)).ToArray(),
+            RecoveryProof = recoveryProof,
         };
 
         // When
@@ -171,6 +181,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         var email = $"recover-pwd-{Guid.NewGuid():N}@example.com";
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(oldAuthHash, email: email, emailVerified: true);
         var client = apiFactory.CreateAuthenticatedClient(user);
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
 
         var payload = new RecoverAccountRequest
         {
@@ -183,6 +194,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
             NewRecoverySalt = Enumerable.Range(0, 16).Select(i => (byte)(i + 0xA0)).ToArray(),
             NewEncryptedPrivateKeyByRecovery = Enumerable.Range(0, 64).Select(i => (byte)(i + 0xB0)).ToArray(),
             NewAuthCredential = newAuthHash,
+            RecoveryProof = recoveryProof,
         };
 
         // When
@@ -245,8 +257,10 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         var (user, _, _) = await apiFactory.Services.SeedUserAsync(userFaker);
         var originalSalt = user.Salt!.ToArray();
         var originalPrivateKey = user.EncryptedPrivateKey!.ToArray();
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
 
-        var response = await apiFactory.CreateAuthenticatedClient(user).PutAsJsonAsync(
+        var response = await client.PutAsJsonAsync(
             "api/account/recovery",
             new RecoverAccountRequest
             {
@@ -258,6 +272,7 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
                 NewEncryptedPrivateKey = RandomNumberGenerator.GetBytes(64),
                 NewRecoverySalt = RandomNumberGenerator.GetBytes(16),
                 NewEncryptedPrivateKeyByRecovery = RandomNumberGenerator.GetBytes(64),
+                RecoveryProof = recoveryProof,
             },
             TestContext.Current.CancellationToken);
 
@@ -269,5 +284,237 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         persisted.Salt.ShouldBe(originalSalt);
         persisted.EncryptedPrivateKey.ShouldBe(originalPrivateKey);
         persisted.PrivateKeyWrapRevision.ShouldBe(1u);
+    }
+
+    [Fact]
+    public async Task When_RecoveryProofMissing_Then_Returns403AndWrapsUnchanged()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        await ProveRecoveryKeyPossessionAsync(client, user.Id);
+
+        // When
+        var response = await client.PutAsJsonAsync(
+            "api/account/recovery", RecoveryPayload(user, recoveryProof: null), TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        await ShouldKeepPrivateKeyWrapsAsync(user);
+    }
+
+    [Fact]
+    public async Task When_RecoveryProofWrong_Then_Returns403AndConsumesChallenge()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+
+        // When
+        var wrong = await client.PutAsJsonAsync(
+            "api/account/recovery", RecoveryPayload(user, RandomNumberGenerator.GetBytes(32)), TestContext.Current.CancellationToken);
+        var retried = await client.PutAsJsonAsync(
+            "api/account/recovery", RecoveryPayload(user, recoveryProof), TestContext.Current.CancellationToken);
+
+        // Then
+        wrong.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        retried.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        await ShouldKeepPrivateKeyWrapsAsync(user);
+    }
+
+    [Fact]
+    public async Task When_RecoveryProofReused_Then_Returns403()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+        var first = await client.PutAsJsonAsync(
+            "api/account/recovery", RecoveryPayload(user, recoveryProof), TestContext.Current.CancellationToken);
+        first.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        // When
+        var replay = await client.PutAsJsonAsync(
+            "api/account/recovery",
+            RecoveryPayload(user, recoveryProof) with { BasePrivateKeyWrapRevision = user.PrivateKeyWrapRevision + 1 },
+            TestContext.Current.CancellationToken);
+
+        // Then
+        replay.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task When_UnrelatedAccountWriteConflictsWithConsumption_Then_ChallengeIsStillBurned()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+        var interceptor = new ConcurrentWriteBeforeFirstCommit(apiFactory, user.Id,
+            account => account.SetProperty(x => x.SharedUnlockRevision, x => x.SharedUnlockRevision + 1));
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = CreateInterceptedContext(scope, interceptor);
+        var account = await context.Users.SingleAsync(u => u.Id == user.Id, TestContext.Current.CancellationToken);
+
+        // When
+        var consumed = await CreateConsumer(context).ConsumeAsync(account, recoveryProof, TestContext.Current.CancellationToken);
+        var retried = await client.PutAsJsonAsync(
+            "api/account/recovery", RecoveryPayload(user, recoveryProof), TestContext.Current.CancellationToken);
+
+        // Then
+        consumed.ShouldBeTrue();
+        interceptor.Attempts.ShouldBe(2);
+        (await ReadRecoveryChallengeHashAsync(user.Id)).ShouldBeNull();
+        retried.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await retried.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("recovery-proof-invalid");
+        await ShouldKeepPrivateKeyWrapsAsync(user);
+    }
+
+    [Fact]
+    public async Task When_ChallengeIsReplacedDuringConsumption_Then_ReplacementStaysOutstanding()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+        var replacementHash = SHA256.HashData(RandomNumberGenerator.GetBytes(32));
+        var interceptor = new ConcurrentWriteBeforeFirstCommit(apiFactory, user.Id,
+            account => account.SetProperty(x => x.RecoveryChallengeHash, replacementHash));
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var context = CreateInterceptedContext(scope, interceptor);
+        var account = await context.Users.SingleAsync(u => u.Id == user.Id, TestContext.Current.CancellationToken);
+
+        // When
+        var consumed = await CreateConsumer(context).ConsumeAsync(account, recoveryProof, TestContext.Current.CancellationToken);
+
+        // Then
+        consumed.ShouldBeFalse();
+        interceptor.Attempts.ShouldBe(1);
+        (await ReadRecoveryChallengeHashAsync(user.Id)).ShouldBe(replacementHash);
+    }
+
+    [Fact]
+    public async Task When_RecoveryChallengeExpired_Then_Returns403AndWrapsUnchanged()
+    {
+        // Given
+        var (user, client) = await SeedRecoverableUserAsync();
+        var recoveryProof = await ProveRecoveryKeyPossessionAsync(client, user.Id);
+        var originalTime = apiFactory.FakeClock.GetCurrentInstant();
+        apiFactory.FakeClock.Advance(Duration.FromMinutes(6));
+        try
+        {
+            // When
+            var response = await client.PutAsJsonAsync(
+                "api/account/recovery", RecoveryPayload(user, recoveryProof), TestContext.Current.CancellationToken);
+
+            // Then
+            response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            await ShouldKeepPrivateKeyWrapsAsync(user);
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalTime);
+        }
+    }
+
+    [Fact]
+    public async Task When_UserHasNoPublicKey_Then_ChallengeReturns404()
+    {
+        // Given
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(UserFaker.CreateOnboarded());
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var response = await client.PostAsync("api/account/recovery/challenge", null, TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private async Task<(Palladin.Module.Identity.Domain.User User, HttpClient Client)> SeedRecoverableUserAsync()
+    {
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(UserFaker.CreateOnboarded()
+            .RuleFor(x => x.Salt, RandomNumberGenerator.GetBytes(16))
+            .RuleFor(x => x.RecoverySalt, RandomNumberGenerator.GetBytes(16))
+            .RuleFor(x => x.EncryptedPrivateKey, RandomNumberGenerator.GetBytes(64))
+            .RuleFor(x => x.EncryptedPrivateKeyByRecovery, RandomNumberGenerator.GetBytes(64)));
+        return (user, apiFactory.CreateAuthenticatedClient(user));
+    }
+
+    private static RecoverAccountRequest RecoveryPayload(Palladin.Module.Identity.Domain.User user, byte[]? recoveryProof) => new()
+    {
+        SecurityVersion = 1,
+        KdfProfileId = "identity-argon2id-password-v1",
+        BaseCredentialRevision = user.CredentialRevision,
+        BasePrivateKeyWrapRevision = user.PrivateKeyWrapRevision,
+        NewKdfSalt = RandomNumberGenerator.GetBytes(16),
+        NewEncryptedPrivateKey = RandomNumberGenerator.GetBytes(64),
+        NewRecoverySalt = RandomNumberGenerator.GetBytes(16),
+        NewEncryptedPrivateKeyByRecovery = RandomNumberGenerator.GetBytes(64),
+        RecoveryProof = recoveryProof,
+    };
+
+    private async Task ShouldKeepPrivateKeyWrapsAsync(Palladin.Module.Identity.Domain.User user)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .Users.SingleAsync(account => account.Id == user.Id, TestContext.Current.CancellationToken);
+        persisted.EncryptedPrivateKey.ShouldBe(user.EncryptedPrivateKey);
+        persisted.EncryptedPrivateKeyByRecovery.ShouldBe(user.EncryptedPrivateKeyByRecovery);
+        persisted.PrivateKeyWrapRevision.ShouldBe(user.PrivateKeyWrapRevision);
+    }
+
+    private static IdentityDomainWriteContext CreateInterceptedContext(AsyncServiceScope scope, IInterceptor interceptor)
+    {
+        var options = new DbContextOptionsBuilder<IdentityDbWriteContext>(
+            scope.ServiceProvider.GetRequiredService<DbContextOptions<IdentityDbWriteContext>>()).AddInterceptors(interceptor).Options;
+        return new IdentityDomainWriteContext(new IdentityDbWriteContext(options), []);
+    }
+
+    private RecoveryChallengeConsumer CreateConsumer(IdentityDomainWriteContext context) =>
+        new(context, apiFactory.FakeClock, Options.Create(new AccountRecoveryOptions()));
+
+    private async Task<byte[]?> ReadRecoveryChallengeHashAsync(Guid userId)
+    {
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>().Users
+            .Where(u => u.Id == userId).Select(u => u.RecoveryChallengeHash).SingleAsync(TestContext.Current.CancellationToken);
+    }
+
+    private sealed class ConcurrentWriteBeforeFirstCommit(
+        ApiFactory apiFactory,
+        Guid userId,
+        Action<UpdateSettersBuilder<Palladin.Module.Identity.Domain.User>> concurrentWrite) : SaveChangesInterceptor
+    {
+        internal int Attempts { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (++Attempts == 1)
+            {
+                await using var scope = apiFactory.Services.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>().Users
+                    .Where(u => u.Id == userId).ExecuteUpdateAsync(concurrentWrite, cancellationToken);
+            }
+
+            return result;
+        }
+    }
+
+    // Plays the client: installs a real X25519 identity key, requests a challenge and opens it with the private key.
+    private async Task<byte[]> ProveRecoveryKeyPossessionAsync(HttpClient client, Guid userId)
+    {
+        var keys = X25519SealedBox.CreateKeyPair();
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>().Users
+                .Where(u => u.Id == userId)
+                .ExecuteUpdateAsync(u => u.SetProperty(x => x.PublicKey, keys.PublicKey), TestContext.Current.CancellationToken);
+        }
+
+        var (response, challenge) = await client
+            .POSTAsync<IssueRecoveryChallengeEndpoint, IssueRecoveryChallengeResponse>();
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var package = X25519SealedBox.Open(challenge.SealedChallenge, keys);
+        package.AsSpan(0, 8).ToArray().ShouldBe("PLDNRCV1"u8.ToArray());
+        package.AsSpan(8, 16).ToArray().ShouldBe(userId.ToByteArray(bigEndian: true));
+        return package.AsSpan(24).ToArray();
     }
 }

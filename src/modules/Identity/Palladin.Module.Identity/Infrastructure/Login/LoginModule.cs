@@ -23,6 +23,7 @@ internal static class LoginModule
 
         services.AddScoped<LoginThrottleService>();
         services.AddScoped<LoginRateLimiter>();
+        services.AddScoped<CurrentAuthCredentialVerifier>();
         services.AddSingleton<IEmailVerificationGate, EmailVerificationGate>();
 
         var cleanupSection = configuration.GetSection(CleanupLoginRateLimitBucketsJobOptions.Position);

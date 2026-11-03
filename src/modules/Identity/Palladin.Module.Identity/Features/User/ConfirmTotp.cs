@@ -1,15 +1,20 @@
+using System.Globalization;
 using Palladin.Core.Api;
 using Palladin.Core.Guid;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
+using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Totp;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using System.Text.Json.Serialization;
+using Palladin.Core.Json;
 
 namespace Palladin.Module.Identity.Features;
 
@@ -17,6 +22,7 @@ namespace Palladin.Module.Identity.Features;
 public sealed record ConfirmTotpRequest
 {
     public string Code { get; init; } = string.Empty;
+    [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] CurrentAuthCredential { get; init; } = [];
 }
 
 [PublicAPI]
@@ -28,6 +34,7 @@ internal sealed class ConfirmTotpValidator : Validator<ConfirmTotpRequest>
     public ConfirmTotpValidator()
     {
         RuleFor(x => x.Code).NotEmpty();
+        RuleFor(x => x.CurrentAuthCredential).Must(b => b is { Length: IdentityKdfProfiles.AuthCredentialBytes });
     }
 }
 
@@ -36,6 +43,7 @@ internal sealed class ConfirmTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
     IGuidProvider guidProvider,
+    CurrentAuthCredentialVerifier credentialVerifier,
     IClock clock) : Endpoint<ConfirmTotpRequest, ConfirmTotpResponse>
 {
     public override void Configure()
@@ -46,7 +54,7 @@ internal sealed class ConfirmTotpEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Confirm and enable TOTP";
-            summary.Description = "Verifies a code against the pending secret, enables the factor and returns "
+            summary.Description = "Verifies the current authCredential and a code against the pending secret, enables the factor and returns "
                 + "one-time recovery codes (only their hashes are stored — shown exactly once).";
         });
         Tags("Identity/Auth");
@@ -63,7 +71,28 @@ internal sealed class ConfirmTotpEndpoint(
 
         var user = await domainWriteContext.Users
             .Include(u => u.TotpCredential).ThenInclude(t => t!.RecoveryCodes)
+            .Include(u => u.PasswordCredential)
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        if (user?.PasswordCredential is not { } passwordCredential)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        var credentialCheck = await credentialVerifier.VerifyAsync(user, passwordCredential, req.CurrentAuthCredential, HttpContext, ct);
+        if (credentialCheck.RetryAfterSeconds is { } retryAfter)
+        {
+            HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
+            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            return;
+        }
+
+        if (!credentialCheck.IsVerified)
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
 
         if (user?.TotpCredential is not { PendingSecret: { } pendingSecret } credential)
         {

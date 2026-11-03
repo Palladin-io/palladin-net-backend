@@ -1,24 +1,43 @@
+using System.Globalization;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
+using Palladin.Module.Identity.Infrastructure.Login;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.Totp;
 using FastEndpoints;
+using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using System.Text.Json.Serialization;
+using Palladin.Core.Json;
 
 namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
+public sealed record EnrollTotpRequest
+{
+    [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] CurrentAuthCredential { get; init; } = [];
+}
+
+[PublicAPI]
 public sealed record EnrollTotpResponse(string Secret, string OtpauthUri);
+
+[UsedImplicitly]
+internal sealed class EnrollTotpValidator : Validator<EnrollTotpRequest>
+{
+    public EnrollTotpValidator() =>
+        RuleFor(x => x.CurrentAuthCredential).Must(b => b is { Length: IdentityKdfProfiles.AuthCredentialBytes });
+}
 
 [PublicAPI]
 internal sealed class EnrollTotpEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     ITotpService totpService,
-    IClock clock) : EndpointWithoutRequest<EnrollTotpResponse>
+    CurrentAuthCredentialVerifier credentialVerifier,
+    IClock clock) : Endpoint<EnrollTotpRequest, EnrollTotpResponse>
 {
     public override void Configure()
     {
@@ -28,13 +47,13 @@ internal sealed class EnrollTotpEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Begin TOTP enrollment";
-            summary.Description = "Generates a pending TOTP secret and its otpauth URI for QR display. "
+            summary.Description = "Verifies the current authCredential, then generates a pending TOTP secret and its otpauth URI for QR display. "
                 + "The factor is not active until confirmed with a valid code.";
         });
         Tags("Identity/Auth");
     }
 
-    public override async Task HandleAsync(CancellationToken ct)
+    public override async Task HandleAsync(EnrollTotpRequest req, CancellationToken ct)
     {
         var userId = User.GetUserId();
         if (userId is null)
@@ -45,10 +64,31 @@ internal sealed class EnrollTotpEndpoint(
 
         var user = await domainWriteContext.Users
             .Include(u => u.TotpCredential)
+            .Include(u => u.PasswordCredential)
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null)
         {
             await Send.UnauthorizedAsync(ct);
+            return;
+        }
+
+        if (user?.PasswordCredential is not { } passwordCredential)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        var credentialCheck = await credentialVerifier.VerifyAsync(user, passwordCredential, req.CurrentAuthCredential, HttpContext, ct);
+        if (credentialCheck.RetryAfterSeconds is { } retryAfter)
+        {
+            HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
+            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+            return;
+        }
+
+        if (!credentialCheck.IsVerified)
+        {
+            await Send.ForbiddenAsync(ct);
             return;
         }
 

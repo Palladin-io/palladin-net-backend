@@ -4,6 +4,7 @@ using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using Palladin.Module.Identity.Infrastructure.Persistence;
+using Palladin.Module.Identity.Infrastructure.Recovery;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -29,6 +30,7 @@ public sealed record RecoverAccountRequest
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] NewEncryptedPrivateKeyByRecovery { get; init; } = [];
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[]? NewAuthCredential { get; init; }
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[]? DeviceWrapperMetadata { get; init; }
+    [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[]? RecoveryProof { get; init; }
 }
 
 [UsedImplicitly]
@@ -54,6 +56,7 @@ internal sealed class RecoverAccountValidator : Validator<RecoverAccountRequest>
 [PublicAPI]
 internal sealed class RecoverAccountEndpoint(
     IdentityDomainWriteContext domainWriteContext,
+    RecoveryChallengeConsumer recoveryChallengeConsumer,
     IPasswordHasher passwordHasher,
     IClock clock) : Endpoint<RecoverAccountRequest>
 {
@@ -65,7 +68,7 @@ internal sealed class RecoverAccountEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Recover the account using pre-encrypted key material";
-            summary.Description = "Replaces the user's salt, encrypted private key and recovery key material. The server never sees the plaintext master password or recovery key — only the ciphertexts and salts derived client-side from the new password and new recovery key.";
+            summary.Description = "Replaces the user's salt, encrypted private key and recovery key material. Requires recoveryProof: the secret opened from POST api/account/recovery/challenge with the account private key; a missing, wrong, expired or reused proof returns 403 and consumes the challenge. The server never sees the plaintext master password or recovery key — only the ciphertexts and salts derived client-side from the new password and new recovery key.";
         });
         Tags("Identity/Account");
     }
@@ -86,6 +89,13 @@ internal sealed class RecoverAccountEndpoint(
         if (user is null || !user.IsOnboarded)
         {
             await Send.NotFoundAsync(ct);
+            return;
+        }
+
+        if (!await recoveryChallengeConsumer.ConsumeAsync(user, req.RecoveryProof, ct))
+        {
+            AddError(ErrorResponses.General("recovery-proof-invalid"));
+            await Send.ErrorsAsync(StatusCodes.Status403Forbidden, ct);
             return;
         }
 

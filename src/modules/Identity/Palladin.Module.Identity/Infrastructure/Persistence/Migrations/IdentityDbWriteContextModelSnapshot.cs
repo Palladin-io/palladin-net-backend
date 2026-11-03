@@ -802,6 +802,14 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.Property<byte[]>("PublicKey")
                         .HasColumnType("bytea");
 
+                    b.Property<Instant?>("RecoveryChallengeExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("RecoveryChallengeHash")
+                        .IsConcurrencyToken()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
                     b.Property<byte[]>("RecoverySalt")
                         .HasColumnType("bytea");
 

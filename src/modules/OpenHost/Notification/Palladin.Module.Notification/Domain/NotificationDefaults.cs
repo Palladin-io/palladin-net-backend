@@ -10,6 +10,7 @@ internal static class NotificationDefaults
     [
         NotificationType.AgentPending,
         NotificationType.GrantPending,
+        NotificationType.SubmissionPending,
     ];
 
     private static readonly HashSet<NotificationType> PushOnByDefault =
@@ -17,6 +18,7 @@ internal static class NotificationDefaults
         NotificationType.AgentPending,
         NotificationType.GrantPending,
         NotificationType.CredentialStale,
+        NotificationType.SubmissionPending,
     ];
 
     // Types that carry an in-app action (Approve / Deny) and drive the To-do
@@ -26,15 +28,17 @@ internal static class NotificationDefaults
     [
         NotificationType.AgentPending,
         NotificationType.GrantPending,
+        NotificationType.SubmissionPending,
     ];
 
     internal static bool IsMandatory(NotificationType type) => MandatoryTypes.Contains(type);
 
     internal static bool IsUserFacing(NotificationType type) =>
-        type is not (NotificationType.AgentResolved or NotificationType.AgentApproved);
+        type is not (NotificationType.AgentResolved or NotificationType.AgentApproved
+            or NotificationType.SubmissionResolved);
 
     internal static bool IsInvisibleMarker(NotificationType type) =>
-        type is NotificationType.AgentResolved;
+        type is NotificationType.AgentResolved or NotificationType.SubmissionResolved;
 
     internal static NotificationCategory CategoryFor(NotificationType type) =>
         ActionRequiredTypes.Contains(type) ? NotificationCategory.ActionRequired : NotificationCategory.Update;

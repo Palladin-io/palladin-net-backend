@@ -33,6 +33,12 @@ internal sealed class VaultDbReadContext(DbContextOptions<VaultDbReadContext> op
     public DbSet<User> Users => Set<User>();
     public DbSet<CredentialFailureReport> CredentialFailureReports => Set<CredentialFailureReport>();
     public DbSet<EncryptedPresentationAsset> EncryptedPresentationAssets => Set<EncryptedPresentationAsset>();
+    public DbSet<OrganizationApprover> OrganizationApprovers => Set<OrganizationApprover>();
+    public DbSet<OrganizationApproverKeySet> OrganizationApproverKeySets => Set<OrganizationApproverKeySet>();
+    public DbSet<ApproverKeyWrap> ApproverKeyWraps => Set<ApproverKeyWrap>();
+    public DbSet<OrganizationApproverManifestRecord> OrganizationApproverManifests => Set<OrganizationApproverManifestRecord>();
+    public DbSet<ApproverKeyChallenge> ApproverKeyChallenges => Set<ApproverKeyChallenge>();
+    public DbSet<AgentEntrySubmission> AgentEntrySubmissions => Set<AgentEntrySubmission>();
     public DbSet<VaultPresentationAssetCutoverState> VaultPresentationAssetCutoverStates => Set<VaultPresentationAssetCutoverState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

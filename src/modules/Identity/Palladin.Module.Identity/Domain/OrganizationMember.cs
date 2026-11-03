@@ -1,6 +1,7 @@
 using Palladin.Core.Events;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.Events;
+using Palladin.Module.Vault.Contracts.Commands;
 using NodaTime;
 
 namespace Palladin.Module.Identity.Domain;
@@ -41,6 +42,7 @@ internal sealed class OrganizationMember : EventEntityBase
             UpdatedAt = now,
             RoleAssignments = [OrganizationMemberRole.Create(organizationId, userId, administratorRole)],
         };
+        member.AnnounceApproverEligibility();
         return member;
     }
 
@@ -73,6 +75,7 @@ internal sealed class OrganizationMember : EventEntityBase
 
         member.AddEvent(new OrganizationMemberJoinedEvent(
             organizationId, userId, displayName, email, initialRole.Name, now));
+        member.AnnounceApproverEligibility();
 
         return member;
     }
@@ -124,9 +127,19 @@ internal sealed class OrganizationMember : EventEntityBase
         AddEvent(new OrganizationMemberRoleChangedEvent(
             OrganizationId, UserId, userDisplayName, changedBy, changedByName,
             oldRoleNames, newRoleNames, now));
+        AnnounceApproverEligibility();
 
         return true;
     }
+
+    // Vault's approver set replica: an Active membership whose effective permissions include GrantManage.
+    // Requires loaded role assignments; also re-announced on login as idempotent anti-entropy.
+    internal void AnnounceApproverEligibility() =>
+        AddOrReplaceEvent(new UpsertOrganizationApproverCommand(
+            OrganizationId,
+            UserId,
+            Status == OrganizationMemberStatus.Active && EffectivePermissions().HasFlag(Permission.GrantManage),
+            UpdatedAt));
 
     internal void InvalidateAuthorization(Instant now)
     {
@@ -154,6 +167,7 @@ internal sealed class OrganizationMember : EventEntityBase
                 UserId,
                 RemovalRequestedBy!.Value,
                 RemovalRequestedAt!.Value));
+            AnnounceApproverEligibility();
             return;
         }
 
@@ -164,6 +178,7 @@ internal sealed class OrganizationMember : EventEntityBase
         UpdatedAt = now;
         AddEvent(new OrganizationMemberRemovalRequestedEvent(
             requestId, OrganizationId, UserId, requestedBy, now));
+        AnnounceApproverEligibility();
     }
 
     internal void CompleteRemoval(string userDisplayName, string removedByName, Instant now)

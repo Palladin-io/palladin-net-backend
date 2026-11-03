@@ -82,6 +82,9 @@ internal enum X25519WrapperPurpose : ushort
     ReasonDek = 3,
     GrantDek = 4,
     AgentVaultKey = 5,
+    SubmissionDek = 7,
+    ApproverMessagePrivateKey = 8,
+    ApproverSigningPrivateKey = 9,
 }
 
 internal sealed record X25519WrapperContext(

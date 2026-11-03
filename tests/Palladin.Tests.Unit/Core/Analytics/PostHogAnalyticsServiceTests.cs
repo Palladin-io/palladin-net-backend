@@ -57,4 +57,28 @@ public sealed class PostHogAnalyticsServiceTests
         properties.ContainsKey("be_event_sent_at").ShouldBeFalse();
         ((bool)properties["$process_person_profile"]).ShouldBeTrue();
     }
+
+    [Fact]
+    public void When_AgentSubmissionEventCarriesItsStructuralProperties_Then_TheyReachPostHogAndUnknownOnesAreDropped()
+    {
+        // Given
+        var service = new PostHogAnalyticsService(_client, _clock);
+        var properties = new Dictionary<string, object>
+        {
+            ["submission_kind"] = "Update", ["entry_type"] = "Credential", ["with_grant"] = true,
+            ["submission_id"] = "opaque-submission", ["label"] = "test-label",
+        };
+
+        // When
+        service.CaptureEvent("member-id", "vault", "agent-submission-approved", properties);
+
+        // Then
+        _client.Received(1).Capture("member-id", "be:vault:agent-submission-approved",
+            Arg.Is<Dictionary<string, object>>(payload => payload.Count == 6
+                && (string)payload["submission_kind"] == "Update"
+                && (string)payload["entry_type"] == "Credential"
+                && (bool)payload["with_grant"]
+                && !payload.ContainsKey("submission_id")
+                && !payload.ContainsKey("label")));
+    }
 }

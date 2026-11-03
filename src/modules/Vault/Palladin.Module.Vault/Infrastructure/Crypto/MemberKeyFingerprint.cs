@@ -26,6 +26,8 @@ internal enum VaultKeyKind : ushort
     VaultSigningEd25519 = 3,
     VaultMessageX25519 = 4,
     MemberX25519 = 5,
+    OrganizationApproverX25519 = 6,
+    OrganizationApproverEd25519 = 7,
 }
 
 internal static class VaultKeyFingerprint

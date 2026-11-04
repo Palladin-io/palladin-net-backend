@@ -729,7 +729,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                     }
 
                     var fingerprint = VaultKeyFingerprint.Compute(
-                        Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                        Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
                     _ = AgentWrappedVaultKeyContractMapper.ToDomain(
                         VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
                         organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
@@ -801,7 +801,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 var agent = agents[grant.AgentId];
                 var item = items.Single(x => x.SubjectId == grant.Id);
                 var fingerprint = VaultKeyFingerprint.Compute(
-                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
                 var replacement = AgentWrappedVaultKeyContractMapper.ToDomain(
                     VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
                     organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,

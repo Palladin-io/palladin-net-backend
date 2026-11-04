@@ -17,7 +17,7 @@ internal sealed class AgentVaultDiscoveryEnvelopeConfiguration
         builder.Property(x => x.CryptoSuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.RecipientAgentKeyFingerprint).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.AgentWrappedVdk).HasMaxLength(X25519SealedBoxContract.EncodedPackageBytes).IsRequired();
+        builder.Property(x => x.AgentWrappedVdk).HasMaxLength(FrozenContractWrapperSuite.PackageBytes).IsRequired();
         builder.Property(x => x.ManifestSignature).HasMaxLength(64).IsRequired();
         builder.Property(x => x.AgentX25519Fingerprint).HasMaxLength(32).IsRequired();
         builder.Property(x => x.AgentEd25519Fingerprint).HasMaxLength(32).IsRequired();

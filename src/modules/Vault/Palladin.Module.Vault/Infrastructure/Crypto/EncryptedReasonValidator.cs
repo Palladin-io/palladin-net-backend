@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Buffers.Binary;
 using System.Text;
 using System.Security.Cryptography;
@@ -25,7 +26,7 @@ internal static class EncryptedReasonValidator
         var binding = contract.Descriptor.Binding;
         var fingerprint = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(binding.RecipientKeyFingerprint);
         if (!CryptographicOperations.FixedTimeEquals(fingerprint, expectedRecipientAgentMessageKeyFingerprint)
-            || !string.Equals(binding.WrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
+            || !string.Equals(binding.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal))
             throw new DomainException("Encrypted reason recipient is invalid.");
 
         var descriptor = new EnvelopeDescriptor(
@@ -43,23 +44,23 @@ internal static class EncryptedReasonValidator
         var payload = VaultEnvelopeContractMapper.DecodeXChaChaPayload(
             contract.EncodedSuitePayload, descriptor.Purpose, 4_096);
         var wrapperContext = VaultEnvelopeContractMapper.ToWrapperContext(contract.WrappedReasonDek.Descriptor);
-        var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(descriptor);
-        if (wrapperContext.Purpose != X25519WrapperPurpose.ReasonDek
+        var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(descriptor);
+        if (wrapperContext.Purpose != KeyWrapperPurpose.ReasonDek
             || wrapperContext.Scope != descriptor.Scope
             || wrapperContext.ResourceRevision != descriptor.ResourceRevision
             || wrapperContext.WrappedKeyVersion != descriptor.KeyVersion
             || wrapperContext.MemberKeyGeneration != descriptor.MemberKeyGeneration
             || wrapperContext.RecipientKeyVersion != binding.RecipientKeyVersion
-            || wrapperContext.RecipientKeyKind != VaultKeyKind.VaultMessageX25519
-            || !string.Equals(binding.WrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
+            || wrapperContext.RecipientKeyKind != VaultKeyKind.VaultAgentMessage
+            || !string.Equals(binding.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal)
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint, fingerprint)
             || wrapperContext.ParentDescriptorHash is null
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.ParentDescriptorHash, parentHash))
             throw new DomainException("Encrypted reason wrapper descriptor does not match its parent envelope.");
-        _ = X25519WrapperContextCodec.Encode(wrapperContext);
+        _ = KeyWrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedReasonDek.EncodedSealedKeyPackage);
-        WrappedKeyPackageContract.ValidatePackage(binding.WrapperSuiteId, wrapper);
+        KeyWrapperSuites.ResolveForOpen(binding.WrapperSuiteId).ValidatePackage(wrapper);
 
         var signature = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.AgentSignature);
         var signed = BuildSignatureTranscript(descriptorBytes,
@@ -79,7 +80,7 @@ internal static class EncryptedReasonValidator
     internal static byte[] BuildSignatureTranscript(
         byte[] descriptor, byte[] encodedSuitePayload, byte[] encodedWrapper)
     {
-        var suite = Encoding.ASCII.GetBytes(X25519SealedBoxContract.SuiteId);
+        var suite = Encoding.ASCII.GetBytes(FrozenContractWrapperSuite.Id);
         var result = new byte[SignaturePrefix.Length + 2 + descriptor.Length + encodedSuitePayload.Length
             + 2 + suite.Length + encodedWrapper.Length];
         var offset = 0;

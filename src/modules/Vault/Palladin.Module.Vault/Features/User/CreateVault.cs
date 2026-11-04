@@ -138,9 +138,9 @@ internal sealed class MemberVaultKeyContractValidator : AbstractValidator<Member
             .When(x => x.WrappedVaultKey?.Descriptor?.Scope?.MemberId is not null);
         RuleFor(x => x.RecipientMemberKeyFingerprint).NotEmpty().Length(43)
             .When(x => x.WrappedVaultKey?.Descriptor is not null);
-        RuleFor(x => x.WrapperSuiteId).Equal(X25519SealedBoxContract.SuiteId)
+        RuleFor(x => x.WrapperSuiteId).NotEmpty().MaximumLength(64)
             .When(x => x.WrappedVaultKey?.Descriptor is not null);
-        RuleFor(x => x.SealedVaultKeyPackage).NotEmpty().Length(160)
+        RuleFor(x => x.SealedVaultKeyPackage).NotEmpty()
             .When(x => x.WrappedVaultKey is not null);
     }
 }

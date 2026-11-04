@@ -141,7 +141,8 @@ public sealed class AgentSubmissionFixtureFlowTests(ApiFactory apiFactory) : Tes
         await DeleteFixtureStateAsync();
 
         var user = await FixtureMemberAsync();
-        await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, Fixture.MemberX25519PublicKey, Fixture.MemberKeyVersion);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(
+            user.Id, Fixture.MemberX25519PublicKey, Fixture.MemberKeyVersion, FrozenContractWrapperSuite.Id);
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
             var vault = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
@@ -218,7 +219,7 @@ public sealed class AgentSubmissionFixtureFlowTests(ApiFactory apiFactory) : Tes
 
     private static List<ApproverKeyWrapContract> RotationWraps()
     {
-        var fingerprint = AgentSubmissionScenario.Encode(MemberKeyFingerprint.Compute(Fixture.MemberX25519PublicKey));
+        var fingerprint = AgentSubmissionScenario.Encode(RecipientKeyFingerprint.Compute(FrozenContractWrapperSuite.Id, VaultKeyKind.MemberEncryption, Fixture.MemberX25519PublicKey));
         return new ushort[] { 8, 9 }.Select(purpose => new ApproverKeyWrapContract(
             new ApproverKeyWrapDescriptorContract(purpose, 33, Fixture.OrganizationId.ToString("D"),
                 Fixture.MemberId.ToString("D"), "2", 2, 5, Fixture.MemberKeyVersion, fingerprint),

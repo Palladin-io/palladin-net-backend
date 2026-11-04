@@ -152,7 +152,7 @@ public sealed class VaultManifestCryptoValidatorTests
     {
         var agentEncryptionPublicKey = RandomNumberGenerator.GetBytes(32);
         var agentSigningPublicKey = RandomNumberGenerator.GetBytes(32);
-        var recipientFingerprint = Encode(VaultKeyFingerprint.Compute(agentEncryptionPublicKey, VaultKeyKind.AgentX25519));
+        var recipientFingerprint = Encode(VaultKeyFingerprint.Compute(agentEncryptionPublicKey, VaultKeyKind.AgentEncryption));
         var wrappedVdk = RandomNumberGenerator.GetBytes(120);
         using var vaultSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
         {
@@ -162,23 +162,23 @@ public sealed class VaultManifestCryptoValidatorTests
         var vaultMessagePublicKey = RandomNumberGenerator.GetBytes(32);
         const uint vdkVersion = 6;
         const string revision = "14";
-        var wrapper = new X25519WrappedKeyContract(
-            new X25519WrapperDescriptorContract(2, "palladin-x25519-sealed-box-v1",
-                X25519WrapperPurposeContract.AgentDiscoveryVdk,
+        var wrapper = new WrappedKeyContract(
+            new KeyWrapperDescriptorContract(2, "palladin-x25519-sealed-box-v1",
+                KeyWrapperPurposeContract.AgentDiscoveryVdk,
                 new EnvelopeScopeContract(OrganizationId, VaultId, AgentId: AgentId),
                 vdkVersion.ToString(), vdkVersion, null,
-                X25519RecipientKeyKindContract.AgentX25519, 1, recipientFingerprint, null),
+                RecipientKeyKindContract.AgentEncryption, 1, recipientFingerprint, null),
             Encode(wrappedVdk));
         var envelope = new AgentVaultDiscoveryEnvelopeContract(
             2, OrganizationId, VaultId, AgentId, vdkVersion, wrapper, revision, string.Empty);
         var manifest = new VaultManifestContract(
             2, "palladin-vault-xchacha-v1", "palladin-x25519-sealed-box-v1", "palladin-ed25519-v1",
             OrganizationId, VaultId, AgentId, recipientFingerprint,
-            Encode(VaultKeyFingerprint.Compute(agentSigningPublicKey, VaultKeyKind.AgentEd25519)),
+            Encode(VaultKeyFingerprint.Compute(agentSigningPublicKey, VaultKeyKind.AgentSigning)),
             Encode(vaultSigningPublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigningEd25519)), 9,
+            Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigning)), 9,
             Encode(vaultMessagePublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultMessageX25519)), 4,
+            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultAgentMessage)), 4,
             vdkVersion, Encode(ComputeWrappedVdkDigest(wrappedVdk)), revision,
             Instant.FromUtc(2026, 7, 17, 6, 0) + Duration.FromTicks(1_234_560), 2, string.Empty);
         var signatureInput = CreateSignatureInput(manifest);

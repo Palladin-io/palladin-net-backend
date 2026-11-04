@@ -67,7 +67,7 @@ internal sealed class GrantEntryEnvelope
             RecipientAgentKeyVersion = recipientAgentKeyVersion,
             EncodedSuitePayload = SuitePayload.Encode(nonce, ciphertext),
             AgentWrappedGrantDek = wrappedDek.ToArray(),
-            WrapperSuiteId = Infrastructure.Crypto.X25519SealedBoxContract.SuiteId,
+            WrapperSuiteId = Infrastructure.Crypto.FrozenContractWrapperSuite.Id,
             AgentKeyFingerprint = agentKeyFingerprint.ToArray(),
             ExpiresAt = expiresAt,
             RemainingUses = remainingUses,

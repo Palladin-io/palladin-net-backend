@@ -44,17 +44,17 @@ public sealed class AgentSubmissionContractDriftTests
             x => x!["name"]!.GetValue<string>(), x => x!["id"]!.GetValue<int>());
 
         // When / Then
-        purposes["submission-dek"].ShouldBe((int)X25519WrapperPurpose.SubmissionDek);
+        purposes["submission-dek"].ShouldBe((int)KeyWrapperPurpose.SubmissionDek);
         purposes["approver-message-private-key"].ShouldBe(ApproverKeyWrap.MessagePrivateKeyPurpose);
         purposes["approver-signing-private-key"].ShouldBe(ApproverKeyWrap.SigningPrivateKeyPurpose);
-        keyKinds["organization-approver-x25519"].ShouldBe((int)VaultKeyKind.OrganizationApproverX25519);
-        keyKinds["organization-approver-ed25519"].ShouldBe((int)VaultKeyKind.OrganizationApproverEd25519);
+        keyKinds["organization-approver-x25519"].ShouldBe((int)VaultKeyKind.OrganizationApproverMessage);
+        keyKinds["organization-approver-ed25519"].ShouldBe((int)VaultKeyKind.OrganizationApproverSigning);
         Contract["approverKeySet"]!["privateKeyDistribution"]!["scopeBitmap"]!.GetValue<int>()
             .ShouldBe(AgentSubmissionCrypto.ApproverWrapScopeBitmap);
         Contract["approverKeySet"]!["manifest"]!["schema"]!.GetValue<string>().ShouldBe(AgentSubmissionCrypto.ManifestSchema);
         Contract["submission"]!["schema"]!.GetValue<string>().ShouldBe(AgentSubmissionCrypto.SubmissionSchema);
         Contract["submission"]!["dekWrapping"]!["decodedSealedPackageBytes"]!.GetValue<int>()
-            .ShouldBe(X25519SealedBoxContract.EncodedPackageBytes);
+            .ShouldBe(FrozenContractWrapperSuite.PackageBytes);
         Contract["protocolVersion"]!.GetValue<int>().ShouldBe(VaultProtocol.CurrentVersion);
         Contract["contractVersion"]!.GetValue<int>().ShouldBe(AgentSubmissionLimits.ContractVersion);
     }

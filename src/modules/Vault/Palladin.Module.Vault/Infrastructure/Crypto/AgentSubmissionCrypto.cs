@@ -81,8 +81,8 @@ internal static class AgentSubmissionCrypto
             throw new AgentSubmissionInputException("invalid-input");
         }
 
-        DecodeBinary(contract.EncodedAgentWrappedDek, X25519SealedBoxContract.EncodedPackageBytes);
-        DecodeBinary(contract.EncodedApproverWrappedDek, X25519SealedBoxContract.EncodedPackageBytes);
+        DecodeBinary(contract.EncodedAgentWrappedDek, FrozenContractWrapperSuite.PackageBytes);
+        DecodeBinary(contract.EncodedApproverWrappedDek, FrozenContractWrapperSuite.PackageBytes);
         var signature = DecodeBinary(contract.AgentSignature, 64);
         var agentKeyFingerprint = DecodeBinary(contract.AgentKeyFingerprint, VaultProtocol.FingerprintBytes);
         var approverMessageKeyFingerprint = DecodeBinary(
@@ -172,9 +172,9 @@ internal static class AgentSubmissionCrypto
         }
 
         if (!CryptographicOperations.FixedTimeEquals(messageFingerprint,
-                VaultKeyFingerprint.Compute(messagePublicKey, VaultKeyKind.OrganizationApproverX25519))
+                VaultKeyFingerprint.Compute(messagePublicKey, VaultKeyKind.OrganizationApproverMessage))
             || !CryptographicOperations.FixedTimeEquals(signingFingerprint,
-                VaultKeyFingerprint.Compute(signingPublicKey, VaultKeyKind.OrganizationApproverEd25519)))
+                VaultKeyFingerprint.Compute(signingPublicKey, VaultKeyKind.OrganizationApproverSigning)))
         {
             throw new AgentSubmissionInputException("manifest-fingerprint-mismatch");
         }

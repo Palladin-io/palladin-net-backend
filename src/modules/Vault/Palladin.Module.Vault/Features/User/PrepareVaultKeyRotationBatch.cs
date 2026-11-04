@@ -340,7 +340,7 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                 }
 
                 var fingerprint = VaultKeyFingerprint.Compute(
-                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
                 _ = AgentWrappedVaultKeyContractMapper.ToDomain(
                     contract, organizationId, req.VaultId, grant.Id, grant.AgentId,
                     grant.AgentAccessEpoch, rotation.TargetKeyEpoch.VaultKeyVersion.Value,

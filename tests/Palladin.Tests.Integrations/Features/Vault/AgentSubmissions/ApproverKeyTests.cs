@@ -1,3 +1,4 @@
+using Palladin.Module.Vault.Infrastructure.Crypto;
 using System.Net;
 using System.Net.Http.Json;
 using FastEndpoints;
@@ -229,7 +230,8 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
         var rekeyed = await scenario.AddApproverMemberAsync();
         await scenario.BootstrapAsync();
-        await apiFactory.Services.SeedMemberKeyDirectoryAsync(rekeyed.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(rekeyed.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2,
+            FrozenContractWrapperSuite.Id);
 
         // When
         var (_, view) = await rekeyed.Client
@@ -381,7 +383,8 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         var pending = scenario.NewSubmission(agent);
         var submissionId = await scenario.SubmitAsync(agent, pending);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(
-            scenario.Owner.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2);
+            scenario.Owner.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2,
+            FrozenContractWrapperSuite.Id);
         var (_, unavailable) = await scenario.Owner.Client
             .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
 

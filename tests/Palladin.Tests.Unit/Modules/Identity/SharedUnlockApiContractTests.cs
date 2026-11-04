@@ -98,9 +98,9 @@ public sealed class SharedUnlockApiContractTests
 
         // Then
         operation.KeyContext.AccountId.ShouldBe(context.AccountId);
-        operation.KeyContext.KdfProfileId.ShouldBe(IdentityKdfProfiles.CurrentProfileId);
-        operation.KeyContext.SecurityVersion.ShouldBe(IdentityKdfProfiles.CurrentSecurityVersion);
-        operation.KeyContext.MinimumSecurityVersion.ShouldBe(IdentityKdfProfiles.CurrentSecurityVersion);
+        operation.KeyContext.KdfProfileId.ShouldBe(IdentityKdfProfiles.PasswordV1.Id);
+        operation.KeyContext.SecurityVersion.ShouldBe(IdentityKdfProfiles.PasswordV1.SecurityVersion);
+        operation.KeyContext.MinimumSecurityVersion.ShouldBe(IdentityKdfProfiles.PasswordV1.SecurityVersion);
         Decode(operation.KeyContext.KdfSalt).Length.ShouldBe(IdentityKdfProfiles.KdfSaltBytes);
         context.OperationId.ShouldNotBe(context.AccountId);
         var source = vector.GetProperty("sourceAuthorization").Deserialize<AuthorizeSharedUnlockResponse>(PalladinJsonSerializationSettings.DefaultOptions)!;

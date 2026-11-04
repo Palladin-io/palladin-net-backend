@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Text.Json;
 using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
@@ -33,7 +34,7 @@ public sealed class EnvelopeDescriptorCodecTests
         var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
         var contract = new VaultPublicKeyContract(2, "palladin-x25519-v1",
             VaultPublicKeyKindContract.AgentMessageX25519, 1, WebEncoders.Base64UrlEncode(key),
-            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigningEd25519)));
+            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigning)));
 
         var action = () => VaultEnvelopeContractMapper.ToDomain(
             contract, VaultPublicKeyKindContract.AgentMessageX25519, 1);
@@ -59,7 +60,7 @@ public sealed class EnvelopeDescriptorCodecTests
             9,
             new GrantEnvelopeBinding(
                 6,
-                X25519SealedBoxContract.SuiteId,
+                FrozenContractWrapperSuite.Id,
                 4,
                 Enumerable.Repeat((byte)0x5a, 32).ToArray(),
                 3,
@@ -142,14 +143,15 @@ public sealed class EnvelopeDescriptorCodecTests
     }
 
     [Fact]
-    public void WrappedKeyPackageContract_DispatchesValidationBySuite()
+    public void WrappedKeyPackage_DispatchesValidationBySuite()
     {
-        WrappedKeyPackageContract.ValidatePackage(X25519SealedBoxContract.SuiteId, new byte[120]);
+        KeyWrapperSuites.ResolveForOpen(FrozenContractWrapperSuite.Id).ValidatePackage(new byte[120]);
 
-        Should.Throw<DomainException>(() => WrappedKeyPackageContract.ValidatePackage(
-            X25519SealedBoxContract.SuiteId, new byte[80]));
-        Should.Throw<DomainException>(() => WrappedKeyPackageContract.ValidatePackage(
-            "unsupported-suite", new byte[120]));
+        Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen(
+            FrozenContractWrapperSuite.Id).ValidatePackage(new byte[80]));
+        Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen(
+            KeyWrapperSuites.Current.Id).ValidatePackage(new byte[120]));
+        Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen("unsupported-suite"));
     }
 
     [Fact]
@@ -175,8 +177,9 @@ public sealed class EnvelopeDescriptorCodecTests
         using var fixture = LoadFixture("x25519-sealed-box.json");
         var root = fixture.RootElement;
         var value = root.GetProperty("context");
-        var context = new X25519WrapperContext(
-            (X25519WrapperPurpose)value.GetProperty("purpose").GetUInt16(), Scope(value),
+        var context = new KeyWrapperContext(
+            FrozenContractWrapperSuite.Id,
+            (KeyWrapperPurpose)value.GetProperty("purpose").GetUInt16(), Scope(value),
             value.GetProperty("resourceRevision").GetUInt64(),
             value.GetProperty("wrappedKeyVersion").GetUInt32(),
             value.GetProperty("memberKeyGeneration").GetUInt32(),
@@ -185,9 +188,9 @@ public sealed class EnvelopeDescriptorCodecTests
             Convert.FromHexString(value.GetProperty("recipientFingerprintHex").GetString()!),
             Convert.FromHexString(value.GetProperty("parentDescriptorHashHex").GetString()!));
 
-        Convert.ToHexStringLower(X25519WrapperContextCodec.Encode(context)).ShouldBe(
+        Convert.ToHexStringLower(KeyWrapperContextCodec.Encode(context)).ShouldBe(
             root.GetProperty("expectedContextHex").GetString());
-        WrappedKeyPackageContract.ValidatePackage(X25519SealedBoxContract.SuiteId,
+        FrozenContractWrapperSuite.Suite.ValidatePackage(
             Convert.FromHexString(root.GetProperty("sealedPackageHex").GetString()!));
     }
 

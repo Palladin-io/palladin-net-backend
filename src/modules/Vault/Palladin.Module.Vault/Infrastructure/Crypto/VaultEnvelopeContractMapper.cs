@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.WebUtilities;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Shared;
@@ -23,8 +24,8 @@ internal static class VaultEnvelopeContractMapper
             ? "palladin-x25519-v1"
             : "palladin-ed25519-v1";
         var fingerprintKind = expectedKind == VaultPublicKeyKindContract.AgentMessageX25519
-            ? VaultKeyKind.VaultMessageX25519
-            : VaultKeyKind.VaultSigningEd25519;
+            ? VaultKeyKind.VaultAgentMessage
+            : VaultKeyKind.VaultSigning;
         if (!string.Equals(contract.SchemeId, expectedScheme, StringComparison.Ordinal))
             throw new DomainException("Vault public-key scheme is not supported.");
         var publicKey = DecodeCanonicalBase64Url(contract.EncodedPublicKey);
@@ -77,14 +78,14 @@ internal static class VaultEnvelopeContractMapper
     {
         var wrapper = contract.WrappedVaultKey.Descriptor;
         var context = ToWrapperContext(wrapper);
-        if (context.Purpose != X25519WrapperPurpose.MemberVaultKey
+        if (context.Purpose != KeyWrapperPurpose.MemberVaultKey
             || context.Scope.MemberId != contract.MemberId
             || context.ResourceRevision != contract.VkVersion
             || context.WrappedKeyVersion != contract.VkVersion)
             throw new DomainException("The Member Vault-key wrapper descriptor is invalid.");
-        _ = X25519WrapperContextCodec.Encode(context);
+        _ = KeyWrapperContextCodec.Encode(context);
         var package = DecodeCanonicalBase64Url(contract.WrappedVaultKey.EncodedSealedKeyPackage);
-        WrappedKeyPackageContract.ValidatePackage(wrapper.WrapperSuiteId, package);
+        KeyWrapperSuites.ResolveForSeal(wrapper.WrapperSuiteId).ValidatePackage(package);
         return MemberWrappedVaultKey.Create(new VaultScope(contract.OrganizationId, contract.VaultId),
             contract.MemberId, wrapper.ProtocolVersion, wrapper.WrapperSuiteId, new VaultKeyVersion(contract.VkVersion),
             new MemberKeyGeneration(contract.MemberKeyGeneration),
@@ -171,12 +172,12 @@ internal static class VaultEnvelopeContractMapper
         EncodePayload(value.Header.Nonce, value.Ciphertext));
 
     internal static MemberVaultKeyEnvelopeContract ToContract(MemberWrappedVaultKey value) => new(
-        new X25519WrappedKeyContract(
-            new X25519WrapperDescriptorContract(value.ProtocolVersion, value.WrapperSuiteId,
-                X25519WrapperPurposeContract.MemberVaultKey,
+        new WrappedKeyContract(
+            new KeyWrapperDescriptorContract(value.ProtocolVersion, value.WrapperSuiteId,
+                KeyWrapperPurposeContract.MemberVaultKey,
                 new EnvelopeScopeContract(value.Scope.OrganizationId, value.Scope.VaultId, MemberId: value.MemberId),
                 value.VaultKeyVersion.Value.ToString(CultureInfo.InvariantCulture), value.VaultKeyVersion.Value,
-                value.MemberKeyGeneration.Value, X25519RecipientKeyKindContract.MemberX25519,
+                value.MemberKeyGeneration.Value, RecipientKeyKindContract.MemberEncryption,
                 value.RecipientKeyVersion.Value, WebEncoders.Base64UrlEncode(value.RecipientKeyFingerprint), null),
             WebEncoders.Base64UrlEncode(value.SealedVaultKeyPackage)));
 
@@ -230,19 +231,19 @@ internal static class VaultEnvelopeContractMapper
 
     internal static AgentVaultDiscoveryEnvelopeContract ToContract(AgentVaultDiscoveryEnvelope value) => new(
         value.ProtocolVersion, value.OrganizationId, value.VaultId, value.AgentId, value.VdkVersion.Value,
-        new X25519WrappedKeyContract(
-            new X25519WrapperDescriptorContract(value.ProtocolVersion, X25519SealedBoxContract.SuiteId,
-                X25519WrapperPurposeContract.AgentDiscoveryVdk,
+        new WrappedKeyContract(
+            new KeyWrapperDescriptorContract(value.ProtocolVersion, value.WrapperSuiteId,
+                KeyWrapperPurposeContract.AgentDiscoveryVdk,
                 new EnvelopeScopeContract(value.OrganizationId, value.VaultId, AgentId: value.AgentId),
                 value.VdkVersion.Value.ToString(CultureInfo.InvariantCulture), value.VdkVersion.Value,
-                null, X25519RecipientKeyKindContract.AgentX25519, value.RecipientAgentKeyVersion.Value,
+                null, RecipientKeyKindContract.AgentEncryption, value.RecipientAgentKeyVersion.Value,
                 WebEncoders.Base64UrlEncode(value.RecipientAgentKeyFingerprint), null),
             WebEncoders.Base64UrlEncode(value.AgentWrappedVdk)),
         value.ManifestRevision.Value.ToString(CultureInfo.InvariantCulture),
         WebEncoders.Base64UrlEncode(value.ManifestSignature));
 
     internal static VaultManifestContract ToManifestContract(AgentVaultDiscoveryEnvelope value) => new(
-        value.ProtocolVersion, CryptoSuiteId.XChaCha20Poly1305V1, X25519SealedBoxContract.SuiteId,
+        value.ProtocolVersion, CryptoSuiteId.XChaCha20Poly1305V1, value.WrapperSuiteId,
         "palladin-ed25519-v1", value.OrganizationId, value.VaultId, value.AgentId,
         WebEncoders.Base64UrlEncode(value.AgentX25519Fingerprint), WebEncoders.Base64UrlEncode(value.AgentEd25519Fingerprint),
         WebEncoders.Base64UrlEncode(value.VaultSigningPublicKey), WebEncoders.Base64UrlEncode(value.VaultSigningKeyFingerprint),
@@ -351,8 +352,9 @@ internal static class VaultEnvelopeContractMapper
         }
     }
 
-    internal static X25519WrapperContext ToWrapperContext(X25519WrapperDescriptorContract value) => new(
-        (X25519WrapperPurpose)value.Purpose,
+    internal static KeyWrapperContext ToWrapperContext(KeyWrapperDescriptorContract value) => new(
+        value.WrapperSuiteId,
+        (KeyWrapperPurpose)value.Purpose,
         new EnvelopeScope(value.Scope.OrganizationId, value.Scope.VaultId, value.Scope.EntryId,
             value.Scope.GrantOrRequestId, value.Scope.AgentId, value.Scope.MemberId),
         ParseUInt64(value.ResourceRevision), value.WrappedKeyVersion, value.MemberKeyGeneration,

@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using NodaTime;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -42,8 +43,8 @@ internal static class VaultFaker
             ? VaultTrustAnchorFaker.AgentMessagePublicKey
             : VaultTrustAnchorFaker.ManifestSigningPublicKey;
         var fingerprintKind = kind == VaultPublicKeyKind.AgentMessageX25519
-            ? VaultKeyKind.VaultMessageX25519
-            : VaultKeyKind.VaultSigningEd25519;
+            ? VaultKeyKind.VaultAgentMessage
+            : VaultKeyKind.VaultSigning;
         return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind));
     }
 
@@ -80,12 +81,12 @@ internal static class VaultFaker
             scope,
             memberId,
             VaultProtocol.CurrentVersion,
-            VaultProtocol.AlgorithmSuite,
+            KeyWrapperSuites.Current.Id,
             keyVersion ?? new VaultKeyVersion(1),
             generation ?? new MemberKeyGeneration(1),
             new MemberRecipientKeyVersion(1),
             Enumerable.Range(0, VaultProtocol.FingerprintBytes).Select(x => (byte)x).ToArray(),
-            Enumerable.Range(0, 120).Select(x => (byte)(x + 1)).ToArray());
+            VaultContractFaker.MemberSealedPackage);
 
     internal static VaultKeyMaterialEnvelope[] CreateKeyMaterial(
         VaultScope scope,

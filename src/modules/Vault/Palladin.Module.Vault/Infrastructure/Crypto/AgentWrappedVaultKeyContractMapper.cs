@@ -24,8 +24,8 @@ internal static class AgentWrappedVaultKeyContractMapper
     {
         var descriptor = contract.WrappedVaultKey.Descriptor;
         if (descriptor.ProtocolVersion != VaultProtocol.CurrentVersion
-            || !string.Equals(descriptor.WrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
-            || descriptor.Purpose != X25519WrapperPurposeContract.AgentVaultKey
+            || !string.Equals(descriptor.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal)
+            || descriptor.Purpose != KeyWrapperPurposeContract.AgentVaultKey
             || descriptor.Scope.OrganizationId != organizationId
             || descriptor.Scope.VaultId != vaultId
             || descriptor.Scope.EntryId is not null
@@ -35,7 +35,7 @@ internal static class AgentWrappedVaultKeyContractMapper
             || descriptor.ResourceRevision != agentAccessEpoch.ToString(CultureInfo.InvariantCulture)
             || descriptor.WrappedKeyVersion != vaultKeyVersion
             || descriptor.MemberKeyGeneration is not null
-            || descriptor.RecipientKeyKind != X25519RecipientKeyKindContract.AgentX25519
+            || descriptor.RecipientKeyKind != RecipientKeyKindContract.AgentEncryption
             || descriptor.RecipientKeyVersion != recipientAgentKeyVersion
             || descriptor.ParentDescriptorHash is not null)
         {
@@ -72,11 +72,11 @@ internal static class AgentWrappedVaultKeyContractMapper
     }
 
     internal static AgentWrappedVaultKeyContract ToContract(AgentWrappedVaultKey value) => new(
-        new X25519WrappedKeyContract(
-            new X25519WrapperDescriptorContract(
+        new WrappedKeyContract(
+            new KeyWrapperDescriptorContract(
                 value.ProtocolVersion,
                 value.WrapperSuiteId,
-                X25519WrapperPurposeContract.AgentVaultKey,
+                KeyWrapperPurposeContract.AgentVaultKey,
                 new EnvelopeScopeContract(
                     value.OrganizationId,
                     value.VaultId,
@@ -85,7 +85,7 @@ internal static class AgentWrappedVaultKeyContractMapper
                 value.AgentAccessEpoch.ToString(CultureInfo.InvariantCulture),
                 value.VaultKeyVersion.Value,
                 null,
-                X25519RecipientKeyKindContract.AgentX25519,
+                RecipientKeyKindContract.AgentEncryption,
                 value.RecipientAgentKeyVersion.Value,
                 WebEncoders.Base64UrlEncode(value.RecipientAgentKeyFingerprint),
                 null),

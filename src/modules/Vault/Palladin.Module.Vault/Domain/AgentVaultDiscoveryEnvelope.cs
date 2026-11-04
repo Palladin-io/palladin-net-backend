@@ -143,7 +143,7 @@ internal sealed class AgentVaultDiscoveryEnvelope
 
         ProtocolVersion = provisioning.ProtocolVersion;
         CryptoSuiteId = Domain.CryptoSuiteId.XChaCha20Poly1305V1;
-        WrapperSuiteId = Infrastructure.Crypto.X25519SealedBoxContract.SuiteId;
+        WrapperSuiteId = Infrastructure.Crypto.FrozenContractWrapperSuite.Id;
         VdkVersion = provisioning.VdkVersion;
         RecipientAgentKeyVersion = provisioning.RecipientAgentKeyVersion;
         RecipientAgentKeyFingerprint = provisioning.RecipientAgentKeyFingerprint.ToArray();
@@ -170,7 +170,7 @@ internal sealed class AgentVaultDiscoveryEnvelope
     private bool HasSameContent(ValidatedAgentDiscoveryProvisioning candidate) =>
         ProtocolVersion == candidate.ProtocolVersion
         && CryptoSuiteId == Domain.CryptoSuiteId.XChaCha20Poly1305V1
-        && WrapperSuiteId == Infrastructure.Crypto.X25519SealedBoxContract.SuiteId
+        && WrapperSuiteId == Infrastructure.Crypto.FrozenContractWrapperSuite.Id
         && VdkVersion == candidate.VdkVersion
         && RecipientAgentKeyVersion == candidate.RecipientAgentKeyVersion
         && RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(candidate.RecipientAgentKeyFingerprint)
@@ -195,7 +195,7 @@ internal sealed class AgentVaultDiscoveryEnvelope
             || provisioning.ProtocolVersion != VaultProtocol.CurrentVersion
             || provisioning.AlgorithmSuite != VaultProtocol.AlgorithmSuite
             || provisioning.RecipientAgentKeyFingerprint.Length != VaultProtocol.FingerprintBytes
-            || provisioning.AgentWrappedVdk.Length != Infrastructure.Crypto.X25519SealedBoxContract.EncodedPackageBytes
+            || provisioning.AgentWrappedVdk.Length != Infrastructure.Crypto.FrozenContractWrapperSuite.PackageBytes
             || provisioning.ManifestSignature.Length != 64
             || provisioning.Manifest.Scope != provisioning.Scope
             || provisioning.Manifest.AgentId != provisioning.AgentId

@@ -5,6 +5,7 @@ using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
 using FastEndpoints;
+using Palladin.Core.Cryptography;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -23,6 +24,7 @@ public sealed record SetupAccountRequest
     public string KdfProfileId { get; init; } = string.Empty;
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] KdfSalt { get; init; } = [];
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] RecoverySalt { get; init; } = [];
+    public string PublicKeySuiteId { get; init; } = string.Empty;
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] PublicKey { get; init; } = [];
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] EncryptedPrivateKey { get; init; } = [];
     [JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] public byte[] EncryptedPrivateKeyByRecovery { get; init; } = [];
@@ -35,11 +37,12 @@ internal sealed class SetupAccountValidator : Validator<SetupAccountRequest>
 {
     public SetupAccountValidator()
     {
-        RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.CurrentSecurityVersion);
-        RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.CurrentProfileId);
+        RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.Current.SecurityVersion);
+        RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.Current.Id);
         RuleFor(x => x.KdfSalt).Must(b => b is { Length: IdentityKdfProfiles.KdfSaltBytes });
         RuleFor(x => x.RecoverySalt).NotEmpty().Must(b => b is { Length: >= 16 and <= 64 });
-        RuleFor(x => x.PublicKey).NotEmpty().Must(b => b is { Length: 32 });
+        RuleFor(x => x.PublicKeySuiteId).Equal(KeyWrapperSuites.Current.Id);
+        RuleFor(x => x.PublicKey).Must(b => b.Length == KeyWrapperSuites.Current.PublicKeyBytes);
         RuleFor(x => x.EncryptedPrivateKey).NotEmpty().Must(b => b is { Length: >= 32 and <= 4096 });
         RuleFor(x => x.EncryptedPrivateKeyByRecovery).NotEmpty()
             .Must(b => b is { Length: >= 32 and <= 4096 });
@@ -126,6 +129,7 @@ internal sealed class SetupAccountEndpoint(
             req.KdfProfileId,
             req.KdfSalt,
             req.RecoverySalt,
+            req.PublicKeySuiteId,
             req.PublicKey,
             req.EncryptedPrivateKey,
             req.EncryptedPrivateKeyByRecovery,

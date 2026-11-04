@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using Palladin.Core.Events;
 using Palladin.Core.Security;
 using Palladin.Core.Types;
@@ -26,7 +27,11 @@ internal sealed class User : EventEntityBase
     public byte[]? Salt { get; private set; }
     public byte[]? RecoverySalt { get; private set; }
     public byte[]? PublicKey { get; private set; }
+    public string? MemberPublicKeySuiteId { get; private set; }
     public uint? MemberKeyVersion { get; private set; }
+    public byte[]? LegacyEncryptedPrivateKey { get; private set; }
+    public uint? LegacyMemberKeyVersion { get; private set; }
+    public Guid? LastSecurityUpgradeId { get; private set; }
     public byte[]? EncryptedPrivateKey { get; private set; }
     public byte[]? EncryptedPrivateKeyByRecovery { get; private set; }
     public uint PrivateKeyWrapRevision { get; private set; }
@@ -136,6 +141,7 @@ internal sealed class User : EventEntityBase
         Permission effectivePermissions,
         byte[] salt,
         byte[] recoverySalt,
+        string publicKeySuiteId,
         byte[] publicKey,
         byte[] encryptedPrivateKey,
         byte[] encryptedPrivateKeyByRecovery,
@@ -143,6 +149,7 @@ internal sealed class User : EventEntityBase
         string platform,
         Instant now)
     {
+        EnsureCurrentMemberKey(publicKeySuiteId, publicKey);
         var user = new User
         {
             Id = id,
@@ -153,14 +160,15 @@ internal sealed class User : EventEntityBase
             Salt = salt,
             RecoverySalt = recoverySalt,
             PublicKey = publicKey,
+            MemberPublicKeySuiteId = publicKeySuiteId,
             MemberKeyVersion = 1,
             EncryptedPrivateKey = encryptedPrivateKey,
             EncryptedPrivateKeyByRecovery = encryptedPrivateKeyByRecovery,
             DeviceWrapperMetadata = deviceWrapperMetadata,
             PrivateKeyWrapRevision = 1,
-            SecurityVersion = IdentityKdfProfiles.CurrentSecurityVersion,
-            MinimumSecurityVersion = IdentityKdfProfiles.CurrentSecurityVersion,
-            KdfProfileId = IdentityKdfProfiles.CurrentProfileId,
+            SecurityVersion = IdentityKdfProfiles.Current.SecurityVersion,
+            MinimumSecurityVersion = IdentityKdfProfiles.Current.SecurityVersion,
+            KdfProfileId = IdentityKdfProfiles.Current.Id,
             CredentialRevision = 1,
             IsOnboarded = true,
             EmailVerified = false,
@@ -247,24 +255,30 @@ internal sealed class User : EventEntityBase
         string kdfProfileId,
         byte[] kdfSalt,
         byte[] recoverySalt,
+        string publicKeySuiteId,
         byte[] publicKey,
         byte[] encryptedPrivateKey,
         byte[] encryptedPrivateKeyByRecovery,
         byte[]? deviceWrapperMetadata,
         Instant now)
     {
-        EnsureCurrentKdfProfile(securityVersion, kdfProfileId);
+        if (!IdentityKdfProfiles.IsCurrent(securityVersion, kdfProfileId))
+        {
+            throw new InvalidOperationException("The current registered Identity KDF profile is required.");
+        }
 
+        EnsureCurrentMemberKey(publicKeySuiteId, publicKey);
         Salt = kdfSalt;
         RecoverySalt = recoverySalt;
         PublicKey = publicKey;
+        MemberPublicKeySuiteId = publicKeySuiteId;
         MemberKeyVersion = 1;
         EncryptedPrivateKey = encryptedPrivateKey;
         EncryptedPrivateKeyByRecovery = encryptedPrivateKeyByRecovery;
         PrivateKeyWrapRevision = 1;
-        SecurityVersion = IdentityKdfProfiles.CurrentSecurityVersion;
-        MinimumSecurityVersion = IdentityKdfProfiles.CurrentSecurityVersion;
-        KdfProfileId = IdentityKdfProfiles.CurrentProfileId;
+        SecurityVersion = IdentityKdfProfiles.Current.SecurityVersion;
+        MinimumSecurityVersion = IdentityKdfProfiles.Current.SecurityVersion;
+        KdfProfileId = IdentityKdfProfiles.Current.Id;
         CredentialRevision = 1;
         DeviceWrapperMetadata = deviceWrapperMetadata;
         IsOnboarded = true;
@@ -280,46 +294,81 @@ internal sealed class User : EventEntityBase
         UpdatedAt = now;
     }
 
-    internal void RotateMemberKeyPair(
-        byte[] publicKey,
+    internal bool HasCompletedSecurityUpgrade(Guid migrationId) =>
+        LastSecurityUpgradeId == migrationId && IdentityKdfProfiles.IsCurrent(SecurityVersion, KdfProfileId);
+
+    // Atomic in-place v1 -> v2 migration (identity-kdf v3 "migration"): every field changes in one domain commit and
+    // the compare-and-swap bases reject a concurrent password change, recovery or second upgrade.
+    internal void UpgradeSecurity(
+        Guid migrationId,
+        ushort sourceSecurityVersion,
+        uint baseCredentialRevision,
+        uint basePrivateKeyWrapRevision,
+        uint baseMemberKeyVersion,
+        byte[] kdfSalt,
+        string memberPublicKeySuiteId,
+        byte[] memberPublicKey,
         byte[] encryptedPrivateKey,
+        byte[] recoverySalt,
         byte[] encryptedPrivateKeyByRecovery,
+        byte[] legacyEncryptedPrivateKey,
+        byte[]? deviceWrapperMetadata,
         Instant now)
     {
-        if (publicKey is not { Length: 32 })
+        if (migrationId == Guid.Empty
+            || sourceSecurityVersion != SecurityVersion
+            || IdentityKdfProfiles.Find(KdfProfileId) is not { } source
+            || source.SecurityVersion != SecurityVersion
+            || source.SecurityVersion >= IdentityKdfProfiles.Current.SecurityVersion
+            || MinimumSecurityVersion > IdentityKdfProfiles.Current.SecurityVersion
+            || MemberKeyVersion != baseMemberKeyVersion
+            || MemberKeyVersion is null or uint.MaxValue
+            || PublicKey is null)
         {
-            throw new InvalidOperationException("The Member X25519 public key must contain exactly 32 raw bytes.");
+            throw new InvalidOperationException("Identity security upgrade compare-and-swap failed.");
         }
 
-        if (PublicKey is null || MemberKeyVersion is null)
+        EnsureRevisionMatch(baseCredentialRevision, basePrivateKeyWrapRevision);
+        EnsureCurrentMemberKey(memberPublicKeySuiteId, memberPublicKey);
+        if (PublicKey.AsSpan().SequenceEqual(memberPublicKey))
         {
-            throw new InvalidOperationException("The initial Member public key must be established before rotation.");
+            throw new InvalidOperationException("The security upgrade requires a new Member key pair.");
         }
 
-        if (PublicKey.AsSpan().SequenceEqual(publicKey))
-        {
-            throw new InvalidOperationException("Member public key rotation requires a new key.");
-        }
-
-        if (encryptedPrivateKey is not { Length: >= 32 and <= 4096 }
-            || encryptedPrivateKeyByRecovery is not { Length: >= 32 and <= 4096 })
-        {
-            throw new InvalidOperationException("Member private-key ciphertexts must contain between 32 and 4096 bytes.");
-        }
-
-        if (MemberKeyVersion == uint.MaxValue)
-        {
-            throw new InvalidOperationException("The Member public key version is exhausted.");
-        }
-
-        PublicKey = publicKey;
-        EncryptedPrivateKey = encryptedPrivateKey;
-        EncryptedPrivateKeyByRecovery = encryptedPrivateKeyByRecovery;
+        LegacyEncryptedPrivateKey = legacyEncryptedPrivateKey;
+        LegacyMemberKeyVersion = MemberKeyVersion;
+        Salt = kdfSalt;
+        PublicKey = memberPublicKey;
+        MemberPublicKeySuiteId = memberPublicKeySuiteId;
         MemberKeyVersion += 1;
+        EncryptedPrivateKey = encryptedPrivateKey;
+        RecoverySalt = recoverySalt;
+        EncryptedPrivateKeyByRecovery = encryptedPrivateKeyByRecovery;
+        DeviceWrapperMetadata = deviceWrapperMetadata;
+        SecurityVersion = IdentityKdfProfiles.Current.SecurityVersion;
+        MinimumSecurityVersion = IdentityKdfProfiles.Current.SecurityVersion;
+        KdfProfileId = IdentityKdfProfiles.Current.Id;
+        CredentialRevision = IncrementRevision(CredentialRevision);
         PrivateKeyWrapRevision = IncrementRevision(PrivateKeyWrapRevision);
+        RecoveryChallengeHash = null;
+        RecoveryChallengeExpiresAt = null;
+        LastSecurityUpgradeId = migrationId;
         UpdatedAt = now;
 
         EmitMemberKeyDirectoryUpserted();
+    }
+
+    internal bool DeleteLegacyMemberKey(uint expectedLegacyMemberKeyVersion, Instant now)
+    {
+        if (LegacyMemberKeyVersion != expectedLegacyMemberKeyVersion || LegacyEncryptedPrivateKey is null)
+        {
+            return false;
+        }
+
+        LegacyEncryptedPrivateKey = null;
+        LegacyMemberKeyVersion = null;
+        UpdatedAt = now;
+        return true;
     }
 
     internal void RepublishMemberKeyDirectory() => EmitMemberKeyDirectoryUpserted();
@@ -378,7 +427,7 @@ internal sealed class User : EventEntityBase
         bool rotatesPasswordCredential,
         Instant now)
     {
-        EnsureCurrentKdfProfile(SecurityVersion, KdfProfileId);
+        EnsureRegisteredKdfProfile();
         EnsureRevisionMatch(baseCredentialRevision, basePrivateKeyWrapRevision);
 
         foreach (var token in RefreshTokens.Where(t => t.IsActive(now)))
@@ -390,9 +439,6 @@ internal sealed class User : EventEntityBase
         EncryptedPrivateKey = newEncryptedPrivateKey;
         RecoverySalt = newRecoverySalt;
         EncryptedPrivateKeyByRecovery = newEncryptedPrivateKeyByRecovery;
-        SecurityVersion = IdentityKdfProfiles.CurrentSecurityVersion;
-        MinimumSecurityVersion = IdentityKdfProfiles.CurrentSecurityVersion;
-        KdfProfileId = IdentityKdfProfiles.CurrentProfileId;
         CredentialRevision = rotatesPasswordCredential
             ? IncrementRevision(CredentialRevision)
             : CredentialRevision;
@@ -414,7 +460,7 @@ internal sealed class User : EventEntityBase
         byte[] newEncryptedPrivateKey,
         Instant now)
     {
-        EnsureCurrentKdfProfile(SecurityVersion, KdfProfileId);
+        EnsureRegisteredKdfProfile();
         EnsureRevisionMatch(baseCredentialRevision, basePrivateKeyWrapRevision);
 
         foreach (var token in RefreshTokens.Where(t => t.IsActive(now)))
@@ -429,12 +475,20 @@ internal sealed class User : EventEntityBase
         UpdatedAt = now;
     }
 
-    private static void EnsureCurrentKdfProfile(ushort securityVersion, string? kdfProfileId)
+    private void EnsureRegisteredKdfProfile()
     {
-        if (securityVersion != IdentityKdfProfiles.CurrentSecurityVersion
-            || kdfProfileId != IdentityKdfProfiles.CurrentProfileId)
+        if (!IdentityKdfProfiles.IsRegistered(SecurityVersion, KdfProfileId) || MinimumSecurityVersion > SecurityVersion)
         {
-            throw new InvalidOperationException("The current registered Identity KDF profile is required.");
+            throw new InvalidOperationException("The account's registered Identity KDF profile is required.");
+        }
+    }
+
+    private static void EnsureCurrentMemberKey(string publicKeySuiteId, byte[] publicKey)
+    {
+        if (!string.Equals(publicKeySuiteId, KeyWrapperSuites.Current.Id, StringComparison.Ordinal)
+            || publicKey.Length != KeyWrapperSuites.Current.PublicKeyBytes)
+        {
+            throw new InvalidOperationException("New Member keys must use the current key-wrapper suite.");
         }
     }
 
@@ -472,9 +526,10 @@ internal sealed class User : EventEntityBase
 
     private void EmitMemberKeyDirectoryUpserted()
     {
-        if (PublicKey is not { Length: 32 })
+        if (PublicKey is null || MemberPublicKeySuiteId is null
+            || PublicKey.Length != KeyWrapperSuites.ResolveForOpen(MemberPublicKeySuiteId).PublicKeyBytes)
         {
-            throw new InvalidOperationException("The Member X25519 public key must contain exactly 32 raw bytes.");
+            throw new InvalidOperationException("The Member public key must match its registered key-wrapper suite.");
         }
 
         if (MemberKeyVersion is null or 0)
@@ -482,7 +537,8 @@ internal sealed class User : EventEntityBase
             throw new InvalidOperationException("The Member public key version must be established before publication.");
         }
 
-        AddEvent(new UpsertMemberKeyDirectoryCommand(Id, MemberKeyVersion.Value, PublicKey.ToArray(), UpdatedAt));
+        AddEvent(new UpsertMemberKeyDirectoryCommand(
+            Id, MemberKeyVersion.Value, MemberPublicKeySuiteId, PublicKey.ToArray(), UpdatedAt));
     }
 
     private void EmitAccountRecoveryCompleted() =>

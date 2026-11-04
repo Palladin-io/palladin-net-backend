@@ -1181,8 +1181,13 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("PublicKey")
                         .IsRequired()
-                        .HasMaxLength(32)
+                        .HasMaxLength(1216)
                         .HasColumnType("bytea");
+
+                    b.Property<string>("PublicKeySuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<Instant>("UpdatedAt")
                         .IsConcurrencyToken()

@@ -49,9 +49,9 @@ internal sealed class ApproverGroupKey
     internal byte[] MessagePublicKey { get; }
     internal byte[] SigningPublicKey => _signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
     internal byte[] MessageKeyFingerprint =>
-        VaultKeyFingerprint.Compute(MessagePublicKey, VaultKeyKind.OrganizationApproverX25519);
+        VaultKeyFingerprint.Compute(MessagePublicKey, VaultKeyKind.OrganizationApproverMessage);
     internal byte[] SigningKeyFingerprint =>
-        VaultKeyFingerprint.Compute(SigningPublicKey, VaultKeyKind.OrganizationApproverEd25519);
+        VaultKeyFingerprint.Compute(SigningPublicKey, VaultKeyKind.OrganizationApproverSigning);
 
     internal ApproverGroupKey WithNewMessageKey() => new(KeyVersion, RandomNumberGenerator.GetBytes(32), _signingKey);
 
@@ -239,7 +239,7 @@ internal sealed class AgentSubmissionScenario
             "1",
             agent.AccessEpoch.ToString(),
             agent.KeyVersion,
-            Encode(VaultKeyFingerprint.Compute(Convert.FromBase64String(agent.X25519PublicKey), VaultKeyKind.AgentX25519)),
+            Encode(VaultKeyFingerprint.Compute(Convert.FromBase64String(agent.X25519PublicKey), VaultKeyKind.AgentEncryption)),
             CurrentKey!.KeyVersion,
             Encode(CurrentKey.MessageKeyFingerprint),
             CurrentManifest!.ManifestRevision,
@@ -391,7 +391,7 @@ internal sealed class AgentSubmissionScenario
     private static async Task<ScenarioMember> RegisterApproverAsync(ApiFactory apiFactory, User user, Guid organizationId)
     {
         var publicKey = RandomNumberGenerator.GetBytes(32);
-        await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, publicKey);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, publicKey, suiteId: FrozenContractWrapperSuite.Id);
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();

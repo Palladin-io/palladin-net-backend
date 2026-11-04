@@ -11,7 +11,7 @@ public sealed record AgentVaultDiscoveryEnvelopeContract(
     Guid VaultId,
     Guid AgentId,
     uint VdkVersion,
-    X25519WrappedKeyContract WrappedVdk,
+    WrappedKeyContract WrappedVdk,
     string ManifestRevision,
     string ManifestSignature)
 {
@@ -27,12 +27,12 @@ public sealed record AgentVaultDiscoveryEnvelopeContract(
         ushort _, uint recipientKeyVersion, string recipientFingerprint, string encodedPackage,
         string manifestRevision, string manifestSignature)
         : this(protocolVersion, organizationId, vaultId, agentId, vdkVersion,
-            new X25519WrappedKeyContract(
-                new X25519WrapperDescriptorContract(protocolVersion,
-                    "palladin-x25519-sealed-box-v1", X25519WrapperPurposeContract.AgentDiscoveryVdk,
+            new WrappedKeyContract(
+                new KeyWrapperDescriptorContract(protocolVersion,
+                    "palladin-x25519-sealed-box-v1", KeyWrapperPurposeContract.AgentDiscoveryVdk,
                     new EnvelopeScopeContract(organizationId, vaultId, AgentId: agentId),
                     vdkVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), vdkVersion, null,
-                    X25519RecipientKeyKindContract.AgentX25519, recipientKeyVersion,
+                    RecipientKeyKindContract.AgentEncryption, recipientKeyVersion,
                     recipientFingerprint, null), encodedPackage), manifestRevision, manifestSignature) { }
 }
 

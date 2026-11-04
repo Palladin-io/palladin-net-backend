@@ -862,7 +862,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
     {
         var grantId = Guid.NewGuid();
         var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519);
+            Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentEncryption);
         var package = ScriptExecutionPackage.Create(
             setup.OrganizationId,
             setup.VaultId,
@@ -877,7 +877,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             fingerprint,
             1,
             VaultKeyFingerprint.Compute(
-                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519),
+                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigning),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
             Enumerable.Repeat((byte)0x5A, 64).ToArray(),
             new byte[64]);
@@ -924,10 +924,10 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             packageRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             1,
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519)),
+                Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentEncryption)),
             1,
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519)),
+                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigning)),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0xA5, 32).ToArray()),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0x5A, 64).ToArray()),
             string.Empty,

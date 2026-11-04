@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
@@ -33,27 +34,27 @@ internal static class VaultManifestCryptoValidator
         var manifestSignature = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(envelope.ManifestSignature);
         var recipientFingerprint = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(envelope.RecipientAgentKeyFingerprint);
         var wrapperContext = VaultEnvelopeContractMapper.ToWrapperContext(envelope.WrappedVdk.Descriptor);
-        if (wrapperContext.Purpose != X25519WrapperPurpose.AgentDiscoveryVdk
+        if (wrapperContext.Purpose != KeyWrapperPurpose.AgentDiscoveryVdk
             || wrapperContext.Scope != new EnvelopeScope(envelope.OrganizationId, envelope.VaultId,
                 AgentId: envelope.AgentId)
             || wrapperContext.ResourceRevision != envelope.VdkVersion
             || wrapperContext.WrappedKeyVersion != envelope.VdkVersion
-            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentX25519
+            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentEncryption
             || wrapperContext.RecipientKeyVersion != envelope.RecipientAgentKeyVersion
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint,
                 recipientFingerprint)
             || wrapperContext.ParentDescriptorHash is not null)
             throw new DomainException("Agent Discovery wrapper descriptor is invalid.");
-        _ = X25519WrapperContextCodec.Encode(wrapperContext);
-        WrappedKeyPackageContract.ValidatePackage(envelope.WrappedVdk.Descriptor.WrapperSuiteId, wrappedVdk);
-        var agentX25519Key = DecodeAgentPublicKey(agent.PublicKey, VaultKeyKind.AgentX25519);
-        var agentEd25519Key = DecodeAgentPublicKey(agent.SigningPublicKey, VaultKeyKind.AgentEd25519);
+        _ = KeyWrapperContextCodec.Encode(wrapperContext);
+        KeyWrapperSuites.ResolveForOpen(envelope.WrappedVdk.Descriptor.WrapperSuiteId).ValidatePackage(wrappedVdk);
+        var agentX25519Key = DecodeAgentPublicKey(agent.PublicKey, VaultKeyKind.AgentEncryption);
+        var agentEd25519Key = DecodeAgentPublicKey(agent.SigningPublicKey, VaultKeyKind.AgentSigning);
         var vaultSigningKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultSigningPublicKey);
         var vaultMessageKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultAgentMessagePublicKey);
-        var agentX25519Fingerprint = VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentX25519);
-        var agentEd25519Fingerprint = VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentEd25519);
-        var vaultSigningFingerprint = VaultKeyFingerprint.Compute(vaultSigningKey, VaultKeyKind.VaultSigningEd25519);
-        var vaultMessageFingerprint = VaultKeyFingerprint.Compute(vaultMessageKey, VaultKeyKind.VaultMessageX25519);
+        var agentX25519Fingerprint = VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption);
+        var agentEd25519Fingerprint = VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentSigning);
+        var vaultSigningFingerprint = VaultKeyFingerprint.Compute(vaultSigningKey, VaultKeyKind.VaultSigning);
+        var vaultMessageFingerprint = VaultKeyFingerprint.Compute(vaultMessageKey, VaultKeyKind.VaultAgentMessage);
         var wrappedVdkDigest = ComputeWrappedVdkDigest(envelope.ProtocolVersion, wrappedVdk);
 
         ValidateBindings(
@@ -216,7 +217,7 @@ internal static class VaultManifestCryptoValidator
     {
         if (envelope.ProtocolVersion != VaultProtocol.CurrentVersion
             || !string.Equals(envelope.WrappedVdk.Descriptor.WrapperSuiteId,
-                X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
+                FrozenContractWrapperSuite.Id, StringComparison.Ordinal)
             || manifest.ProtocolVersion != envelope.ProtocolVersion
             || !string.Equals(manifest.CryptoSuiteId, CryptoSuiteId.XChaCha20Poly1305V1, StringComparison.Ordinal)
             || !string.Equals(manifest.WrapperSuiteId, envelope.WrappedVdk.Descriptor.WrapperSuiteId,

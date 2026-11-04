@@ -155,7 +155,7 @@ internal static class GranularGrantCreation
 
         var scope = GrantEnvelopeContractMapper.ToDomain(contract, req.Methods, req.AgentId);
         var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519);
+            Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentEncryption);
         if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))
         {
             throw new DomainException("Grant envelope Agent key fingerprint is invalid.");

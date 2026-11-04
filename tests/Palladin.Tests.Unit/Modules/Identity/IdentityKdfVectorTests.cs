@@ -37,8 +37,8 @@ public sealed class IdentityKdfVectorTests
             accountIdBytes, Encoding.UTF8.GetBytes(hkdf.GetProperty("masterKeyInfoUtf8").GetString()!));
         var expected = root.GetProperty("expected");
 
-        root.GetProperty("profileId").GetString().ShouldBe(IdentityKdfProfiles.CurrentProfileId);
-        root.GetProperty("securityVersion").GetUInt16().ShouldBe(IdentityKdfProfiles.CurrentSecurityVersion);
+        root.GetProperty("profileId").GetString().ShouldBe(IdentityKdfProfiles.PasswordV1.Id);
+        root.GetProperty("securityVersion").GetUInt16().ShouldBe(IdentityKdfProfiles.PasswordV1.SecurityVersion);
         hkdf.GetProperty("authCredentialInfoUtf8").GetString().ShouldBe(IdentityKdfProfiles.AuthCredentialInfo);
         hkdf.GetProperty("masterKeyInfoUtf8").GetString().ShouldBe(IdentityKdfProfiles.MasterKeyInfo);
         WebEncoders.Base64UrlEncode(accountRoot).ShouldBe(expected.GetProperty("accountRootBase64Url").GetString());
@@ -61,6 +61,7 @@ public sealed class IdentityKdfVectorTests
                 "MemoryKiB",
                 "Iterations",
                 "Parallelism",
+                "AccountSecretRequired",
             ]);
     }
 }

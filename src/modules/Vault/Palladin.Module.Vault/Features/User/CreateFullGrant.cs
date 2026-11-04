@@ -123,7 +123,7 @@ internal sealed class CreateFullGrantEndpoint(
         try
         {
             var fingerprint = VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+                Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
             wrappedVaultKey = AgentWrappedVaultKeyContractMapper.ToDomain(
                 req.AgentWrappedVaultKey, organizationId, req.VaultId, req.GrantId, req.AgentId,
                 agent.AccessEpoch, vault.CurrentVaultKeyVersion.Value, agent.RecipientKeyVersion,

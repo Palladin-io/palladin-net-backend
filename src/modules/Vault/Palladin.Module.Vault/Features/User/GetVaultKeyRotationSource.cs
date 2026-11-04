@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
@@ -46,8 +47,9 @@ internal sealed class VaultKeyRotationSourceValidator : Validator<VaultKeyRotati
 public sealed record RotationMemberRecipientContract(
     Guid MemberId,
     uint RecipientKeyVersion,
+    string RecipientKeySuiteId,
     string RecipientKeyFingerprint,
-    string X25519PublicKey);
+    [property: JsonPropertyName("x25519PublicKey")] string RecipientPublicKey);
 
 [PublicAPI]
 public sealed record VaultKeyRotationMemberSourceResponse(
@@ -123,7 +125,7 @@ internal sealed class GetVaultKeyRotationFullGrantSourceEndpoint(
                     x.AgentId,
                     x.AgentAccessEpoch,
                     x.RecipientKeyVersion,
-                    WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentX25519)),
+                    WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentEncryption)),
                     WebEncoders.Base64UrlEncode(publicKey));
             }).ToArray(),
             page.Count == req.PageSize ? page[^1].GrantId : null), ct);
@@ -192,7 +194,10 @@ internal sealed class GetVaultKeyRotationMemberSourceEndpoint(
             join directory in domainReadContext.MemberKeyDirectory on member.UserId equals directory.UserId
             where member.OrganizationId == organizationId && member.VaultId == req.VaultId
                   && member.UserId != rotation.ExcludedMemberId
-            select new { member.UserId, directory.KeyVersion, directory.Fingerprint, directory.PublicKey };
+            select new
+            {
+                member.UserId, directory.KeyVersion, directory.PublicKeySuiteId, directory.Fingerprint, directory.PublicKey,
+            };
         if (req.AfterId is { } after)
         {
             query = query.Where(x => x.UserId.CompareTo(after) > 0);
@@ -202,6 +207,7 @@ internal sealed class GetVaultKeyRotationMemberSourceEndpoint(
             page.Select(x => new RotationMemberRecipientContract(
                 x.UserId,
                 x.KeyVersion.Value,
+                x.PublicKeySuiteId,
                 WebEncoders.Base64UrlEncode(x.Fingerprint),
                 WebEncoders.Base64UrlEncode(x.PublicKey))).ToArray(),
             page.Count == req.PageSize ? page[^1].UserId : null), ct);

@@ -67,7 +67,7 @@ internal sealed class EncryptedReasonEnvelope
             RecipientAgentMessageKeyFingerprint = recipientAgentMessageKeyFingerprint.ToArray(),
             RequestedMethods = requestedMethods,
             EncodedSuitePayload = SuitePayload.Encode(nonce, ciphertext),
-            WrapperSuiteId = Infrastructure.Crypto.X25519SealedBoxContract.SuiteId,
+            WrapperSuiteId = Infrastructure.Crypto.FrozenContractWrapperSuite.Id,
             AgentMessageWrappedReasonDek = wrappedReasonDek.ToArray(),
             AgentSignature = signature.ToArray(),
         };

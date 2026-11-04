@@ -131,7 +131,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var substitutedPublicKey = substitutedSigningKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
         var substitutedFingerprint = VaultKeyFingerprint.Compute(
             substitutedPublicKey,
-            VaultKeyKind.VaultSigningEd25519);
+            VaultKeyKind.VaultSigning);
         var substitutedManifest = provisioning.Manifest with
         {
             VaultSigningPublicKey = Encode(substitutedPublicKey),
@@ -860,13 +860,13 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
             organizationId,
             vaultId,
             agentId,
-            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentX25519)),
-            Encode(VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentEd25519)),
+            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption)),
+            Encode(VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentSigning)),
             Encode(vaultSigningPublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigningEd25519)),
+            Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigning)),
             1,
             Encode(vaultMessagePublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultMessageX25519)),
+            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultAgentMessage)),
             1,
             1,
             Encode(ComputeWrappedVdkDigest(wrappedVdk)),
@@ -884,7 +884,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
             1,
             1,
             1,
-            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentX25519)),
+            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption)),
             Encode(wrappedVdk),
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             signature);

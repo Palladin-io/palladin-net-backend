@@ -14,7 +14,7 @@ public sealed class EncryptedReasonContractTests
     {
         var signing = AgentRequestSigning.Generate();
         var fingerprint = WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-            Enumerable.Repeat((byte)0x31, 32).ToArray(), VaultKeyKind.VaultMessageX25519));
+            Enumerable.Repeat((byte)0x31, 32).ToArray(), VaultKeyKind.VaultAgentMessage));
         var contract = GrantEnvelopeTestData.EncryptedReason(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), signing, fingerprint);
         var malformed = contract with
@@ -34,7 +34,7 @@ public sealed class EncryptedReasonContractTests
     {
         var signing = AgentRequestSigning.Generate();
         var fingerprint = WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-            Enumerable.Repeat((byte)0x31, 32).ToArray(), VaultKeyKind.VaultMessageX25519));
+            Enumerable.Repeat((byte)0x31, 32).ToArray(), VaultKeyKind.VaultAgentMessage));
         var contract = GrantEnvelopeTestData.EncryptedReason(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), signing, fingerprint);
         var malformed = contract with
@@ -52,7 +52,7 @@ public sealed class EncryptedReasonContractTests
         var signing = AgentRequestSigning.Generate();
         var recipientKey = Enumerable.Repeat((byte)0x31, 32).ToArray();
         var fingerprint = WebEncoders.Base64UrlEncode(
-            VaultKeyFingerprint.Compute(recipientKey, VaultKeyKind.VaultMessageX25519));
+            VaultKeyFingerprint.Compute(recipientKey, VaultKeyKind.VaultAgentMessage));
         var contract = GrantEnvelopeTestData.EncryptedReason(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), signing, fingerprint);
         var changed = contract with
@@ -76,7 +76,7 @@ public sealed class EncryptedReasonContractTests
     {
         var signing = AgentRequestSigning.Generate();
         var fingerprint = WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-            Enumerable.Repeat((byte)0x31, 32).ToArray(), VaultKeyKind.VaultMessageX25519));
+            Enumerable.Repeat((byte)0x31, 32).ToArray(), VaultKeyKind.VaultAgentMessage));
         var contract = GrantEnvelopeTestData.EncryptedReason(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), signing, fingerprint);
         var changed = contract with
@@ -97,7 +97,7 @@ public sealed class EncryptedReasonContractTests
         var signing = AgentRequestSigning.Generate();
         var recipientKey = Enumerable.Repeat((byte)0x31, 32).ToArray();
         var fingerprint = WebEncoders.Base64UrlEncode(
-            VaultKeyFingerprint.Compute(recipientKey, VaultKeyKind.VaultMessageX25519));
+            VaultKeyFingerprint.Compute(recipientKey, VaultKeyKind.VaultAgentMessage));
         var contract = GrantEnvelopeTestData.EncryptedReason(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), signing, fingerprint);
 

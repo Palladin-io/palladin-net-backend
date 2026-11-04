@@ -101,6 +101,10 @@ public static class KeyWrapperSuites
 
     public static IReadOnlyList<KeyWrapperSuite> All => Registered;
 
+    public static int MaximumPublicKeyBytes { get; } = Registered.Max(suite => suite.PublicKeyBytes);
+
+    public static int MaximumPackageBytes { get; } = Registered.Max(suite => suite.PackageBytes);
+
     public static KeyWrapperSuite Resolve(string? suiteId) =>
         Registered.FirstOrDefault(suite => string.Equals(suite.Id, suiteId, StringComparison.Ordinal))
         ?? throw new DomainException("The key-wrapper suite is not registered.");

@@ -1,4 +1,5 @@
 using NodaTime;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Vault.Contracts.Commands;
@@ -9,51 +10,30 @@ namespace Palladin.Tests.Unit.Modules.Identity;
 public sealed class MemberKeyVersionTests
 {
     [Fact]
-    public void When_MemberPublicKeyRotates_Then_VersionIncrementsAndEventPublishesNewKey()
+    public void When_PasswordAccountRegisters_Then_DirectoryCommandCarriesCurrentSuiteKey()
     {
-        var initialKey = Enumerable.Repeat((byte)0x11, 32).ToArray();
-        var rotatedKey = Enumerable.Repeat((byte)0x22, 32).ToArray();
-        var now = Instant.FromUtc(2026, 7, 17, 9, 0);
-        var user = CreatePasswordUser(initialKey, now);
-        user.FetchEvents();
+        // Given
+        var publicKey = CurrentSuiteKey(0x11);
 
-        user.RotateMemberKeyPair(
-            rotatedKey,
-            Enumerable.Repeat((byte)0x33, 32).ToArray(),
-            Enumerable.Repeat((byte)0x44, 32).ToArray(),
-            now + Duration.FromMinutes(1));
+        // When
+        var user = CreatePasswordUser(publicKey, Instant.FromUtc(2026, 7, 17, 9, 0));
 
-        user.MemberKeyVersion.ShouldBe((uint)2);
-        user.PrivateKeyWrapRevision.ShouldBe(2u);
-        user.PublicKey.ShouldBe(rotatedKey);
-        var @event = user.FetchEvents().ShouldHaveSingleItem()
-            .ShouldBeOfType<UpsertMemberKeyDirectoryCommand>();
-        @event.KeyVersion.ShouldBe((uint)2);
-        @event.RawPublicKey.ShouldBe(rotatedKey);
+        // Then
+        user.MemberPublicKeySuiteId.ShouldBe(KeyWrapperSuites.Current.Id);
+        var command = user.FetchEvents().OfType<UpsertMemberKeyDirectoryCommand>().ShouldHaveSingleItem();
+        command.PublicKeySuiteId.ShouldBe(KeyWrapperSuites.Current.Id);
+        command.RawPublicKey.ShouldBe(publicKey);
     }
 
     [Fact]
-    public void When_MemberPublicKeyRotationReusesCurrentKey_Then_FailsClosed()
-    {
-        var publicKey = Enumerable.Repeat((byte)0x11, 32).ToArray();
-        var now = Instant.FromUtc(2026, 7, 17, 9, 0);
-        var user = CreatePasswordUser(publicKey, now);
-
-        var rotate = () =>
-            user.RotateMemberKeyPair(
-                publicKey.ToArray(),
-                new byte[32],
-                new byte[32],
-                now + Duration.FromMinutes(1));
-
-        rotate.ShouldThrow<InvalidOperationException>();
-        user.MemberKeyVersion.ShouldBe((uint)1);
-    }
+    public void When_RegistrationUsesReadOnlySuiteKeyLength_Then_FailsClosed() =>
+        Should.Throw<InvalidOperationException>(() =>
+            CreatePasswordUser(new byte[32], Instant.FromUtc(2026, 7, 17, 9, 0)));
 
     [Fact]
     public void When_AccountRecoveryRewrapsPrivateKey_Then_PublicKeyAndVersionRemainUnchanged()
     {
-        var publicKey = Enumerable.Repeat((byte)0x11, 32).ToArray();
+        var publicKey = CurrentSuiteKey(0x11);
         var now = Instant.FromUtc(2026, 7, 17, 9, 0);
         var user = CreatePasswordUser(publicKey, now);
         user.FetchEvents();
@@ -77,7 +57,7 @@ public sealed class MemberKeyVersionTests
     [Fact]
     public void When_MemberKeyDirectoryIsRepublished_Then_CurrentKeyAndVersionArePreserved()
     {
-        var publicKey = Enumerable.Repeat((byte)0x11, 32).ToArray();
+        var publicKey = CurrentSuiteKey(0x11);
         var now = Instant.FromUtc(2026, 7, 17, 9, 0);
         var user = CreatePasswordUser(publicKey, now);
         user.FetchEvents();
@@ -92,6 +72,9 @@ public sealed class MemberKeyVersionTests
         command.RawPublicKey.ShouldBe(publicKey);
     }
 
+    private static byte[] CurrentSuiteKey(byte fill) =>
+        Enumerable.Repeat(fill, KeyWrapperSuites.Current.PublicKeyBytes).ToArray();
+
     private static User CreatePasswordUser(byte[] publicKey, Instant now) =>
         User.RegisterWithPassword(
             Guid.NewGuid(),
@@ -102,6 +85,7 @@ public sealed class MemberKeyVersionTests
             Permission.VaultManage,
             new byte[16],
             new byte[16],
+            KeyWrapperSuites.Current.Id,
             publicKey,
             new byte[32],
             new byte[32],

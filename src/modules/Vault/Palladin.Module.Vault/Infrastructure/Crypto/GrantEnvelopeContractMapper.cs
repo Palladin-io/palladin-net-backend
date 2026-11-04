@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Security.Cryptography;
 using NodaTime;
 using Palladin.Core.Types;
@@ -60,23 +61,23 @@ internal static class GrantEnvelopeContractMapper
         var payload = VaultEnvelopeContractMapper.DecodeXChaChaPayload(
             contract.EncodedSuitePayload, descriptor.Purpose, 262_144);
         var wrapperContext = VaultEnvelopeContractMapper.ToWrapperContext(contract.WrappedGrantDek.Descriptor);
-        var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(descriptor);
-        if (wrapperContext.Purpose != X25519WrapperPurpose.GrantDek
+        var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(descriptor);
+        if (wrapperContext.Purpose != KeyWrapperPurpose.GrantDek
             || wrapperContext.Scope != descriptor.Scope
             || wrapperContext.ResourceRevision != descriptor.ResourceRevision
             || wrapperContext.WrappedKeyVersion != descriptor.KeyVersion
             || wrapperContext.MemberKeyGeneration != descriptor.MemberKeyGeneration
             || wrapperContext.RecipientKeyVersion != binding.RecipientKeyVersion
-            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentX25519
-            || !string.Equals(binding.WrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
+            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentEncryption
+            || !string.Equals(binding.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal)
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint, fingerprint)
             || wrapperContext.ParentDescriptorHash is null
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.ParentDescriptorHash, parentHash))
             throw new DomainException("Grant wrapper descriptor does not match its parent envelope.");
-        _ = X25519WrapperContextCodec.Encode(wrapperContext);
+        _ = KeyWrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedGrantDek.EncodedSealedKeyPackage);
-        WrappedKeyPackageContract.ValidatePackage(binding.WrapperSuiteId, wrapper);
+        KeyWrapperSuites.ResolveForOpen(binding.WrapperSuiteId).ValidatePackage(wrapper);
         var scope = new EntryScope(contract.OrganizationId, contract.VaultId, contract.EntryId);
         var envelope = GrantEntryEnvelope.Create(scope, contract.GrantId, descriptor.ResourceRevision,
             new EntryRevision(VaultEnvelopeContractMapper.ParseUInt64(binding.EntryRevision)),

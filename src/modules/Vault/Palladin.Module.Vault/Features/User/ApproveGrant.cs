@@ -199,7 +199,7 @@ internal sealed class ApproveGrantEndpoint(
             scope = GrantEnvelopeContractMapper.ToDomain(grantEntry, finalMethods, granularGrant.AgentId);
             scope.SetFieldSelectionMode(req.FieldSelectionMode);
             var expectedFingerprint = VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(currentAgent.PublicKey), VaultKeyKind.AgentX25519);
+                Convert.FromBase64String(currentAgent.PublicKey), VaultKeyKind.AgentEncryption);
             if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(expectedFingerprint))
             {
                 throw new Palladin.Core.Types.Exceptions.DomainException("Agent key fingerprint mismatch.");

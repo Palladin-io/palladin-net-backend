@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 
 namespace Palladin.Module.Vault.Domain;
@@ -54,8 +55,7 @@ internal sealed record MemberWrappedVaultKey
             throw new DomainException("Vault Member identifier must not be empty.");
         }
 
-        if (protocolVersion != VaultProtocol.CurrentVersion
-            || !string.Equals(wrapperSuiteId, Infrastructure.Crypto.X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
+        if (protocolVersion != VaultProtocol.CurrentVersion)
         {
             throw new DomainException("Wrapped Vault key is incompatible with Vault protocol 2.");
         }
@@ -65,10 +65,7 @@ internal sealed record MemberWrappedVaultKey
             throw new DomainException("Member recipient key fingerprint must contain exactly 32 bytes.");
         }
 
-        if (sealedVaultKeyPackage.Length != Infrastructure.Crypto.X25519SealedBoxContract.EncodedPackageBytes)
-        {
-            throw new DomainException("Sealed Vault key package size is outside the protocol limit.");
-        }
+        KeyWrapperSuites.ResolveForOpen(wrapperSuiteId).ValidatePackage(sealedVaultKeyPackage);
 
         return new MemberWrappedVaultKey(
             scope,
@@ -81,14 +78,6 @@ internal sealed record MemberWrappedVaultKey
             recipientKeyFingerprint,
             sealedVaultKeyPackage);
     }
-
-    internal static MemberWrappedVaultKey Create(
-        VaultScope scope, Guid memberId, ushort protocolVersion, ushort _, VaultKeyVersion vaultKeyVersion,
-        MemberKeyGeneration memberKeyGeneration, MemberRecipientKeyVersion recipientKeyVersion,
-        byte[] recipientKeyFingerprint, byte[] sealedVaultKeyPackage) =>
-        Create(scope, memberId, protocolVersion, Infrastructure.Crypto.X25519SealedBoxContract.SuiteId,
-            vaultKeyVersion, memberKeyGeneration, recipientKeyVersion, recipientKeyFingerprint,
-            sealedVaultKeyPackage);
 }
 
 internal sealed class VaultMemberKeyEnvelope

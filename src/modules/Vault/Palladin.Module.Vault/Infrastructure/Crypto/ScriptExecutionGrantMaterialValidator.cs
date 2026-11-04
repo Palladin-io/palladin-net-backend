@@ -20,7 +20,7 @@ internal static class ScriptExecutionGrantMaterialValidator
     {
         var fingerprint = VaultKeyFingerprint.Compute(
             Convert.FromBase64String(agentPublicKey),
-            VaultKeyKind.AgentX25519);
+            VaultKeyKind.AgentEncryption);
         if (package.OrganizationId != organizationId
             || package.VaultId != vaultId
             || package.GrantId != grantId

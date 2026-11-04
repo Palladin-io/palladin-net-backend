@@ -183,17 +183,17 @@ internal sealed class GetGrantEndpoint(VaultDomainReadContext domainReadContext)
                 encryptedReason.ReasonKeyVersion, encryptedReason.MemberKeyGeneration,
                 new ReasonEnvelopeBinding(binding.WrapperSuiteId, binding.RecipientKeyVersion,
                     encryptedReason.RecipientAgentMessageKeyFingerprint, binding.RequestedMethods));
-            var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
+            var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
             grant = grant with
             {
                 EncryptedReason = new EncryptedReasonEnvelopeContract(
                     descriptor,
                     WebEncoders.Base64UrlEncode(encryptedReason.EncodedSuitePayload),
-                    new X25519WrappedKeyContract(
-                        new X25519WrapperDescriptorContract(descriptor.ProtocolVersion,
-                            binding.WrapperSuiteId, X25519WrapperPurposeContract.ReasonDek, scope,
+                    new WrappedKeyContract(
+                        new KeyWrapperDescriptorContract(descriptor.ProtocolVersion,
+                            binding.WrapperSuiteId, KeyWrapperPurposeContract.ReasonDek, scope,
                             descriptor.ResourceRevision, descriptor.KeyVersion, descriptor.MemberKeyGeneration,
-                            X25519RecipientKeyKindContract.VaultMessageX25519,
+                            RecipientKeyKindContract.VaultAgentMessage,
                             binding.RecipientKeyVersion, binding.RecipientKeyFingerprint,
                             WebEncoders.Base64UrlEncode(parentHash)),
                         WebEncoders.Base64UrlEncode(encryptedReason.AgentMessageWrappedReasonDek)),
@@ -325,7 +325,7 @@ internal static class GrantProjection
             grants[index] = grants[index] with
             {
                 AgentSigningKeyFingerprint = WebEncoders.Base64UrlEncode(
-                    VaultKeyFingerprint.Compute(rawKey, VaultKeyKind.AgentEd25519)),
+                    VaultKeyFingerprint.Compute(rawKey, VaultKeyKind.AgentSigning)),
             };
         }
     }
@@ -391,17 +391,17 @@ internal static class GrantProjection
                 encryptedReason.ReasonKeyVersion, encryptedReason.MemberKeyGeneration,
                 new ReasonEnvelopeBinding(binding.WrapperSuiteId, binding.RecipientKeyVersion,
                     encryptedReason.RecipientAgentMessageKeyFingerprint, binding.RequestedMethods));
-            var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
+            var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
             grants[index] = grants[index] with
             {
                 EncryptedReason = new EncryptedReasonEnvelopeContract(
                     descriptor,
                     WebEncoders.Base64UrlEncode(encryptedReason.EncodedSuitePayload),
-                    new X25519WrappedKeyContract(
-                        new X25519WrapperDescriptorContract(descriptor.ProtocolVersion,
-                            binding.WrapperSuiteId, X25519WrapperPurposeContract.ReasonDek, scope,
+                    new WrappedKeyContract(
+                        new KeyWrapperDescriptorContract(descriptor.ProtocolVersion,
+                            binding.WrapperSuiteId, KeyWrapperPurposeContract.ReasonDek, scope,
                             descriptor.ResourceRevision, descriptor.KeyVersion, descriptor.MemberKeyGeneration,
-                            X25519RecipientKeyKindContract.VaultMessageX25519,
+                            RecipientKeyKindContract.VaultAgentMessage,
                             binding.RecipientKeyVersion, binding.RecipientKeyFingerprint,
                             WebEncoders.Base64UrlEncode(parentHash)),
                         WebEncoders.Base64UrlEncode(encryptedReason.AgentMessageWrappedReasonDek)),

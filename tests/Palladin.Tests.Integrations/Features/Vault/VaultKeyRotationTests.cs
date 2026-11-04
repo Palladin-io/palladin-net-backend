@@ -146,11 +146,11 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
             1,
             1,
             1,
-            VaultKeyFingerprint.Compute(Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519),
+            VaultKeyFingerprint.Compute(Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentEncryption),
             1,
             VaultKeyFingerprint.Compute(
                 VaultTrustAnchorFaker.ManifestSigningPublicKey,
-                VaultKeyKind.VaultSigningEd25519),
+                VaultKeyKind.VaultSigning),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
             Enumerable.Repeat((byte)0x5A, 64).ToArray(),
             new byte[64]);
@@ -660,7 +660,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         context.Message.Returns(new UpsertMemberKeyDirectoryCommand(
             user.Id,
             2,
-            Enumerable.Repeat((byte)0x44, 32).ToArray(),
+            Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
+            Enumerable.Repeat((byte)0x44, Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes).ToArray(),
             apiFactory.FakeClock.GetCurrentInstant().PlusTicks(1)));
         context.CancellationToken.Returns(timeout.Token);
         await Should.ThrowAsync<OperationCanceledException>(() => consumer.Consume(context));
@@ -999,7 +1000,9 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         var recipient = source!.Items.Single();
         recipient.MemberId.ShouldBe(user.Id);
         recipient.RecipientKeyVersion.ShouldBe(1u);
-        WebEncoders.Base64UrlDecode(recipient.X25519PublicKey).ShouldBe(new byte[VaultProtocol.FingerprintBytes]);
+        recipient.RecipientKeySuiteId.ShouldBe(Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id);
+        WebEncoders.Base64UrlDecode(recipient.RecipientPublicKey)
+            .ShouldBe(new byte[Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes]);
         source.NextAfterId.ShouldBe(user.Id);
     }
 
@@ -1116,8 +1119,9 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         writeContext.MemberKeyDirectory.Add(MemberKeyDirectoryEntry.Create(
             userId,
             new MemberRecipientKeyVersion(1),
+            Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
             Enumerable.Range(0, VaultProtocol.FingerprintBytes).Select(x => (byte)x).ToArray(),
-            new byte[VaultProtocol.FingerprintBytes],
+            new byte[Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes],
             apiFactory.FakeClock.GetCurrentInstant()));
         await writeContext.SaveChangesAsync();
     }

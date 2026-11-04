@@ -19,7 +19,7 @@ internal static class IdentityAuthSeeder
         byte[]? authSalt = null,
         string? email = null,
         bool emailVerified = false,
-        ushort securityVersion = IdentityKdfProfiles.CurrentSecurityVersion,
+        ushort securityVersion = 1,
         bool isOnboarded = true,
         Guid? userId = null)
     {
@@ -53,7 +53,7 @@ internal static class IdentityAuthSeeder
             .RuleFor(x => x.PrivateKeyWrapRevision, isOnboarded ? 1u : 0u)
             .RuleFor(x => x.SecurityVersion, securityVersion)
             .RuleFor(x => x.MinimumSecurityVersion, securityVersion)
-            .RuleFor(x => x.KdfProfileId, IdentityKdfProfiles.CurrentProfileId)
+            .RuleFor(x => x.KdfProfileId, IdentityKdfProfiles.All.Single(x => x.SecurityVersion == securityVersion).Id)
             .RuleFor(x => x.CredentialRevision, 1u)
             .Generate();
         await writeContext.Users.Where(x => x.Id == user.Id).ExecuteDeleteAsync();

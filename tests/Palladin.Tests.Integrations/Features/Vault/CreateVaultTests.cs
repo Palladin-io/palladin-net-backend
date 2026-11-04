@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Net;
 using System.Net.Http.Json;
 using FastEndpoints;
@@ -10,6 +11,7 @@ using Palladin.Module.Vault.Contracts.Events;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
+using Palladin.Module.Vault.Shared;
 using Palladin.Tests.Integrations.Shared;
 using Palladin.Tests.Integrations.Shared.Extensions;
 using Palladin.Tests.Integrations.Shared.Fakers;
@@ -104,7 +106,7 @@ public sealed class CreateVaultTests(ApiFactory apiFactory) : TestBase
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(
             user.Id,
-            Enumerable.Repeat((byte)0xA5, 32).ToArray());
+            Enumerable.Repeat((byte)0xA5, KeyWrapperSuites.Current.PublicKeyBytes).ToArray());
         var client = apiFactory.CreateAuthenticatedClient(user);
         var challengeResponse = await client.PostAsync("api/vaults/creation-challenges", null);
         var challenge = await challengeResponse.Content.ReadFromJsonAsync<ChallengeIdResponse>();
@@ -113,6 +115,62 @@ public sealed class CreateVaultTests(ApiFactory apiFactory) : TestBase
             "api/vaults",
             VaultContractFaker.CreateRequest(organization.Id, challenge!.VaultId, user.Id));
 
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task When_CreatorKeyStillUsesReadOnlySuite_Then_NewEnvelopeIsRejectedWithoutVault()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var legacySuite = KeyWrapperSuites.Resolve(FrozenContractWrapperSuite.Id);
+        var legacyKey = Enumerable.Repeat((byte)0x5A, legacySuite.PublicKeyBytes).ToArray();
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, legacyKey, suiteId: legacySuite.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var challengeResponse = await client.PostAsync("api/vaults/creation-challenges", null);
+        var challenge = await challengeResponse.Content.ReadFromJsonAsync<ChallengeIdResponse>();
+        var request = VaultContractFaker.CreateRequest(organization.Id, challenge!.VaultId, user.Id);
+        var wrapped = request.CreatorVaultKey.WrappedVaultKey;
+        var legacyRequest = request with
+        {
+            CreatorVaultKey = new MemberVaultKeyEnvelopeContract(new WrappedKeyContract(
+                wrapped.Descriptor with
+                {
+                    WrapperSuiteId = legacySuite.Id,
+                    RecipientFingerprint = Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(
+                        RecipientKeyFingerprint.Compute(legacySuite.Id, VaultKeyKind.MemberEncryption, legacyKey)),
+                },
+                Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(new byte[legacySuite.PackageBytes]))),
+        };
+
+        // When
+        var response = await client.PostAsJsonAsync("api/vaults", legacyRequest);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>().Vaults
+            .AnyAsync(x => x.Id == challenge.VaultId)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_EnvelopeSuiteDiffersFromDirectorySuite_Then_RecipientMismatchRejectsCreation()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var legacySuite = KeyWrapperSuites.Resolve(FrozenContractWrapperSuite.Id);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(
+            user.Id, new byte[legacySuite.PublicKeyBytes], suiteId: legacySuite.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user);
+        var challengeResponse = await client.PostAsync("api/vaults/creation-challenges", null);
+        var challenge = await challengeResponse.Content.ReadFromJsonAsync<ChallengeIdResponse>();
+
+        // When
+        var response = await client.PostAsJsonAsync(
+            "api/vaults",
+            VaultContractFaker.CreateRequest(organization.Id, challenge!.VaultId, user.Id));
+
+        // Then
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
@@ -151,6 +209,7 @@ public sealed class CreateVaultTests(ApiFactory apiFactory) : TestBase
         await ConsumeMemberKeyDirectoryAsync(new UpsertMemberKeyDirectoryCommand(
             user.Id,
             1,
+            KeyWrapperSuites.Current.Id,
             VaultContractFaker.MemberPublicKey,
             apiFactory.FakeClock.GetCurrentInstant()));
 
@@ -163,7 +222,8 @@ public sealed class CreateVaultTests(ApiFactory apiFactory) : TestBase
         var entry = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
             .MemberKeyDirectory.SingleAsync(x => x.UserId == user.Id);
         entry.KeyVersion.Value.ShouldBe((uint)1);
-        entry.Fingerprint.ShouldBe(MemberKeyFingerprint.Compute(VaultContractFaker.MemberPublicKey));
+        entry.Fingerprint.ShouldBe(RecipientKeyFingerprint.Compute(
+            KeyWrapperSuites.Current.Id, VaultKeyKind.MemberEncryption, VaultContractFaker.MemberPublicKey));
     }
 
     private async Task ConsumeMemberKeyDirectoryAsync(UpsertMemberKeyDirectoryCommand command)

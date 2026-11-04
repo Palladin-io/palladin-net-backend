@@ -26,7 +26,7 @@ internal static class GrantEnvelopeTestData
         _ = signaturePrefix;
         var id = requestId ?? Guid.NewGuid();
         var scope = new EnvelopeScopeContract(organizationId, vaultId, entryId, id, agentId);
-        var binding = new ReasonEnvelopeBindingContract(X25519SealedBoxContract.SuiteId,
+        var binding = new ReasonEnvelopeBindingContract(FrozenContractWrapperSuite.Id,
             agentMessageKeyVersion, recipientAgentMessageKeyFingerprint, (ushort)methods);
         var descriptor = new EnvelopeDescriptorContract<ReasonEnvelopeBindingContract>(
             VaultProtocol.CurrentVersion, CryptoSuiteId.XChaCha20Poly1305V1,
@@ -35,16 +35,16 @@ internal static class GrantEnvelopeTestData
             new CryptoSuiteId(CryptoSuiteId.XChaCha20Poly1305V1), EnvelopePurpose.EncryptedReason,
             new EnvelopeScope(organizationId, vaultId, entryId, id, agentId),
             ulong.Parse(resourceRevision), 1, 1,
-            new ReasonEnvelopeBinding(X25519SealedBoxContract.SuiteId, agentMessageKeyVersion,
+            new ReasonEnvelopeBinding(FrozenContractWrapperSuite.Id, agentMessageKeyVersion,
                 WebEncoders.Base64UrlDecode(recipientAgentMessageKeyFingerprint), (ushort)methods));
-        var parentHash = WebEncoders.Base64UrlEncode(X25519WrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor));
+        var parentHash = WebEncoders.Base64UrlEncode(KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor));
         var unsigned = new EncryptedReasonEnvelopeContract(
             descriptor,
             Base64Url(VaultProtocol.NonceBytes + 64),
-            new X25519WrappedKeyContract(
-                new X25519WrapperDescriptorContract(2, X25519SealedBoxContract.SuiteId,
-                    X25519WrapperPurposeContract.ReasonDek, scope, resourceRevision, 1, 1,
-                    X25519RecipientKeyKindContract.VaultMessageX25519, agentMessageKeyVersion,
+            new WrappedKeyContract(
+                new KeyWrapperDescriptorContract(2, FrozenContractWrapperSuite.Id,
+                    KeyWrapperPurposeContract.ReasonDek, scope, resourceRevision, 1, 1,
+                    RecipientKeyKindContract.VaultAgentMessage, agentMessageKeyVersion,
                     recipientAgentMessageKeyFingerprint, parentHash),
                 Base64Url(120)),
             string.Empty);
@@ -80,26 +80,26 @@ internal static class GrantEnvelopeTestData
         GrantDeliveryPolicy deliveryPolicy)
     {
         var fingerprint = WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519));
+            Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentEncryption));
         var scope = new EnvelopeScopeContract(organizationId, vaultId, entryId, grantId, agentId);
         var commitment = WebEncoders.Base64UrlEncode(EnvelopeDescriptorCodec.ComputeFieldSetCommitment(fieldIds));
-        var binding = new GrantEnvelopeBindingContract(entryRevision.ToString(), X25519SealedBoxContract.SuiteId,
+        var binding = new GrantEnvelopeBindingContract(entryRevision.ToString(), FrozenContractWrapperSuite.Id,
             1, fingerprint, (ushort)methods, (ushort)deliveryPolicy, commitment, expiresAt, remainingUses);
         var descriptor = new EnvelopeDescriptorContract<GrantEnvelopeBindingContract>(2,
             CryptoSuiteId.XChaCha20Poly1305V1, EnvelopePurposeContract.GrantPayload, scope,
             envelopeRevision.ToString(), grantKeyVersion, 1, binding);
         var domain = new EnvelopeDescriptor(2, new CryptoSuiteId(CryptoSuiteId.XChaCha20Poly1305V1), EnvelopePurpose.GrantPayload,
             new EnvelopeScope(organizationId, vaultId, entryId, grantId, agentId), envelopeRevision, grantKeyVersion, 1,
-            new GrantEnvelopeBinding(entryRevision, X25519SealedBoxContract.SuiteId, 1,
+            new GrantEnvelopeBinding(entryRevision, FrozenContractWrapperSuite.Id, 1,
                 WebEncoders.Base64UrlDecode(fingerprint), (ushort)methods,
                 (ushort)deliveryPolicy, WebEncoders.Base64UrlDecode(commitment), expiresAt?.ToUnixTimeSeconds(),
                 expiresAt is null ? null : (uint)(expiresAt.Value.ToUnixTimeTicks() % NodaConstants.TicksPerSecond * 100),
                 remainingUses is null ? null : checked((uint)remainingUses.Value)));
-        var parentHash = WebEncoders.Base64UrlEncode(X25519WrapperContextCodec.ComputeParentDescriptorHash(domain));
+        var parentHash = WebEncoders.Base64UrlEncode(KeyWrapperContextCodec.ComputeParentDescriptorHash(domain));
         return new GrantEntryEnvelopeContract(descriptor, Base64Url(VaultProtocol.NonceBytes + 64),
-            new X25519WrappedKeyContract(new X25519WrapperDescriptorContract(2,
-                X25519SealedBoxContract.SuiteId, X25519WrapperPurposeContract.GrantDek, scope,
-                envelopeRevision.ToString(), grantKeyVersion, 1, X25519RecipientKeyKindContract.AgentX25519,
+            new WrappedKeyContract(new KeyWrapperDescriptorContract(2,
+                FrozenContractWrapperSuite.Id, KeyWrapperPurposeContract.GrantDek, scope,
+                envelopeRevision.ToString(), grantKeyVersion, 1, RecipientKeyKindContract.AgentEncryption,
                 1, fingerprint, parentHash), Base64Url(120)), fieldIds);
     }
 
@@ -139,7 +139,7 @@ internal static class GrantEnvelopeTestData
     {
         var publicKey = Convert.FromBase64String(
             agentPublicKey ?? Convert.ToBase64String(new byte[32]));
-        var fingerprint = VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentX25519);
+        var fingerprint = VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentEncryption);
         return AgentWrappedVaultKey.Create(
             organizationId,
             vaultId,
@@ -147,7 +147,7 @@ internal static class GrantEnvelopeTestData
             agentId,
             agentAccessEpoch,
             VaultProtocol.CurrentVersion,
-            X25519SealedBoxContract.SuiteId,
+            FrozenContractWrapperSuite.Id,
             vaultKeyVersion,
             recipientAgentKeyVersion,
             fingerprint,
@@ -176,15 +176,15 @@ internal static class GrantEnvelopeTestData
             agentId,
             agentAccessEpoch,
             VaultProtocol.CurrentVersion,
-            X25519SealedBoxContract.SuiteId,
+            FrozenContractWrapperSuite.Id,
             vaultKeyVersion,
             recipientAgentKeyVersion,
             VaultKeyFingerprint.Compute(
                 Convert.FromBase64String(agentPublicKey ?? Convert.ToBase64String(new byte[32])),
-                VaultKeyKind.AgentX25519),
+                VaultKeyKind.AgentEncryption),
             [.. Enumerable.Range(0, 120).Select(i => (byte)i)],
             vaultSigningKeyVersion,
-            VaultKeyFingerprint.Compute(signingPublicKey, VaultKeyKind.VaultSigningEd25519),
+            VaultKeyFingerprint.Compute(signingPublicKey, VaultKeyKind.VaultSigning),
             new byte[64]));
         var signature = VaultTrustAnchorFaker.SignWithManifestKey(
             AgentWrappedVaultKeyCryptoValidator.BuildSignatureInput(unsigned),

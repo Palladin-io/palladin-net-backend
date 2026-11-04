@@ -189,7 +189,7 @@ internal static class EntryUpdate
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh delivery policy does not match the Entry.");
                 }
                 var fingerprint = VaultKeyFingerprint.Compute(
-                    Convert.FromBase64String(agents[grant.AgentId].PublicKey), VaultKeyKind.AgentX25519);
+                    Convert.FromBase64String(agents[grant.AgentId].PublicKey), VaultKeyKind.AgentEncryption);
                 if (!refreshed.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))
                 {
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh Agent key is invalid.");
@@ -222,7 +222,7 @@ internal static class EntryUpdate
                         ScriptExecutionPackageContractMapper.ToDomain(contract);
                     var grantAgent = agents[grant.AgentId];
                     var fingerprint = VaultKeyFingerprint.Compute(
-                        Convert.FromBase64String(grantAgent.PublicKey), VaultKeyKind.AgentX25519);
+                        Convert.FromBase64String(grantAgent.PublicKey), VaultKeyKind.AgentEncryption);
                     if (replacement.OrganizationId != organizationId
                         || replacement.VaultId != req.VaultId
                         || replacement.GrantId != grant.Id

@@ -778,8 +778,22 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<Guid?>("LastSecurityUpgradeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("LegacyEncryptedPrivateKey")
+                        .HasMaxLength(4096)
+                        .HasColumnType("bytea");
+
+                    b.Property<long?>("LegacyMemberKeyVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("MemberKeyVersion")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("MemberPublicKeySuiteId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("MinimumSecurityVersion")
                         .HasColumnType("integer");

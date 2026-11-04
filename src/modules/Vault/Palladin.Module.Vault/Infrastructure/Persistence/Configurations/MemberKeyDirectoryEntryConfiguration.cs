@@ -1,5 +1,6 @@
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
+using Palladin.Core.Cryptography;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Palladin.Module.Vault.Domain;
 
@@ -15,7 +16,8 @@ internal sealed class MemberKeyDirectoryEntryConfiguration : IEntityTypeConfigur
             .HasConversion(x => (decimal)x.Value, x => new MemberRecipientKeyVersion((uint)x))
             .HasPrecision(10, 0);
         builder.Property(x => x.Fingerprint).IsRequired();
-        builder.Property(x => x.PublicKey).HasMaxLength(VaultProtocol.FingerprintBytes).IsRequired();
+        builder.Property(x => x.PublicKeySuiteId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.PublicKey).HasMaxLength(KeyWrapperSuites.MaximumPublicKeyBytes).IsRequired();
         builder.Property(x => x.UpdatedAt).IsConcurrencyToken();
     }
 }

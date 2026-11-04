@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 
@@ -45,21 +46,22 @@ internal sealed class AgentWrappedVaultKey
             throw new DomainException("Agent Vault-key wrapper protocol is invalid.");
         }
 
-        WrappedKeyPackageContract.ValidatePackage(wrapperSuiteId, encodedSealedVaultKeyPackage);
-        var context = new X25519WrapperContext(
-            X25519WrapperPurpose.AgentVaultKey,
+        KeyWrapperSuites.ResolveForOpen(wrapperSuiteId).ValidatePackage(encodedSealedVaultKeyPackage);
+        var context = new KeyWrapperContext(
+            wrapperSuiteId,
+            KeyWrapperPurpose.AgentVaultKey,
             new EnvelopeScope(organizationId, vaultId, GrantOrRequestId: grantId, AgentId: agentId),
             agentAccessEpoch,
             vaultKeyVersion,
             null,
-            VaultKeyKind.AgentX25519,
+            VaultKeyKind.AgentEncryption,
             recipientAgentKeyVersion,
             recipientAgentKeyFingerprint,
             null);
-        _ = X25519WrapperContextCodec.Encode(context);
-        X25519SealedBoxContract.ValidatePackage(encodedSealedVaultKeyPackage);
+        _ = KeyWrapperContextCodec.Encode(context);
+        FrozenContractWrapperSuite.Suite.ValidatePackage(encodedSealedVaultKeyPackage);
         if (protocolVersion != VaultProtocol.CurrentVersion
-            || !string.Equals(wrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
+            || !string.Equals(wrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal))
         {
             throw new DomainException("Agent Vault-key wrapper suite is invalid.");
         }

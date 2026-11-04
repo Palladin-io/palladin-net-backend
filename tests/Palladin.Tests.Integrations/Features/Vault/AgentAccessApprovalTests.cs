@@ -108,7 +108,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         json.RootElement.GetProperty("agentSigningKeyVersion").GetUInt32().ShouldBe(1u);
         json.RootElement.GetProperty("agentSigningKeyFingerprint").GetString().ShouldBe(
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(setup.Signing.PublicKeyBase64), VaultKeyKind.AgentEd25519)));
+                Convert.FromBase64String(setup.Signing.PublicKeyBase64), VaultKeyKind.AgentSigning)));
 
         var listResponse = await setup.UserClient.GetAsync("api/dashboard/pending-grants");
         var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());

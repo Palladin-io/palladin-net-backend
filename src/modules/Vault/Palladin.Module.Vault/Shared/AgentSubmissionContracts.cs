@@ -38,7 +38,9 @@ public sealed record AgentEntrySubmissionContract(
     [property: JsonRequired] string EncodedPayload,
     [property: JsonRequired] string EncodedAgentWrappedDek,
     [property: JsonRequired] string EncodedApproverWrappedDek,
-    [property: JsonRequired] string AgentSignature);
+    [property: JsonRequired] string AgentSignature,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AgentWrappedDekSuiteId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApproverWrappedDekSuiteId = null);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -59,7 +61,8 @@ public sealed record OrganizationApproverManifestContract(
     [property: JsonRequired] string IssuedAt,
     [property: JsonRequired] string Signature,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PreviousSigningKeyFingerprint = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContinuitySignature = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContinuitySignature = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? MessageKeySuiteId = null);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

@@ -27,7 +27,7 @@ internal sealed record ValidatedVaultManifest(
 {
     // A manifest without the signed field predates key-wrapper v1 and names an X25519 message key.
     internal string EffectiveVaultAgentMessageKeySuiteId =>
-        VaultAgentMessageKeySuiteId ?? Infrastructure.Crypto.FrozenContractWrapperSuite.Id;
+        VaultAgentMessageKeySuiteId ?? Infrastructure.Crypto.LegacyWrapperSuite.Id;
 }
 
 internal sealed record ValidatedAgentDiscoveryProvisioning(

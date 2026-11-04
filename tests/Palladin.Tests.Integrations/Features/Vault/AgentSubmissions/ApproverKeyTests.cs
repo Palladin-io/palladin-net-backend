@@ -231,7 +231,7 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         var rekeyed = await scenario.AddApproverMemberAsync();
         await scenario.BootstrapAsync();
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(rekeyed.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2,
-            FrozenContractWrapperSuite.Id);
+            LegacyWrapperSuite.Id);
 
         // When
         var (_, view) = await rekeyed.Client
@@ -384,7 +384,7 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         var submissionId = await scenario.SubmitAsync(agent, pending);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(
             scenario.Owner.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2,
-            FrozenContractWrapperSuite.Id);
+            LegacyWrapperSuite.Id);
         var (_, unavailable) = await scenario.Owner.Client
             .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
 

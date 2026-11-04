@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Security.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
@@ -56,11 +57,18 @@ internal static class AgentSubmissionIntake
 
         if (submission.AgentAccessEpoch != agent.AccessEpoch
             || submission.AgentKeyVersion != agent.RecipientKeyVersion
+            || submission.AgentWrappedDekSuiteId != agent.PublicKeySuiteId
             || !CryptographicOperations.FixedTimeEquals(
                 submission.AgentKeyFingerprint,
                 AgentRecipientKey.Fingerprint(agent)))
         {
             throw new SubmissionRejection(StatusCodes.Status409Conflict, "agent-key-mismatch");
+        }
+
+        if (!KeyWrapperSuites.ResolveForOpen(submission.AgentWrappedDekSuiteId).CanSeal
+            || !KeyWrapperSuites.ResolveForOpen(submission.ApproverWrappedDekSuiteId).CanSeal)
+        {
+            throw new SubmissionRejection(StatusCodes.Status409Conflict, "key-migration-pending");
         }
 
         if (!AgentSubmissionCrypto.VerifyAgentSignature(submission, Convert.FromBase64String(agent.SigningPublicKey)))
@@ -90,6 +98,7 @@ internal static class AgentSubmissionIntake
 
         if (submission.ApproverKeyVersion != keySet.KeyVersion
             || submission.ApproverManifestRevision != keySet.ManifestRevision
+            || submission.ApproverWrappedDekSuiteId != keySet.MessageKeySuiteId
             || !CryptographicOperations.FixedTimeEquals(
                 submission.ApproverMessageKeyFingerprint, keySet.MessageKeyFingerprint))
         {

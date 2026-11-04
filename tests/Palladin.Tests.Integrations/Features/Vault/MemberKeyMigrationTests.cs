@@ -75,7 +75,7 @@ public sealed class MemberKeyMigrationTests(ApiFactory apiFactory) : TestBase
         // Given
         var scenario = await SeedUpgradedMemberWithLegacyEnvelopeAsync();
         var request = RewrapRequest(scenario);
-        var legacySuite = KeyWrapperSuites.Resolve(FrozenContractWrapperSuite.Id);
+        var legacySuite = KeyWrapperSuites.Resolve(LegacyWrapperSuite.Id);
         var wrapped = request.WrappedVaultKey.WrappedVaultKey;
 
         // When
@@ -114,7 +114,7 @@ public sealed class MemberKeyMigrationTests(ApiFactory apiFactory) : TestBase
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id, VaultFaker.Create(
-            organizationId: organization.Id, createdBy: user.Id, memberWrapperSuiteId: FrozenContractWrapperSuite.Id));
+            organizationId: organization.Id, createdBy: user.Id, memberWrapperSuiteId: LegacyWrapperSuite.Id));
         var publicKey = RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PublicKeyBytes);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, publicKey, 2);
         return new Scenario(organization.Id, vault.Id, user.Id, publicKey, apiFactory.CreateAuthenticatedClient(user));

@@ -138,6 +138,7 @@ internal sealed class GetVaultKeyRotationFullGrantSourceEndpoint(
 [PublicAPI]
 public sealed record VaultKeyRotationPublicKeySourceResponse(
     VaultPublicKeyContract VaultAgentMessagePublicKey,
+    string VaultAgentMessageKeySuiteId,
     VaultPublicKeyContract VaultManifestSigningPublicKey);
 
 [PublicAPI]
@@ -166,6 +167,7 @@ internal sealed class GetVaultKeyRotationPublicKeySourceEndpoint(
             .SingleAsync(x => x.OrganizationId == organizationId && x.Id == req.VaultId, ct);
         await Send.OkAsync(new VaultKeyRotationPublicKeySourceResponse(
             VaultEnvelopeContractMapper.ToAgentMessagePublicKeyContract(vault),
+            vault.AgentMessageKeySuiteId,
             VaultEnvelopeContractMapper.ToManifestSigningPublicKeyContract(vault)), ct);
     }
 }

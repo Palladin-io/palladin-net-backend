@@ -28,7 +28,7 @@ internal static class ScriptExecutionPackageContractMapper
         }
 
         // A package without a signed wrapperSuiteId predates key-wrapper v1 and was sealed with the frozen suite.
-        var wrapperSuiteId = KeyWrapperSuites.ResolveForSeal(contract.WrapperSuiteId ?? FrozenContractWrapperSuite.Id).Id;
+        var wrapperSuiteId = KeyWrapperSuites.ResolveForSeal(contract.WrapperSuiteId ?? LegacyWrapperSuite.Id).Id;
         var scopes = contract.Scopes
             .Select(scope => ScriptExecutionScope.Create(
                 contract.OrganizationId,
@@ -86,5 +86,5 @@ internal static class ScriptExecutionPackageContractMapper
                     scope.EntryRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     scope.IsScript))
                 .ToArray(),
-            package.WrapperSuiteId == FrozenContractWrapperSuite.Id ? null : package.WrapperSuiteId);
+            package.WrapperSuiteId == LegacyWrapperSuite.Id ? null : package.WrapperSuiteId);
 }

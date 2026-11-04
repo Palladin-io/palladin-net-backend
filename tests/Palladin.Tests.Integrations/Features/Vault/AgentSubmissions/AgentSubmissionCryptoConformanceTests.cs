@@ -104,7 +104,7 @@ public sealed class AgentSubmissionCryptoConformanceTests
         parsedSecond.Document.ShouldBe(Canonical(JsonNode.Parse(Fixture.ManifestJson(1))!));
         AgentSubmissionCrypto.VerifyContinuity(second, parsedFirst.SigningPublicKey).ShouldBeTrue();
         parsedSecond.PreviousSigningKeyFingerprint.ShouldBe(parsedFirst.SigningKeyFingerprint);
-        var memberFingerprint = RecipientKeyFingerprint.Compute(FrozenContractWrapperSuite.Id, VaultKeyKind.MemberEncryption, Fixture.MemberX25519PublicKey);
+        var memberFingerprint = RecipientKeyFingerprint.Compute(LegacyWrapperSuite.Id, VaultKeyKind.MemberEncryption, Fixture.MemberX25519PublicKey);
         AgentSubmissionCrypto.ComputeApproverSetDigest([(Fixture.MemberId, Fixture.MemberKeyVersion, memberFingerprint)])
             .ShouldBe(parsedFirst.ApproverSetDigest);
     }

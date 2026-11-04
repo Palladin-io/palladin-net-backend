@@ -26,7 +26,7 @@ internal static class GrantEnvelopeTestData
         _ = signaturePrefix;
         var id = requestId ?? Guid.NewGuid();
         var scope = new EnvelopeScopeContract(organizationId, vaultId, entryId, id, agentId);
-        var binding = new ReasonEnvelopeBindingContract(FrozenContractWrapperSuite.Id,
+        var binding = new ReasonEnvelopeBindingContract(LegacyWrapperSuite.Id,
             agentMessageKeyVersion, recipientAgentMessageKeyFingerprint, (ushort)methods);
         var descriptor = new EnvelopeDescriptorContract<ReasonEnvelopeBindingContract>(
             VaultProtocol.CurrentVersion, CryptoSuiteId.XChaCha20Poly1305V1,
@@ -35,14 +35,14 @@ internal static class GrantEnvelopeTestData
             new CryptoSuiteId(CryptoSuiteId.XChaCha20Poly1305V1), EnvelopePurpose.EncryptedReason,
             new EnvelopeScope(organizationId, vaultId, entryId, id, agentId),
             ulong.Parse(resourceRevision), 1, 1,
-            new ReasonEnvelopeBinding(FrozenContractWrapperSuite.Id, agentMessageKeyVersion,
+            new ReasonEnvelopeBinding(LegacyWrapperSuite.Id, agentMessageKeyVersion,
                 WebEncoders.Base64UrlDecode(recipientAgentMessageKeyFingerprint), (ushort)methods));
         var parentHash = WebEncoders.Base64UrlEncode(KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor));
         var unsigned = new EncryptedReasonEnvelopeContract(
             descriptor,
             Base64Url(VaultProtocol.NonceBytes + 64),
             new WrappedKeyContract(
-                new KeyWrapperDescriptorContract(2, FrozenContractWrapperSuite.Id,
+                new KeyWrapperDescriptorContract(2, LegacyWrapperSuite.Id,
                     KeyWrapperPurposeContract.ReasonDek, scope, resourceRevision, 1, 1,
                     RecipientKeyKindContract.VaultAgentMessage, agentMessageKeyVersion,
                     recipientAgentMessageKeyFingerprint, parentHash),
@@ -83,14 +83,14 @@ internal static class GrantEnvelopeTestData
             Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentEncryption));
         var scope = new EnvelopeScopeContract(organizationId, vaultId, entryId, grantId, agentId);
         var commitment = WebEncoders.Base64UrlEncode(EnvelopeDescriptorCodec.ComputeFieldSetCommitment(fieldIds));
-        var binding = new GrantEnvelopeBindingContract(entryRevision.ToString(), FrozenContractWrapperSuite.Id,
+        var binding = new GrantEnvelopeBindingContract(entryRevision.ToString(), LegacyWrapperSuite.Id,
             1, fingerprint, (ushort)methods, (ushort)deliveryPolicy, commitment, expiresAt, remainingUses);
         var descriptor = new EnvelopeDescriptorContract<GrantEnvelopeBindingContract>(2,
             CryptoSuiteId.XChaCha20Poly1305V1, EnvelopePurposeContract.GrantPayload, scope,
             envelopeRevision.ToString(), grantKeyVersion, 1, binding);
         var domain = new EnvelopeDescriptor(2, new CryptoSuiteId(CryptoSuiteId.XChaCha20Poly1305V1), EnvelopePurpose.GrantPayload,
             new EnvelopeScope(organizationId, vaultId, entryId, grantId, agentId), envelopeRevision, grantKeyVersion, 1,
-            new GrantEnvelopeBinding(entryRevision, FrozenContractWrapperSuite.Id, 1,
+            new GrantEnvelopeBinding(entryRevision, LegacyWrapperSuite.Id, 1,
                 WebEncoders.Base64UrlDecode(fingerprint), (ushort)methods,
                 (ushort)deliveryPolicy, WebEncoders.Base64UrlDecode(commitment), expiresAt?.ToUnixTimeSeconds(),
                 expiresAt is null ? null : (uint)(expiresAt.Value.ToUnixTimeTicks() % NodaConstants.TicksPerSecond * 100),
@@ -98,7 +98,7 @@ internal static class GrantEnvelopeTestData
         var parentHash = WebEncoders.Base64UrlEncode(KeyWrapperContextCodec.ComputeParentDescriptorHash(domain));
         return new GrantEntryEnvelopeContract(descriptor, Base64Url(VaultProtocol.NonceBytes + 64),
             new WrappedKeyContract(new KeyWrapperDescriptorContract(2,
-                FrozenContractWrapperSuite.Id, KeyWrapperPurposeContract.GrantDek, scope,
+                LegacyWrapperSuite.Id, KeyWrapperPurposeContract.GrantDek, scope,
                 envelopeRevision.ToString(), grantKeyVersion, 1, RecipientKeyKindContract.AgentEncryption,
                 1, fingerprint, parentHash), Base64Url(120)), fieldIds);
     }
@@ -147,7 +147,7 @@ internal static class GrantEnvelopeTestData
             agentId,
             agentAccessEpoch,
             VaultProtocol.CurrentVersion,
-            FrozenContractWrapperSuite.Id,
+            LegacyWrapperSuite.Id,
             vaultKeyVersion,
             recipientAgentKeyVersion,
             fingerprint,
@@ -176,7 +176,7 @@ internal static class GrantEnvelopeTestData
             agentId,
             agentAccessEpoch,
             VaultProtocol.CurrentVersion,
-            FrozenContractWrapperSuite.Id,
+            LegacyWrapperSuite.Id,
             vaultKeyVersion,
             recipientAgentKeyVersion,
             VaultKeyFingerprint.Compute(

@@ -13,7 +13,7 @@ public sealed class MemberKeyFingerprintTests
             "044E05AA8EEE253C1F1990665CAEEBB1F344DF5930CB4C8CD3DAA1F1D18BD212");
 
         var fingerprint = RecipientKeyFingerprint.Compute(
-            FrozenContractWrapperSuite.Id, VaultKeyKind.MemberEncryption, rawPublicKey);
+            LegacyWrapperSuite.Id, VaultKeyKind.MemberEncryption, rawPublicKey);
 
         fingerprint.ShouldBe(Convert.FromHexString(
             "90CB62C757F01E8B892589B775F0B24DEDBC5C01BB953DDA612D7CAEA3D92813"));

@@ -17,7 +17,9 @@ public sealed record KeyMigrationReportResponse(
     KeyMigrationMemberKeyContract? MemberKey,
     int MemberEnvelopes,
     int MemberEnvelopesPendingRewrap,
-    int AgentEnvelopesOnNonCurrentSuite);
+    int AgentEnvelopesOnNonCurrentSuite,
+    int VaultAgentMessageKeysOnNonCurrentSuite,
+    int ApproverMessageKeysOnNonCurrentSuite);
 
 [PublicAPI]
 internal sealed class GetKeyMigrationReportEndpoint(VaultDomainReadContext domainReadContext)
@@ -32,7 +34,8 @@ internal sealed class GetKeyMigrationReportEndpoint(VaultDomainReadContext domai
             summary.Summary = "Report key-wrapper migration progress for the caller";
             summary.Description = "Counts the caller's current-generation Vault-key envelopes in the active organization that are not "
                 + "addressed to their current Member key and key-wrapper suite, plus Agent-addressed envelopes in "
-                + "the caller's Vaults that still use a non-current suite. The legacy Member key may be deleted only "
+                + "the caller's Vaults that still use a non-current suite, Vault agent-message keys (legacy manifests) and the "
+                + "organization approver message key on a non-current suite. The legacy Member key may be deleted only "
                 + "when memberEnvelopesPendingRewrap is zero.";
         });
         Tags("Vault/KeyMigration");
@@ -71,11 +74,19 @@ internal sealed class GetKeyMigrationReportEndpoint(VaultDomainReadContext domai
             .CountAsync(x => x.OrganizationId == organizationId && memberVaultIds.Contains(x.VaultId)
                              && x.WrapperSuiteId != currentSuiteId, ct);
 
+        var vaultMessageKeys = await domainReadContext.Vaults.CountAsync(x =>
+            x.OrganizationId == organizationId && memberVaultIds.Contains(x.Id)
+            && x.AgentMessageKeySuiteId != currentSuiteId, ct);
+        var approverMessageKeys = await domainReadContext.OrganizationApproverKeySets.CountAsync(x =>
+            x.OrganizationId == organizationId && x.MessageKeySuiteId != currentSuiteId, ct);
+
         await Send.OkAsync(new KeyMigrationReportResponse(
             currentSuiteId,
             memberKey is null ? null : new KeyMigrationMemberKeyContract(memberKey.KeyVersion.Value, memberKey.PublicKeySuiteId),
             memberEnvelopes,
             pendingRewrap,
-            agentDiscoveryEnvelopes + agentVaultKeys), ct);
+            agentDiscoveryEnvelopes + agentVaultKeys,
+            vaultMessageKeys,
+            approverMessageKeys), ct);
     }
 }

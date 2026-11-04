@@ -14,9 +14,10 @@ internal sealed record ApproverManifest(
     byte[] SigningPublicKey,
     byte[] SigningKeyFingerprint,
     byte[]? PreviousSigningKeyFingerprint,
-    string Document);
+    string Document,
+    string MessageKeySuiteId);
 
-// The organization approver group key: one versioned X25519 message key and Ed25519 signing key,
+// The organization approver group key: one versioned message key (key-wrapper suite) and Ed25519 signing key,
 // shared by current approvers through per-approver wraps. Only public keys and ciphertext are stored.
 internal sealed class OrganizationApproverKeySet
 {
@@ -25,6 +26,7 @@ internal sealed class OrganizationApproverKeySet
     public ulong ManifestRevision { get; private set; }
     public ulong ApproverSetRevision { get; private set; }
     public byte[] MessagePublicKey { get; private set; } = [];
+    public string MessageKeySuiteId { get; private set; } = string.Empty;
     public byte[] MessageKeyFingerprint { get; private set; } = [];
     public byte[] SigningPublicKey { get; private set; } = [];
     public byte[] SigningKeyFingerprint { get; private set; } = [];
@@ -131,6 +133,7 @@ internal sealed class OrganizationApproverKeySet
         ManifestRevision = manifest.ManifestRevision;
         ApproverSetRevision = manifest.ApproverSetRevision;
         MessagePublicKey = manifest.MessagePublicKey.ToArray();
+        MessageKeySuiteId = manifest.MessageKeySuiteId;
         MessageKeyFingerprint = manifest.MessageKeyFingerprint.ToArray();
         SigningPublicKey = manifest.SigningPublicKey.ToArray();
         SigningKeyFingerprint = manifest.SigningKeyFingerprint.ToArray();

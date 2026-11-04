@@ -391,7 +391,7 @@ internal sealed class AgentSubmissionScenario
     private static async Task<ScenarioMember> RegisterApproverAsync(ApiFactory apiFactory, User user, Guid organizationId)
     {
         var publicKey = RandomNumberGenerator.GetBytes(32);
-        await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, publicKey, suiteId: FrozenContractWrapperSuite.Id);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, publicKey, suiteId: LegacyWrapperSuite.Id);
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
             var context = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();

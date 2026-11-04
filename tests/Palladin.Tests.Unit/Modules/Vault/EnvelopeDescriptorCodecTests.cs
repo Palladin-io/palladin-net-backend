@@ -60,7 +60,7 @@ public sealed class EnvelopeDescriptorCodecTests
             9,
             new GrantEnvelopeBinding(
                 6,
-                FrozenContractWrapperSuite.Id,
+                LegacyWrapperSuite.Id,
                 4,
                 Enumerable.Repeat((byte)0x5a, 32).ToArray(),
                 3,
@@ -145,10 +145,10 @@ public sealed class EnvelopeDescriptorCodecTests
     [Fact]
     public void WrappedKeyPackage_DispatchesValidationBySuite()
     {
-        KeyWrapperSuites.ResolveForOpen(FrozenContractWrapperSuite.Id).ValidatePackage(new byte[120]);
+        KeyWrapperSuites.ResolveForOpen(LegacyWrapperSuite.Id).ValidatePackage(new byte[120]);
 
         Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen(
-            FrozenContractWrapperSuite.Id).ValidatePackage(new byte[80]));
+            LegacyWrapperSuite.Id).ValidatePackage(new byte[80]));
         Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen(
             KeyWrapperSuites.Current.Id).ValidatePackage(new byte[120]));
         Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen("unsupported-suite"));
@@ -178,7 +178,7 @@ public sealed class EnvelopeDescriptorCodecTests
         var root = fixture.RootElement;
         var value = root.GetProperty("context");
         var context = new KeyWrapperContext(
-            FrozenContractWrapperSuite.Id,
+            LegacyWrapperSuite.Id,
             (KeyWrapperPurpose)value.GetProperty("purpose").GetUInt16(), Scope(value),
             value.GetProperty("resourceRevision").GetUInt64(),
             value.GetProperty("wrappedKeyVersion").GetUInt32(),
@@ -190,7 +190,7 @@ public sealed class EnvelopeDescriptorCodecTests
 
         Convert.ToHexStringLower(KeyWrapperContextCodec.Encode(context)).ShouldBe(
             root.GetProperty("expectedContextHex").GetString());
-        FrozenContractWrapperSuite.Suite.ValidatePackage(
+        LegacyWrapperSuite.Suite.ValidatePackage(
             Convert.FromHexString(root.GetProperty("sealedPackageHex").GetString()!));
     }
 

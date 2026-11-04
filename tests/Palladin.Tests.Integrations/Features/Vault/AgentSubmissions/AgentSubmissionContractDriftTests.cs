@@ -54,7 +54,7 @@ public sealed class AgentSubmissionContractDriftTests
         Contract["approverKeySet"]!["manifest"]!["schema"]!.GetValue<string>().ShouldBe(AgentSubmissionCrypto.ManifestSchema);
         Contract["submission"]!["schema"]!.GetValue<string>().ShouldBe(AgentSubmissionCrypto.SubmissionSchema);
         Contract["submission"]!["dekWrapping"]!["decodedSealedPackageBytes"]!.GetValue<int>()
-            .ShouldBe(FrozenContractWrapperSuite.PackageBytes);
+            .ShouldBe(LegacyWrapperSuite.PackageBytes);
         Contract["protocolVersion"]!.GetValue<int>().ShouldBe(VaultProtocol.CurrentVersion);
         Contract["contractVersion"]!.GetValue<int>().ShouldBe(AgentSubmissionLimits.ContractVersion);
     }

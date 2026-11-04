@@ -47,7 +47,7 @@ internal static class VaultManifestCryptoValidator
             throw new DomainException("Agent Discovery wrapper descriptor is invalid.");
         _ = KeyWrapperContextCodec.Encode(wrapperContext);
         KeyWrapperSuites.ResolveForOpen(envelope.WrappedVdk.Descriptor.WrapperSuiteId).ValidatePackage(wrappedVdk);
-        var vaultMessageKeySuiteId = manifest.VaultAgentMessageKeySuiteId ?? FrozenContractWrapperSuite.Id;
+        var vaultMessageKeySuiteId = manifest.VaultAgentMessageKeySuiteId ?? LegacyWrapperSuite.Id;
         var agentEd25519Key = DecodeAgentPublicKey(agent.SigningPublicKey, VaultKeyKind.AgentSigning);
         var vaultSigningKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultSigningPublicKey);
         var vaultMessageKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultAgentMessagePublicKey);

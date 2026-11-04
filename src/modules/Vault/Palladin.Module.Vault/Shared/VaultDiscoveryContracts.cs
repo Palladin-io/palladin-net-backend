@@ -29,7 +29,7 @@ public sealed record AgentVaultDiscoveryEnvelopeContract(
         : this(protocolVersion, organizationId, vaultId, agentId, vdkVersion,
             new WrappedKeyContract(
                 new KeyWrapperDescriptorContract(protocolVersion,
-                    Infrastructure.Crypto.FrozenContractWrapperSuite.Id, KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
+                    Infrastructure.Crypto.LegacyWrapperSuite.Id, KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
                     new EnvelopeScopeContract(organizationId, vaultId, AgentId: agentId),
                     vdkVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), vdkVersion, null,
                     RecipientKeyKindContract.AgentEncryption, recipientKeyVersion,
@@ -69,7 +69,7 @@ public sealed record VaultManifestContract(
         string vaultAgentMessagePublicKey, string vaultAgentMessageKeyFingerprint,
         uint agentMessageKeyVersion, uint vdkVersion, string agentWrappedVdkDigest,
         string manifestRevision, Instant issuedAt, ushort minimumAgentRuntimeProtocol, string signature)
-        : this(protocolVersion, "palladin-vault-xchacha-v1", Infrastructure.Crypto.FrozenContractWrapperSuite.Id,
+        : this(protocolVersion, "palladin-vault-xchacha-v1", Infrastructure.Crypto.LegacyWrapperSuite.Id,
             "palladin-ed25519-v1", organizationId, vaultId, agentId, agentX25519Fingerprint,
             agentEd25519Fingerprint, vaultSigningPublicKey, vaultSigningKeyFingerprint,
             manifestSigningKeyVersion, vaultAgentMessagePublicKey, vaultAgentMessageKeyFingerprint,

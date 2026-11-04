@@ -29,8 +29,8 @@ public sealed record GetGrantRequest : IRequiresVaultMembership
 // plaintext reason, secret values, or private/unwrapped key material.
 // AgentName and actor names are resolved server-side from non-vault replicas. EntryLabel and
 // UrlDomain remain null because vault-entry metadata is encrypted and interpreted only by clients.
-// AgentPublicKey is the agent's X25519 PUBLIC key (base64) — NOT a secret. The approving user's
-// client needs it to wrap the GrantDEK on approval.
+// AgentPublicKey/AgentKeySuiteId are the agent's encryption key publication (base64, NOT a secret).
+// The approving user's client seals the GrantDEK to it under exactly that suite.
 [PublicAPI]
 public sealed record GrantResponse(
     Guid Id,
@@ -40,6 +40,7 @@ public sealed record GrantResponse(
     string? AgentName,
     string? AgentIconKey,
     string? AgentPublicKey,
+    string? AgentKeySuiteId,
     uint? RecipientAgentKeyVersion,
     string? AgentSigningPublicKey,
     uint? AgentSigningKeyVersion,
@@ -232,6 +233,7 @@ internal static class GrantProjection
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.Name).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.IconKey).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.PublicKey).FirstOrDefault(),
+            ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.PublicKeySuiteId).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => (uint?)a.RecipientKeyVersion).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.SigningPublicKey).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => (uint?)1).FirstOrDefault(),

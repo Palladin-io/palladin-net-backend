@@ -41,6 +41,7 @@ public sealed record CreateVaultResponse(
     VaultDiscoveryKeyEnvelopeContract DiscoveryKey,
     IReadOnlyList<VaultPrivateKeyEnvelopeContract> VaultPrivateKeys,
     VaultPublicKeyContract VaultAgentMessagePublicKey,
+    string VaultAgentMessageKeySuiteId,
     VaultPublicKeyContract VaultManifestSigningPublicKey,
     Instant CreatedAt,
     Instant UpdatedAt);
@@ -301,6 +302,7 @@ internal sealed class CreateVaultEndpoint(
             .Select(VaultEnvelopeContractMapper.ToPrivateKeyContract)
             .ToArray(),
         VaultEnvelopeContractMapper.ToAgentMessagePublicKeyContract(vault),
+        vault.AgentMessageKeySuiteId,
         VaultEnvelopeContractMapper.ToManifestSigningPublicKeyContract(vault),
         vault.CreatedAt,
         vault.UpdatedAt);

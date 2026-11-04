@@ -29,6 +29,7 @@ public sealed record GetVaultResponse(
     VaultDiscoveryKeyEnvelopeContract DiscoveryKey,
     IReadOnlyList<VaultPrivateKeyEnvelopeContract> VaultPrivateKeys,
     VaultPublicKeyContract VaultAgentMessagePublicKey,
+    string VaultAgentMessageKeySuiteId,
     VaultPublicKeyContract VaultManifestSigningPublicKey,
     Instant CreatedAt,
     Instant UpdatedAt,
@@ -103,6 +104,7 @@ internal sealed class GetVaultEndpoint(VaultDomainReadContext domainReadContext)
                 .Select(VaultEnvelopeContractMapper.ToPrivateKeyContract)
                 .ToArray(),
             VaultEnvelopeContractMapper.ToAgentMessagePublicKeyContract(vault),
+            vault.AgentMessageKeySuiteId,
             VaultEnvelopeContractMapper.ToManifestSigningPublicKeyContract(vault),
             vault.CreatedAt,
             vault.UpdatedAt,

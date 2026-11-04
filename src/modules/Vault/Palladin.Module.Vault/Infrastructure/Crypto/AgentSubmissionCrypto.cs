@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -27,6 +28,8 @@ internal sealed record ParsedAgentSubmission(
     ulong AgentAccessEpoch,
     uint AgentKeyVersion,
     byte[] AgentKeyFingerprint,
+    string AgentWrappedDekSuiteId,
+    string ApproverWrappedDekSuiteId,
     uint ApproverKeyVersion,
     byte[] ApproverMessageKeyFingerprint,
     ulong ApproverManifestRevision,
@@ -42,7 +45,9 @@ internal sealed record ParsedAgentSubmission(
 internal static class AgentSubmissionCrypto
 {
     internal const string SubmissionSchema = "palladin.agent-entry-submission.v1";
+    internal const string SubmissionSchemaV2 = "palladin.agent-entry-submission.v2";
     internal const string ManifestSchema = "palladin.organization-approver-manifest.v1";
+    internal const string ManifestSchemaV2 = "palladin.organization-approver-manifest.v2";
     internal const ushort ApproverWrapScopeBitmap = 33;
 
     private static readonly byte[] SubmissionSignatureDomain = "PLDNSUB1SIG:AGENT-SUBMISSION:"u8.ToArray();
@@ -53,8 +58,11 @@ internal static class AgentSubmissionCrypto
 
     internal static ParsedAgentSubmission ParseSubmission(AgentEntrySubmissionContract? contract)
     {
+        var isSuccessor = contract?.Schema == SubmissionSchemaV2;
         if (contract is null || contract.Target is null
-            || contract.Schema != SubmissionSchema
+            || (contract.Schema != SubmissionSchema && !isSuccessor)
+            || isSuccessor != (contract.AgentWrappedDekSuiteId is not null)
+            || isSuccessor != (contract.ApproverWrappedDekSuiteId is not null)
             || contract.ContractVersion != AgentSubmissionLimits.ContractVersion
             || contract.ProtocolVersion != VaultProtocol.CurrentVersion)
         {
@@ -81,8 +89,11 @@ internal static class AgentSubmissionCrypto
             throw new AgentSubmissionInputException("invalid-input");
         }
 
-        DecodeBinary(contract.EncodedAgentWrappedDek, FrozenContractWrapperSuite.PackageBytes);
-        DecodeBinary(contract.EncodedApproverWrappedDek, FrozenContractWrapperSuite.PackageBytes);
+        // v1 submissions predate key-wrapper v1 and seal both DEKs with the frozen suite.
+        var agentWrappedDekSuite = ResolveSuite(contract.AgentWrappedDekSuiteId ?? LegacyWrapperSuite.Id);
+        var approverWrappedDekSuite = ResolveSuite(contract.ApproverWrappedDekSuiteId ?? LegacyWrapperSuite.Id);
+        DecodeBinary(contract.EncodedAgentWrappedDek, agentWrappedDekSuite.PackageBytes);
+        DecodeBinary(contract.EncodedApproverWrappedDek, approverWrappedDekSuite.PackageBytes);
         var signature = DecodeBinary(contract.AgentSignature, 64);
         var agentKeyFingerprint = DecodeBinary(contract.AgentKeyFingerprint, VaultProtocol.FingerprintBytes);
         var approverMessageKeyFingerprint = DecodeBinary(
@@ -117,6 +128,12 @@ internal static class AgentSubmissionCrypto
             ["encodedAgentWrappedDek"] = contract.EncodedAgentWrappedDek,
             ["encodedApproverWrappedDek"] = contract.EncodedApproverWrappedDek,
         };
+        if (isSuccessor)
+        {
+            unsigned["agentWrappedDekSuiteId"] = contract.AgentWrappedDekSuiteId!;
+            unsigned["approverWrappedDekSuiteId"] = contract.ApproverWrappedDekSuiteId!;
+        }
+
         var signed = new Dictionary<string, object>(unsigned) { ["agentSignature"] = contract.AgentSignature };
 
         return new ParsedAgentSubmission(
@@ -130,6 +147,8 @@ internal static class AgentSubmissionCrypto
             ParseUInt64(contract.AgentAccessEpoch),
             contract.AgentKeyVersion,
             agentKeyFingerprint,
+            agentWrappedDekSuite.Id,
+            approverWrappedDekSuite.Id,
             contract.ApproverKeyVersion,
             approverMessageKeyFingerprint,
             ParseUInt64(contract.ApproverManifestRevision),
@@ -145,7 +164,9 @@ internal static class AgentSubmissionCrypto
 
     internal static ApproverManifest ParseManifest(OrganizationApproverManifestContract? contract)
     {
-        if (contract is null || contract.Schema != ManifestSchema
+        var isSuccessor = contract?.Schema == ManifestSchemaV2;
+        if (contract is null || (contract.Schema != ManifestSchema && !isSuccessor)
+            || isSuccessor != (contract.MessageKeySuiteId is not null)
             || contract.ContractVersion != AgentSubmissionLimits.ContractVersion
             || contract.ProtocolVersion != VaultProtocol.CurrentVersion
             || contract.KeyVersion == 0
@@ -157,7 +178,8 @@ internal static class AgentSubmissionCrypto
             throw new AgentSubmissionInputException("invalid-manifest");
         }
 
-        var messagePublicKey = DecodeBinary(contract.MessagePublicKey, 32, "invalid-manifest");
+        var messageKeySuite = ResolveSuite(contract.MessageKeySuiteId ?? LegacyWrapperSuite.Id, "invalid-manifest");
+        var messagePublicKey = DecodeBinary(contract.MessagePublicKey, messageKeySuite.PublicKeyBytes, "invalid-manifest");
         var signingPublicKey = DecodeBinary(contract.SigningPublicKey, 32, "invalid-manifest");
         var messageFingerprint = DecodeBinary(contract.MessageKeyFingerprint, 32, "invalid-manifest");
         var signingFingerprint = DecodeBinary(contract.SigningKeyFingerprint, 32, "invalid-manifest");
@@ -172,7 +194,7 @@ internal static class AgentSubmissionCrypto
         }
 
         if (!CryptographicOperations.FixedTimeEquals(messageFingerprint,
-                VaultKeyFingerprint.Compute(messagePublicKey, VaultKeyKind.OrganizationApproverMessage))
+                messageKeySuite.Fingerprint((ushort)VaultKeyKind.OrganizationApproverMessage, messagePublicKey))
             || !CryptographicOperations.FixedTimeEquals(signingFingerprint,
                 VaultKeyFingerprint.Compute(signingPublicKey, VaultKeyKind.OrganizationApproverSigning)))
         {
@@ -202,7 +224,20 @@ internal static class AgentSubmissionCrypto
             signingPublicKey,
             signingFingerprint,
             previousSigningKeyFingerprint,
-            CanonicalJson.SerializeToString(signed));
+            CanonicalJson.SerializeToString(signed),
+            messageKeySuite.Id);
+    }
+
+    private static KeyWrapperSuite ResolveSuite(string suiteId, string code = "invalid-input")
+    {
+        try
+        {
+            return KeyWrapperSuites.ResolveForOpen(suiteId);
+        }
+        catch (DomainException)
+        {
+            throw new AgentSubmissionInputException(code);
+        }
     }
 
     internal static bool VerifyContinuity(OrganizationApproverManifestContract contract, byte[] previousSigningPublicKey) =>
@@ -341,6 +376,11 @@ internal static class AgentSubmissionCrypto
         if (contract.PreviousSigningKeyFingerprint is not null)
         {
             unsigned["previousSigningKeyFingerprint"] = contract.PreviousSigningKeyFingerprint;
+        }
+
+        if (contract.MessageKeySuiteId is not null)
+        {
+            unsigned["messageKeySuiteId"] = contract.MessageKeySuiteId;
         }
 
         return unsigned;

@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -13,7 +14,8 @@ internal sealed class OrganizationApproverKeySetConfiguration : IEntityTypeConfi
         builder.HasKey(x => x.OrganizationId);
         builder.Property(x => x.ManifestRevision).HasConversion(x => (decimal)x, x => (ulong)x).HasPrecision(20, 0);
         builder.Property(x => x.ApproverSetRevision).HasConversion(x => (decimal)x, x => (ulong)x).HasPrecision(20, 0);
-        builder.Property(x => x.MessagePublicKey).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.MessagePublicKey).HasMaxLength(KeyWrapperSuites.MaximumPublicKeyBytes).IsRequired();
+        builder.Property(x => x.MessageKeySuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.MessageKeyFingerprint).HasMaxLength(32).IsRequired();
         builder.Property(x => x.SigningPublicKey).HasMaxLength(32).IsRequired();
         builder.Property(x => x.SigningKeyFingerprint).HasMaxLength(32).IsRequired();

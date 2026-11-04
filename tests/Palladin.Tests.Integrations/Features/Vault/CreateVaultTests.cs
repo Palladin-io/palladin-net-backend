@@ -123,7 +123,7 @@ public sealed class CreateVaultTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
-        var legacySuite = KeyWrapperSuites.Resolve(FrozenContractWrapperSuite.Id);
+        var legacySuite = KeyWrapperSuites.Resolve(LegacyWrapperSuite.Id);
         var legacyKey = Enumerable.Repeat((byte)0x5A, legacySuite.PublicKeyBytes).ToArray();
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, legacyKey, suiteId: legacySuite.Id);
         var client = apiFactory.CreateAuthenticatedClient(user);
@@ -158,7 +158,7 @@ public sealed class CreateVaultTests(ApiFactory apiFactory) : TestBase
     {
         // Given
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
-        var legacySuite = KeyWrapperSuites.Resolve(FrozenContractWrapperSuite.Id);
+        var legacySuite = KeyWrapperSuites.Resolve(LegacyWrapperSuite.Id);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(
             user.Id, new byte[legacySuite.PublicKeyBytes], suiteId: legacySuite.Id);
         var client = apiFactory.CreateAuthenticatedClient(user);

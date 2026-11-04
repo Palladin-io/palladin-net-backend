@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Json;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Persistence;
@@ -15,6 +16,7 @@ namespace Palladin.Module.Identity.Features;
 
 [PublicAPI]
 public sealed record IssueRecoveryChallengeResponse(
+    ushort Version,
     [property: JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] byte[] SealedChallenge,
     Instant ExpiresAt);
 
@@ -32,9 +34,11 @@ internal sealed class IssueRecoveryChallengeEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Issue an account recovery challenge";
-            summary.Description = "Seals a fresh single-use secret to the account's X25519 identity key. Only a client "
-                + "that unlocked the private key (for example with the recovery phrase) can open it and present the "
-                + "secret as recoveryProof to PUT api/account/recovery. A new challenge replaces any outstanding one.";
+            summary.Description = "Seals a fresh single-use secret to the account's current Member key: version 2 "
+                + "(X-Wing, 1168 bytes) for current-suite keys, version 1 (sealed box) for accounts that have not "
+                + "upgraded yet. Only a client that unlocked the private key (for example with the recovery phrase) "
+                + "can open it and present the secret as recoveryProof to PUT api/account/recovery. A new challenge "
+                + "replaces any outstanding one.";
         });
         Tags("Identity/Account");
     }
@@ -49,20 +53,27 @@ internal sealed class IssueRecoveryChallengeEndpoint(
         }
 
         var user = await domainWriteContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is not { IsOnboarded: true, PublicKey: { Length: 32 } publicKey })
+        if (user is not { IsOnboarded: true, PublicKey: { } publicKey, MemberPublicKeySuiteId: { } suiteId })
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
+        var isCurrentSuite = suiteId == KeyWrapperSuites.Current.Id;
+
         var secret = RandomNumberGenerator.GetBytes(RecoveryChallengeSealer.SecretBytes);
         try
         {
             var expiresAt = clock.GetCurrentInstant() + Duration.FromSeconds(options.Value.ChallengeTtlSeconds);
-            var sealedChallenge = RecoveryChallengeSealer.Seal(user.Id, secret, publicKey);
+            var sealedChallenge = isCurrentSuite
+                ? XWingRecoveryChallengeSealer.Seal(user.Id, secret, publicKey)
+                : RecoveryChallengeSealer.Seal(user.Id, secret, publicKey);
             user.IssueRecoveryChallenge(secret, expiresAt);
             await domainWriteContext.CommitAsync(ct);
-            await Send.OkAsync(new IssueRecoveryChallengeResponse(sealedChallenge, expiresAt), ct);
+            await Send.OkAsync(new IssueRecoveryChallengeResponse(
+                isCurrentSuite ? XWingRecoveryChallengeSealer.Version : RecoveryChallengeSealer.Version,
+                sealedChallenge,
+                expiresAt), ct);
         }
         finally
         {

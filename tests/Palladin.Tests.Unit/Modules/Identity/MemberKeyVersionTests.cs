@@ -47,6 +47,7 @@ public sealed class MemberKeyVersionTests
             Enumerable.Repeat((byte)0x44, 32).ToArray(),
             null,
             true,
+            "web",
             now + Duration.FromMinutes(1));
 
         user.PublicKey.ShouldBe(publicKey);

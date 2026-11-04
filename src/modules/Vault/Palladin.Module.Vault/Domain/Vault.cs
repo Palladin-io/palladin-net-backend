@@ -225,6 +225,33 @@ internal sealed class Vault : EventEntityBase
         return added;
     }
 
+    internal bool RewrapMemberKey(
+        Guid userId,
+        MemberWrappedVaultKey wrappedVaultKey,
+        MemberRecipientKeyVersion expectedRecipientKeyVersion,
+        Instant now)
+    {
+        ValidateMemberKey(Scope, userId, wrappedVaultKey, MemberKeyGeneration, CurrentVaultKeyVersion);
+        var current = VaultMemberKeyEnvelopes.SingleOrDefault(x =>
+                          x.MemberId == userId && x.MemberKeyGeneration == MemberKeyGeneration)
+                      ?? throw new DomainException("The Vault Member has no current wrapped Vault key.");
+        if (current.Matches(wrappedVaultKey))
+        {
+            return false;
+        }
+
+        if (current.RecipientKeyVersion != expectedRecipientKeyVersion
+            || wrappedVaultKey.RecipientKeyVersion.Value <= current.RecipientKeyVersion.Value)
+        {
+            throw new MemberKeyEnvelopeChangedException();
+        }
+
+        current.Replace(wrappedVaultKey);
+        AdvanceMutationVersion();
+        EmitSyncInvalidated(now);
+        return true;
+    }
+
     internal void ReplaceMetadata(
         Guid updatedBy,
         string actorName,

@@ -18,7 +18,7 @@ internal sealed class AccountRecoveryCompletedTrigger(IAnalyticsService analytic
     public Task Consume(ConsumeContext<AccountRecoveryCompletedEvent> context)
     {
         var msg = context.Message;
-        analyticsService.CaptureEvent(msg.UserId.ToString(), "identity", "account-recovery-completed");
+        analyticsService.CaptureEvent(msg.UserId.ToString(), "identity", "account-recovered");
         return Task.CompletedTask;
     }
 }

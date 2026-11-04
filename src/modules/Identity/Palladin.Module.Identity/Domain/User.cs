@@ -425,6 +425,7 @@ internal sealed class User : EventEntityBase
         byte[] newEncryptedPrivateKeyByRecovery,
         byte[]? newDeviceWrapperMetadata,
         bool rotatesPasswordCredential,
+        string client,
         Instant now)
     {
         EnsureRegisteredKdfProfile();
@@ -444,9 +445,12 @@ internal sealed class User : EventEntityBase
             : CredentialRevision;
         PrivateKeyWrapRevision = IncrementRevision(PrivateKeyWrapRevision);
         DeviceWrapperMetadata = newDeviceWrapperMetadata;
+        LegacyEncryptedPrivateKey = null;
+        LegacyMemberKeyVersion = null;
         UpdatedAt = now;
 
-        EmitAccountRecoveryCompleted();
+        AddEvent(new AccountRecoveryCompletedEvent(
+            Id, OrganizationId, DisplayName, Email, PreferredLanguage.Code, client, UpdatedAt));
     }
 
     // Master-password change (Variant A): re-wraps the private key under the new MK and rotates the enc
@@ -541,6 +545,4 @@ internal sealed class User : EventEntityBase
             Id, MemberKeyVersion.Value, MemberPublicKeySuiteId, PublicKey.ToArray(), UpdatedAt));
     }
 
-    private void EmitAccountRecoveryCompleted() =>
-        AddEvent(new AccountRecoveryCompletedEvent(Id, OrganizationId, DisplayName, UpdatedAt));
 }

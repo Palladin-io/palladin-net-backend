@@ -9,6 +9,7 @@ namespace Palladin.Module.Identity.Infrastructure.Recovery;
 // for the same identity key, so a client never returns the plaintext of a Vault key wrapper as proof.
 internal static class RecoveryChallengeSealer
 {
+    internal const ushort Version = 1;
     internal const int SecretBytes = 32;
     private const int SealBytes = 48;
     private static readonly byte[] Magic = "PLDNRCV1"u8.ToArray();

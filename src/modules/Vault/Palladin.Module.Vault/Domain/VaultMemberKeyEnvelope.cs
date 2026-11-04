@@ -111,6 +111,23 @@ internal sealed class VaultMemberKeyEnvelope
         SealedVaultKeyPackage = wrappedVaultKey.SealedVaultKeyPackage.ToArray(),
     };
 
+    internal bool Matches(MemberWrappedVaultKey wrappedVaultKey) =>
+        WrapperSuiteId == wrappedVaultKey.WrapperSuiteId
+        && RecipientKeyVersion == wrappedVaultKey.RecipientKeyVersion
+        && VaultKeyVersion == wrappedVaultKey.VaultKeyVersion
+        && RecipientKeyFingerprint.AsSpan().SequenceEqual(wrappedVaultKey.RecipientKeyFingerprint)
+        && SealedVaultKeyPackage.AsSpan().SequenceEqual(wrappedVaultKey.SealedVaultKeyPackage);
+
+    internal void Replace(MemberWrappedVaultKey wrappedVaultKey)
+    {
+        ProtocolVersion = wrappedVaultKey.ProtocolVersion;
+        WrapperSuiteId = wrappedVaultKey.WrapperSuiteId;
+        VaultKeyVersion = wrappedVaultKey.VaultKeyVersion;
+        RecipientKeyVersion = wrappedVaultKey.RecipientKeyVersion;
+        RecipientKeyFingerprint = wrappedVaultKey.RecipientKeyFingerprint.ToArray();
+        SealedVaultKeyPackage = wrappedVaultKey.SealedVaultKeyPackage.ToArray();
+    }
+
     internal MemberWrappedVaultKey GetWrappedVaultKey() => MemberWrappedVaultKey.Create(
         new VaultScope(OrganizationId, VaultId),
         MemberId,

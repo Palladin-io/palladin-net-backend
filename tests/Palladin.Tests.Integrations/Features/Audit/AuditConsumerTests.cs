@@ -567,7 +567,7 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
         // Given
         var orgId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        var evt = new AccountRecoveryCompletedEvent(userId, orgId, "Dave",
+        var evt = new AccountRecoveryCompletedEvent(userId, orgId, "Dave", "dave@example.com", "en", "web",
             apiFactory.FakeClock.GetCurrentInstant());
 
         // When

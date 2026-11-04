@@ -58,7 +58,7 @@ internal static class AgentSubmissionIntake
             || submission.AgentKeyVersion != agent.RecipientKeyVersion
             || !CryptographicOperations.FixedTimeEquals(
                 submission.AgentKeyFingerprint,
-                VaultKeyFingerprint.Compute(Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption)))
+                AgentRecipientKey.Fingerprint(agent)))
         {
             throw new SubmissionRejection(StatusCodes.Status409Conflict, "agent-key-mismatch");
         }

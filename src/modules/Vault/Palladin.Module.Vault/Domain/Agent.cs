@@ -3,12 +3,15 @@ using NodaTime;
 
 namespace Palladin.Module.Vault.Domain;
 
+// Event-fed replica of the Agent's encryption key publication: PublicKey is the encryption key (not the
+// X-Agent-Key identifier) and PublicKeySuiteId its key-wrapper suite.
 internal sealed class Agent
 {
     public Guid Id { get; private set; }
     public Guid OrganizationId { get; private set; }
     public AgentStatus Status { get; private set; }
     public string PublicKey { get; private set; } = string.Empty;
+    public string PublicKeySuiteId { get; private set; } = string.Empty;
     public uint RecipientKeyVersion { get; private set; }
     public string SigningPublicKey { get; private set; } = string.Empty;
     public string? Name { get; private set; }
@@ -28,6 +31,7 @@ internal sealed class Agent
         Guid organizationId,
         AgentStatus status,
         string publicKey,
+        string publicKeySuiteId,
         uint recipientKeyVersion,
         string signingPublicKey,
         string? name,
@@ -38,6 +42,7 @@ internal sealed class Agent
         Instant updatedAt) =>
         new()
         {
+            PublicKeySuiteId = publicKeySuiteId,
             Id = id,
             OrganizationId = organizationId,
             Status = status,
@@ -56,6 +61,7 @@ internal sealed class Agent
     internal void Apply(
         AgentStatus status,
         string publicKey,
+        string publicKeySuiteId,
         uint recipientKeyVersion,
         string signingPublicKey,
         string? name,
@@ -67,6 +73,7 @@ internal sealed class Agent
     {
         Status = status;
         PublicKey = publicKey;
+        PublicKeySuiteId = publicKeySuiteId;
         RecipientKeyVersion = recipientKeyVersion;
         SigningPublicKey = signingPublicKey;
         Name = name;

@@ -73,7 +73,8 @@ public sealed record ApproverKeyWrapDescriptorContract(
     [property: JsonRequired] uint WrappedKeyVersion,
     [property: JsonRequired] ushort RecipientKeyKind,
     [property: JsonRequired] uint RecipientKeyVersion,
-    [property: JsonRequired] string RecipientFingerprint);
+    [property: JsonRequired] string RecipientFingerprint,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WrapperSuiteId = null);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -87,7 +88,8 @@ public sealed record ApproverContract(
     uint MemberKeyVersion,
     string MemberKeyFingerprint,
     string MemberPublicKey,
-    bool HasWrap);
+    bool HasWrap,
+    string MemberKeySuiteId);
 
 [PublicAPI]
 public sealed record SubmissionErrorResponse(string Code);

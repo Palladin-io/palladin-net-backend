@@ -17,7 +17,8 @@ internal static class EncryptedReasonValidator
     internal static EncryptedReasonEnvelope ToDomain(
         EncryptedReasonEnvelopeContract contract,
         string agentSigningPublicKey,
-        byte[] expectedRecipientAgentMessageKeyFingerprint)
+        byte[] expectedRecipientAgentMessageKeyFingerprint,
+        string expectedRecipientAgentMessageKeySuiteId)
     {
         if (contract.Descriptor?.Scope is null
             || contract.Descriptor.Binding is null
@@ -26,7 +27,7 @@ internal static class EncryptedReasonValidator
         var binding = contract.Descriptor.Binding;
         var fingerprint = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(binding.RecipientKeyFingerprint);
         if (!CryptographicOperations.FixedTimeEquals(fingerprint, expectedRecipientAgentMessageKeyFingerprint)
-            || !string.Equals(binding.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal))
+            || !string.Equals(binding.WrapperSuiteId, expectedRecipientAgentMessageKeySuiteId, StringComparison.Ordinal))
             throw new DomainException("Encrypted reason recipient is invalid.");
 
         var descriptor = new EnvelopeDescriptor(
@@ -52,7 +53,7 @@ internal static class EncryptedReasonValidator
             || wrapperContext.MemberKeyGeneration != descriptor.MemberKeyGeneration
             || wrapperContext.RecipientKeyVersion != binding.RecipientKeyVersion
             || wrapperContext.RecipientKeyKind != VaultKeyKind.VaultAgentMessage
-            || !string.Equals(binding.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal)
+            || !string.Equals(wrapperContext.SuiteId, binding.WrapperSuiteId, StringComparison.Ordinal)
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint, fingerprint)
             || wrapperContext.ParentDescriptorHash is null
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.ParentDescriptorHash, parentHash))
@@ -60,11 +61,12 @@ internal static class EncryptedReasonValidator
         _ = KeyWrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedReasonDek.EncodedSealedKeyPackage);
-        KeyWrapperSuites.ResolveForOpen(binding.WrapperSuiteId).ValidatePackage(wrapper);
+        KeyWrapperSuites.ResolveForSeal(binding.WrapperSuiteId).ValidatePackage(wrapper);
 
         var signature = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.AgentSignature);
         var signed = BuildSignatureTranscript(descriptorBytes,
-            VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.EncodedSuitePayload), wrapper);
+            VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.EncodedSuitePayload), binding.WrapperSuiteId,
+            wrapper);
         var publicKey = PublicKey.Import(SignatureAlgorithm.Ed25519,
             Convert.FromBase64String(agentSigningPublicKey), KeyBlobFormat.RawPublicKey);
         if (!SignatureAlgorithm.Ed25519.Verify(publicKey, signed, signature))
@@ -74,13 +76,14 @@ internal static class EncryptedReasonValidator
             new EntryScope(contract.OrganizationId, contract.VaultId, contract.EntryId),
             contract.GrantRequestId, contract.AgentId, descriptor.ResourceRevision, descriptor.KeyVersion,
             binding.RecipientKeyVersion, contract.MemberKeyGeneration, fingerprint,
-            (GrantMethods)binding.RequestedMethods, payload.Ciphertext, payload.Nonce, wrapper, signature);
+            (GrantMethods)binding.RequestedMethods, payload.Ciphertext, payload.Nonce, wrapper, binding.WrapperSuiteId,
+            signature);
     }
 
     internal static byte[] BuildSignatureTranscript(
-        byte[] descriptor, byte[] encodedSuitePayload, byte[] encodedWrapper)
+        byte[] descriptor, byte[] encodedSuitePayload, string wrapperSuiteId, byte[] encodedWrapper)
     {
-        var suite = Encoding.ASCII.GetBytes(FrozenContractWrapperSuite.Id);
+        var suite = Encoding.ASCII.GetBytes(wrapperSuiteId);
         var result = new byte[SignaturePrefix.Length + 2 + descriptor.Length + encodedSuitePayload.Length
             + 2 + suite.Length + encodedWrapper.Length];
         var offset = 0;

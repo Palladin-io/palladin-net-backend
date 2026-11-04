@@ -31,19 +31,19 @@ internal static class VaultFaker
 
         return isDefault
             ? Vault.CreateDefault(vaultId, tenantId, userId, "test actor", metadata, generation, epoch, memberKey,
-                keyMaterial, CreatePublicKey(VaultPublicKeyKind.AgentMessageX25519, epoch.AgentMessageKeyVersion.Value),
-                CreatePublicKey(VaultPublicKeyKind.ManifestSigningEd25519, epoch.ManifestSigningKeyVersion.Value), now)
+                keyMaterial, CreatePublicKey(VaultPublicKeyKind.AgentMessage, epoch.AgentMessageKeyVersion.Value),
+                CreatePublicKey(VaultPublicKeyKind.ManifestSigning, epoch.ManifestSigningKeyVersion.Value), now)
             : Vault.Create(vaultId, tenantId, userId, "test actor", metadata, generation, epoch, memberKey,
-                keyMaterial, CreatePublicKey(VaultPublicKeyKind.AgentMessageX25519, epoch.AgentMessageKeyVersion.Value),
-                CreatePublicKey(VaultPublicKeyKind.ManifestSigningEd25519, epoch.ManifestSigningKeyVersion.Value), now);
+                keyMaterial, CreatePublicKey(VaultPublicKeyKind.AgentMessage, epoch.AgentMessageKeyVersion.Value),
+                CreatePublicKey(VaultPublicKeyKind.ManifestSigning, epoch.ManifestSigningKeyVersion.Value), now);
     }
 
     private static ValidatedVaultPublicKey CreatePublicKey(VaultPublicKeyKind kind, uint version)
     {
-        var key = kind == VaultPublicKeyKind.AgentMessageX25519
+        var key = kind == VaultPublicKeyKind.AgentMessage
             ? VaultTrustAnchorFaker.AgentMessagePublicKey
             : VaultTrustAnchorFaker.ManifestSigningPublicKey;
-        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessageX25519
+        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessage
             ? VaultKeyKind.VaultAgentMessage
             : VaultKeyKind.VaultSigning;
         return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind));

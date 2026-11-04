@@ -47,9 +47,9 @@ internal sealed class VaultKeyRotationSourceValidator : Validator<VaultKeyRotati
 public sealed record RotationMemberRecipientContract(
     Guid MemberId,
     uint RecipientKeyVersion,
-    string RecipientKeySuiteId,
+    string KeySuiteId,
     string RecipientKeyFingerprint,
-    [property: JsonPropertyName("x25519PublicKey")] string RecipientPublicKey);
+    string PublicKey);
 
 [PublicAPI]
 public sealed record VaultKeyRotationMemberSourceResponse(
@@ -62,8 +62,9 @@ public sealed record RotationFullGrantRecipientContract(
     Guid AgentId,
     uint AgentAccessEpoch,
     uint RecipientKeyVersion,
+    string KeySuiteId,
     string RecipientKeyFingerprint,
-    string X25519PublicKey);
+    string PublicKey);
 
 [PublicAPI]
 public sealed record VaultKeyRotationFullGrantSourceResponse(
@@ -109,6 +110,7 @@ internal sealed class GetVaultKeyRotationFullGrantSourceEndpoint(
                 grant.AgentAccessEpoch,
                 agent.RecipientKeyVersion,
                 agent.PublicKey,
+                agent.PublicKeySuiteId,
             };
         if (req.AfterId is { } after)
         {
@@ -125,7 +127,8 @@ internal sealed class GetVaultKeyRotationFullGrantSourceEndpoint(
                     x.AgentId,
                     x.AgentAccessEpoch,
                     x.RecipientKeyVersion,
-                    WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.AgentEncryption)),
+                    x.PublicKeySuiteId,
+                    WebEncoders.Base64UrlEncode(AgentRecipientKey.Fingerprint(x.PublicKeySuiteId, x.PublicKey)),
                     WebEncoders.Base64UrlEncode(publicKey));
             }).ToArray(),
             page.Count == req.PageSize ? page[^1].GrantId : null), ct);

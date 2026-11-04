@@ -211,15 +211,15 @@ public sealed class VaultKeyRotationTests
             epoch,
             wrappedKey,
             CreateKeyMaterial(scope, generation, epoch),
-            CreatePublicKey(VaultPublicKeyKind.AgentMessageX25519, epoch.AgentMessageKeyVersion.Value),
-            CreatePublicKey(VaultPublicKeyKind.ManifestSigningEd25519, epoch.ManifestSigningKeyVersion.Value),
+            CreatePublicKey(VaultPublicKeyKind.AgentMessage, epoch.AgentMessageKeyVersion.Value),
+            CreatePublicKey(VaultPublicKeyKind.ManifestSigning, epoch.ManifestSigningKeyVersion.Value),
             Now);
     }
 
     private static ValidatedVaultPublicKey CreatePublicKey(VaultPublicKeyKind kind, uint version)
     {
-        var key = Enumerable.Repeat(kind == VaultPublicKeyKind.AgentMessageX25519 ? (byte)0x31 : (byte)0x41, 32).ToArray();
-        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessageX25519
+        var key = Enumerable.Repeat(kind == VaultPublicKeyKind.AgentMessage ? (byte)0x31 : (byte)0x41, 32).ToArray();
+        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessage
             ? VaultKeyKind.VaultAgentMessage
             : VaultKeyKind.VaultSigning;
         return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind));

@@ -164,7 +164,7 @@ public sealed class VaultManifestCryptoValidatorTests
         const string revision = "14";
         var wrapper = new WrappedKeyContract(
             new KeyWrapperDescriptorContract(2, "palladin-x25519-sealed-box-v1",
-                KeyWrapperPurposeContract.AgentDiscoveryVdk,
+                KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
                 new EnvelopeScopeContract(OrganizationId, VaultId, AgentId: AgentId),
                 vdkVersion.ToString(), vdkVersion, null,
                 RecipientKeyKindContract.AgentEncryption, 1, recipientFingerprint, null),

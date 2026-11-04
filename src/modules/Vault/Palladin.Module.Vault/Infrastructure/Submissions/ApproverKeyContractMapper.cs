@@ -28,7 +28,8 @@ internal static class ApproverKeyContractMapper
             wrap.KeyVersion,
             MemberRecipientKeyKind,
             wrap.RecipientKeyVersion.Value,
-            AgentSubmissionCrypto.Encode(wrap.RecipientFingerprint)),
+            AgentSubmissionCrypto.Encode(wrap.RecipientFingerprint),
+            wrap.WrapperSuiteId),
         AgentSubmissionCrypto.Encode(wrap.SealedPackage));
 
     internal static ApproverContract ToContract(CurrentApprover approver, bool hasWrap) => new(
@@ -36,7 +37,8 @@ internal static class ApproverKeyContractMapper
         approver.KeyVersion,
         AgentSubmissionCrypto.Encode(approver.Fingerprint),
         AgentSubmissionCrypto.Encode(approver.PublicKey),
-        hasWrap);
+        hasWrap,
+        approver.KeySuiteId);
 
     // Every recipient must receive exactly one message-key wrap and one signing-seed wrap, each bound to the
     // authenticated organization, the recipient's current Member key and the committed key/set revision.
@@ -66,6 +68,8 @@ internal static class ApproverKeyContractMapper
                 || descriptor.RecipientKeyKind != MemberRecipientKeyKind
                 || !byMember.TryGetValue(memberId, out var recipient)
                 || descriptor.RecipientKeyVersion != recipient.KeyVersion
+                || (descriptor.WrapperSuiteId is not null && descriptor.WrapperSuiteId != recipient.KeySuiteId)
+                || !Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(recipient.KeySuiteId).CanSeal
                 || !AgentSubmissionCrypto.DecodeBinary(descriptor.RecipientFingerprint, 32, "invalid-wraps")
                     .AsSpan().SequenceEqual(recipient.Fingerprint))
             {
@@ -80,8 +84,11 @@ internal static class ApproverKeyContractMapper
                 approverSetRevision,
                 new MemberRecipientKeyVersion(recipient.KeyVersion),
                 recipient.Fingerprint,
+                recipient.KeySuiteId,
                 AgentSubmissionCrypto.DecodeBinary(
-                    wrap.EncodedSealedKeyPackage, ApproverKeyWrap.SealedPackageBytes, "invalid-wraps")));
+                    wrap.EncodedSealedKeyPackage,
+                    Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(recipient.KeySuiteId).PackageBytes,
+                    "invalid-wraps")));
         }
 
         if (result.Select(x => (x.MemberId, x.Purpose)).Distinct().Count() != result.Count)

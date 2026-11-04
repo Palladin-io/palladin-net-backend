@@ -39,31 +39,31 @@
   "files": [
     {
       "path": "vectors/valid-snapshot.json",
-      "sha256": "2063959b788dcd80b478c367f88a065f8711b95bd4de72c6d1e98cf12f5ba7c2"
+      "sha256": "bd7c97581b899bce26bafa1f8b2a0a2763ff1622b944024065466a61d5ef6fdd"
     },
     {
       "path": "vectors/near-limit-member-secret.json",
-      "sha256": "e42561f81cabef226e7f7ea5957af41a8f791430c48b1d7ef0e65b3b70345fcc"
+      "sha256": "5e488be7da48a126903c88c57b0b9911a39c49c1640c6f1d60e1df73fea9bb4c"
     },
     {
       "path": "vectors/tombstone-reset.json",
-      "sha256": "a7d4f23951ba99e79a1a85e2038e9532679ae2e6c86c36af2f6636c9be397ecb"
+      "sha256": "e953d66d00322760a7d097b9de2e2af575d378fe9ccb05b00c466b0f8717d4de"
     },
     {
       "path": "vectors/page-boundary.json",
-      "sha256": "8a137b32dc91068ac60ef2e3f1077f4396da9e6c619456cbd137dc4d58baa65b"
+      "sha256": "3ed9a28224d8201ec64dfcd3d81c10592295bbfcfe1fca1e9fb31a54b4f23087"
     },
     {
       "path": "vectors/concurrent-mutation.json",
-      "sha256": "9e99d6ccae5b9cc05ca1092168087ecbea9bc5c116965a3e5a1f11e7f36d09ba"
+      "sha256": "ada0e60c976d7eda035a0375de30fe826b241eb9d429f586a015dd34712fb13d"
     },
     {
       "path": "vectors/mutation-transitions.json",
-      "sha256": "f06c738f7d9c50a55e10185250733d26da807d438618c4d72eef80bf2e093be5"
+      "sha256": "8beffbfd2f4c59b5f6f6dc2ec989eccc11947fe5d571293585856702706b85f9"
     },
     {
       "path": "negative/rejections.json",
-      "sha256": "cf844ca576c20fdb168e36ca1726457fcee8e5ba225ce65e20fa82a6465ddc7b"
+      "sha256": "1ff6687f0615a96f15aefd895f05e846703f8b1f90d0c3675694383cdfad18f7"
     }
   ]
 }

@@ -183,13 +183,12 @@ internal static class EntryUpdate
                 {
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh scope is invalid.");
                 }
-                var refreshed = GrantEnvelopeContractMapper.ToDomain(contract, scope.Methods, grant.AgentId);
+                var refreshed = GrantEnvelopeContractMapper.ToDomain(contract, scope.Methods, agents[grant.AgentId]);
                 if (refreshed.DeliveryPolicy != req.DeliveryPolicy)
                 {
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh delivery policy does not match the Entry.");
                 }
-                var fingerprint = VaultKeyFingerprint.Compute(
-                    Convert.FromBase64String(agents[grant.AgentId].PublicKey), VaultKeyKind.AgentEncryption);
+                var fingerprint = AgentRecipientKey.Fingerprint(agents[grant.AgentId]);
                 if (!refreshed.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))
                 {
                     throw new Palladin.Core.Types.Exceptions.DomainException("Grant refresh Agent key is invalid.");
@@ -221,8 +220,7 @@ internal static class EntryUpdate
                     var (replacement, replacementScopes) =
                         ScriptExecutionPackageContractMapper.ToDomain(contract);
                     var grantAgent = agents[grant.AgentId];
-                    var fingerprint = VaultKeyFingerprint.Compute(
-                        Convert.FromBase64String(grantAgent.PublicKey), VaultKeyKind.AgentEncryption);
+                    var fingerprint = AgentRecipientKey.Fingerprint(grantAgent);
                     if (replacement.OrganizationId != organizationId
                         || replacement.VaultId != req.VaultId
                         || replacement.GrantId != grant.Id

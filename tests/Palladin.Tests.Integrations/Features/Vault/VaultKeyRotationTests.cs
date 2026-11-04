@@ -558,7 +558,7 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         var valid = VaultContractFaker.CreateAgentMessagePublicKey();
         var invalid = mismatch switch
         {
-            "kind" => valid with { KeyKind = VaultPublicKeyKindContract.ManifestSigningEd25519 },
+            "kind" => valid with { KeyKind = VaultPublicKeyKindContract.ManifestSigning },
             "version" => valid with { KeyVersion = 3 },
             "fingerprint" => valid with { Fingerprint = WebEncoders.Base64UrlEncode(new byte[32]) },
             _ => throw new ArgumentOutOfRangeException(nameof(mismatch)),

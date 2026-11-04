@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -25,7 +26,7 @@ internal sealed class AgentWrappedVaultKeyConfiguration : IEntityTypeConfigurati
             .HasMaxLength(VaultProtocol.FingerprintBytes)
             .IsRequired();
         builder.Property(x => x.EncodedSealedVaultKeyPackage)
-            .HasMaxLength(FrozenContractWrapperSuite.PackageBytes)
+            .HasMaxLength(KeyWrapperSuites.MaximumPackageBytes)
             .IsRequired();
         builder.Property(x => x.VaultSigningKeyVersion)
             .HasConversion(x => (decimal)x.Value, x => new ManifestSigningKeyVersion((uint)x))

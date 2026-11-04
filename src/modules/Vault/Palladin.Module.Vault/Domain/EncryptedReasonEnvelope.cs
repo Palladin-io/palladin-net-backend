@@ -38,6 +38,7 @@ internal sealed class EncryptedReasonEnvelope
         byte[] ciphertext,
         byte[] nonce,
         byte[] wrappedReasonDek,
+        string wrapperSuiteId,
         byte[] signature)
     {
         scope.Validate();
@@ -46,11 +47,12 @@ internal sealed class EncryptedReasonEnvelope
             || recipientAgentMessageKeyFingerprint.Length != VaultProtocol.FingerprintBytes
             || !requestedMethods.IsValidSet()
             || ciphertext.Length is < 16 or > 4_096 || nonce.Length != VaultProtocol.NonceBytes
-            || wrappedReasonDek.Length is < 16 or > 128 || signature.Length != 64)
+            || signature.Length != 64)
         {
             throw new DomainException("Encrypted reason envelope is invalid.");
         }
 
+        Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(wrapperSuiteId).ValidatePackage(wrappedReasonDek);
         return new EncryptedReasonEnvelope
         {
             OrganizationId = scope.OrganizationId,
@@ -67,7 +69,7 @@ internal sealed class EncryptedReasonEnvelope
             RecipientAgentMessageKeyFingerprint = recipientAgentMessageKeyFingerprint.ToArray(),
             RequestedMethods = requestedMethods,
             EncodedSuitePayload = SuitePayload.Encode(nonce, ciphertext),
-            WrapperSuiteId = Infrastructure.Crypto.FrozenContractWrapperSuite.Id,
+            WrapperSuiteId = wrapperSuiteId,
             AgentMessageWrappedReasonDek = wrappedReasonDek.ToArray(),
             AgentSignature = signature.ToArray(),
         };

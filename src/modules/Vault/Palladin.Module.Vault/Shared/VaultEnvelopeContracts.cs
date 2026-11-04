@@ -52,10 +52,11 @@ public sealed record VaultKeyEnvelopeBindingContract(uint WrappingVaultKeyVersio
 public enum KeyWrapperPurposeContract : ushort
 {
     MemberVaultKey = 1,
-    AgentDiscoveryVdk = 2,
+    AgentVaultDiscoveryKey = 2,
     ReasonDek = 3,
     GrantDek = 4,
     AgentVaultKey = 5,
+    ScriptExecutionDek = 6,
     SubmissionDek = 7,
     ApproverMessagePrivateKey = 8,
     ApproverSigningPrivateKey = 9,
@@ -64,9 +65,10 @@ public enum KeyWrapperPurposeContract : ushort
 [PublicAPI]
 public enum RecipientKeyKindContract : ushort
 {
-    [JsonStringEnumMemberName("agentX25519")] AgentEncryption = 1,
-    [JsonStringEnumMemberName("vaultMessageX25519")] VaultAgentMessage = 4,
-    [JsonStringEnumMemberName("memberX25519")] MemberEncryption = 5,
+    AgentEncryption = 1,
+    VaultAgentMessage = 4,
+    MemberEncryption = 5,
+    OrganizationApproverMessage = 6,
 }
 
 [PublicAPI]
@@ -141,8 +143,8 @@ public sealed record VaultKeyEpochContract(
 [PublicAPI]
 public enum VaultPublicKeyKindContract : ushort
 {
-    AgentMessageX25519 = 1,
-    ManifestSigningEd25519 = 2,
+    AgentMessage = 1,
+    ManifestSigning = 2,
 }
 
 [PublicAPI]

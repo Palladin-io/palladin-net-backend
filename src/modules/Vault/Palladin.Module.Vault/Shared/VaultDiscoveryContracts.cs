@@ -29,7 +29,7 @@ public sealed record AgentVaultDiscoveryEnvelopeContract(
         : this(protocolVersion, organizationId, vaultId, agentId, vdkVersion,
             new WrappedKeyContract(
                 new KeyWrapperDescriptorContract(protocolVersion,
-                    Infrastructure.Crypto.FrozenContractWrapperSuite.Id, KeyWrapperPurposeContract.AgentDiscoveryVdk,
+                    Infrastructure.Crypto.FrozenContractWrapperSuite.Id, KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
                     new EnvelopeScopeContract(organizationId, vaultId, AgentId: agentId),
                     vdkVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), vdkVersion, null,
                     RecipientKeyKindContract.AgentEncryption, recipientKeyVersion,
@@ -59,7 +59,8 @@ public sealed record VaultManifestContract(
     string ManifestRevision,
     Instant IssuedAt,
     ushort MinimumAgentRuntimeProtocol,
-    string Signature)
+    string Signature,
+    string? VaultAgentMessageKeySuiteId = null)
 {
     public VaultManifestContract(
         ushort protocolVersion, ushort _, Guid organizationId, Guid vaultId, Guid agentId,

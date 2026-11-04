@@ -56,7 +56,7 @@ internal static class KeyWrapperContextCodec
                 if (context.RecipientKeyKind != VaultKeyKind.MemberEncryption || context.ParentDescriptorHash is not null)
                     throw new DomainException("Member Vault-key wrapper context is invalid.");
                 break;
-            case KeyWrapperPurpose.AgentDiscoveryVdk:
+            case KeyWrapperPurpose.AgentVaultDiscoveryKey:
                 context.Scope.Validate(vault | EnvelopeScopeFields.Agent);
                 if (context.RecipientKeyKind != VaultKeyKind.AgentEncryption || context.ParentDescriptorHash is not null)
                     throw new DomainException("Agent Discovery-key wrapper context is invalid.");

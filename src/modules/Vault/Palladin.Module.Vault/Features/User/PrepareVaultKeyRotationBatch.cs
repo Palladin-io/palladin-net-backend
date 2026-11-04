@@ -241,11 +241,11 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
             }
         }
         accepted += PrepareTrustAnchor(req.VaultAgentMessagePublicKey,
-            VaultPublicKeyKindContract.AgentMessageX25519,
+            VaultPublicKeyKindContract.AgentMessage,
             rotation.TargetKeyEpoch.AgentMessageKeyVersion.Value,
             VaultKeyRotationScope.AgentMessage);
         accepted += PrepareTrustAnchor(req.VaultManifestSigningPublicKey,
-            VaultPublicKeyKindContract.ManifestSigningEd25519,
+            VaultPublicKeyKindContract.ManifestSigning,
             rotation.TargetKeyEpoch.ManifestSigningKeyVersion.Value,
             VaultKeyRotationScope.ManifestSigning);
         if (req.MemberVaultMetadata is not null)
@@ -291,7 +291,7 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                             && x.VaultId == req.VaultId
                             && x.RotationId == req.RotationId
                             && x.Kind == VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor
-                            && x.SubjectVersion == (ulong)VaultPublicKeyKindContract.ManifestSigningEd25519)
+                            && x.SubjectVersion == (ulong)VaultPublicKeyKindContract.ManifestSigning)
                         .Select(x => x.Payload)
                         .SingleOrDefaultAsync(ct);
                     if (payload is null)
@@ -305,16 +305,17 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
 
                 signingAnchor = VaultEnvelopeContractMapper.ToDomain(
                     signingAnchorContract,
-                    VaultPublicKeyKindContract.ManifestSigningEd25519,
+                    VaultPublicKeyKindContract.ManifestSigning,
                     rotation.TargetKeyEpoch.ManifestSigningKeyVersion.Value);
             }
             else
             {
                 signingAnchor = new ValidatedVaultPublicKey(
-                    VaultPublicKeyKind.ManifestSigningEd25519,
+                    VaultPublicKeyKind.ManifestSigning,
                     vault.CurrentManifestSigningKeyVersion.Value,
                     vault.ManifestSigningPublicKey,
-                    vault.ManifestSigningKeyFingerprint);
+                    vault.ManifestSigningKeyFingerprint,
+                    VaultEnvelopeContractMapper.ManifestSigningSchemeId);
             }
             var grantIds = req.AgentWrappedVaultKeys.Select(x => x.GrantId).Distinct().ToArray();
             var grants = await domainWriteContext.Grants
@@ -339,12 +340,11 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                     throw new DomainException("Prepared Agent Vault-key recipient is not an active FULL grant.");
                 }
 
-                var fingerprint = VaultKeyFingerprint.Compute(
-                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
+                var fingerprint = AgentRecipientKey.Fingerprint(agent);
                 _ = AgentWrappedVaultKeyContractMapper.ToDomain(
                     contract, organizationId, req.VaultId, grant.Id, grant.AgentId,
                     grant.AgentAccessEpoch, rotation.TargetKeyEpoch.VaultKeyVersion.Value,
-                    agent.RecipientKeyVersion, fingerprint,
+                    agent.RecipientKeyVersion, fingerprint, agent.PublicKeySuiteId,
                     signingAnchor.Version,
                     signingAnchor.Fingerprint,
                     signingAnchor.PublicKey);
@@ -455,7 +455,7 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
                     throw new DomainException("Prepared Agent Discovery recipient is not an active organization Agent.");
                 }
 
-                var provisioning = VaultManifestCryptoValidator.Validate(contract.Envelope, contract.Manifest, agent);
+                var provisioning = VaultManifestCryptoValidator.ValidateNew(contract.Envelope, contract.Manifest, agent);
                 if (provisioning.Scope != new VaultScope(organizationId, req.VaultId)
                     || provisioning.VdkVersion != rotation.TargetKeyEpoch.VdkVersion
                     || provisioning.Manifest.AgentMessageKeyVersion != rotation.TargetKeyEpoch.AgentMessageKeyVersion
@@ -526,11 +526,11 @@ internal sealed class PrepareVaultKeyRotationBatchEndpoint(
         .Concat(request.VaultAgentMessagePublicKey is null
             ? []
             : new[] { new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor,
-                request.VaultId, (ulong)VaultPublicKeyKindContract.AgentMessageX25519) })
+                request.VaultId, (ulong)VaultPublicKeyKindContract.AgentMessage) })
         .Concat(request.VaultManifestSigningPublicKey is null
             ? []
             : new[] { new PreparedItemIdentity(VaultKeyRotationPreparedItemKind.VaultPublicTrustAnchor,
-                request.VaultId, (ulong)VaultPublicKeyKindContract.ManifestSigningEd25519) })
+                request.VaultId, (ulong)VaultPublicKeyKindContract.ManifestSigning) })
         .Distinct()
         .ToArray();
 

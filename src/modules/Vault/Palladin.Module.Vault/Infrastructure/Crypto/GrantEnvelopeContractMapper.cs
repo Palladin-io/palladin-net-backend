@@ -13,8 +13,9 @@ internal static class GrantEnvelopeContractMapper
     internal static GrantEntryScope ToDomain(
         GrantEntryEnvelopeContract contract,
         GrantMethods methods,
-        Guid expectedAgentId)
+        Agent recipient)
     {
+        var expectedAgentId = recipient.Id;
         if (contract.Descriptor?.Scope is null
             || contract.Descriptor.Binding is null
             || contract.WrappedGrantDek?.Descriptor?.Scope is null)
@@ -69,21 +70,23 @@ internal static class GrantEnvelopeContractMapper
             || wrapperContext.MemberKeyGeneration != descriptor.MemberKeyGeneration
             || wrapperContext.RecipientKeyVersion != binding.RecipientKeyVersion
             || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentEncryption
-            || !string.Equals(binding.WrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal)
+            || !string.Equals(binding.WrapperSuiteId, recipient.PublicKeySuiteId, StringComparison.Ordinal)
+            || !string.Equals(wrapperContext.SuiteId, binding.WrapperSuiteId, StringComparison.Ordinal)
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint, fingerprint)
+            || !CryptographicOperations.FixedTimeEquals(fingerprint, AgentRecipientKey.Fingerprint(recipient))
             || wrapperContext.ParentDescriptorHash is null
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.ParentDescriptorHash, parentHash))
             throw new DomainException("Grant wrapper descriptor does not match its parent envelope.");
         _ = KeyWrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedGrantDek.EncodedSealedKeyPackage);
-        KeyWrapperSuites.ResolveForOpen(binding.WrapperSuiteId).ValidatePackage(wrapper);
+        KeyWrapperSuites.ResolveForSeal(binding.WrapperSuiteId).ValidatePackage(wrapper);
         var scope = new EntryScope(contract.OrganizationId, contract.VaultId, contract.EntryId);
         var envelope = GrantEntryEnvelope.Create(scope, contract.GrantId, descriptor.ResourceRevision,
             new EntryRevision(VaultEnvelopeContractMapper.ParseUInt64(binding.EntryRevision)),
             descriptor.KeyVersion, new MemberKeyGeneration(contract.MemberKeyGeneration),
             new AgentRecipientKeyVersion(binding.RecipientKeyVersion), payload.Ciphertext, payload.Nonce,
-            wrapper, 1, fingerprint, binding.ExpiresAt, binding.RemainingUses);
+            wrapper, binding.WrapperSuiteId, fingerprint, binding.ExpiresAt, binding.RemainingUses);
         return GrantEntryScope.Create(scope, contract.GrantId, methods, deliveryPolicy, contract.FieldIds, envelope);
     }
 }

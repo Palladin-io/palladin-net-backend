@@ -14,13 +14,10 @@ internal static class ScriptExecutionGrantMaterialValidator
         Guid agentId,
         uint agentAccessEpoch,
         Guid scriptEntryId,
-        string agentPublicKey,
-        uint recipientAgentKeyVersion,
+        Agent recipient,
         IReadOnlyDictionary<Guid, ulong> lockedRevisions)
     {
-        var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(agentPublicKey),
-            VaultKeyKind.AgentEncryption);
+        var fingerprint = AgentRecipientKey.Fingerprint(recipient);
         if (package.OrganizationId != organizationId
             || package.VaultId != vaultId
             || package.GrantId != grantId
@@ -28,7 +25,8 @@ internal static class ScriptExecutionGrantMaterialValidator
             || package.AgentAccessEpoch != agentAccessEpoch
             || package.ScriptEntryId != scriptEntryId
             || package.PackageRevision != 1
-            || package.RecipientAgentKeyVersion != recipientAgentKeyVersion
+            || package.RecipientAgentKeyVersion != recipient.RecipientKeyVersion
+            || package.WrapperSuiteId != recipient.PublicKeySuiteId
             || !package.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint)
             || scopes.Count != lockedRevisions.Count
             || scopes.Any(scope => !lockedRevisions.TryGetValue(scope.EntryId, out var revision)

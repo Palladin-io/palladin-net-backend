@@ -57,6 +57,23 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(2000)")
                         .HasColumnName("description");
 
+                    b.Property<byte[]>("EncryptionKeyBindingSignature")
+                        .HasMaxLength(64)
+                        .HasColumnType("bytea")
+                        .HasColumnName("encryption_key_binding_signature");
+
+                    b.Property<string>("EncryptionKeySuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("encryption_key_suite_id");
+
+                    b.Property<string>("EncryptionPublicKey")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("encryption_public_key");
+
                     b.Property<Instant?>("EnrolledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("enrolled_at");
@@ -107,6 +124,11 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("organization_id");
 
+                    b.Property<byte[]>("PreviousEncryptionKeyFingerprint")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("previous_encryption_key_fingerprint");
+
                     b.Property<string>("PublicKey")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -122,6 +144,7 @@ namespace Palladin.Module.Agents.Infrastructure.Persistence.Migrations
                         .HasColumnName("reactivated_by");
 
                     b.Property<long>("RecipientKeyVersion")
+                        .IsConcurrencyToken()
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
                         .HasDefaultValue(1L)

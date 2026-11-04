@@ -10,6 +10,9 @@ namespace Palladin.Module.Vault.Infrastructure.Crypto;
 
 internal static class VaultEnvelopeContractMapper
 {
+    internal const string ManifestSigningSchemeId = "palladin-ed25519-v1";
+
+    // Agent-message keys are new key-wrapper recipients: the scheme is the active suite that seals reasons to them.
     internal static ValidatedVaultPublicKey ToDomain(
         VaultPublicKeyContract contract,
         VaultPublicKeyKindContract expectedKind,
@@ -20,42 +23,41 @@ internal static class VaultEnvelopeContractMapper
             || contract.KeyVersion != expectedVersion
             || contract.KeyVersion == 0)
             throw new DomainException("Vault public-key metadata does not match the key epoch.");
-        var expectedScheme = expectedKind == VaultPublicKeyKindContract.AgentMessageX25519
-            ? "palladin-x25519-v1"
-            : "palladin-ed25519-v1";
-        var fingerprintKind = expectedKind == VaultPublicKeyKindContract.AgentMessageX25519
-            ? VaultKeyKind.VaultAgentMessage
-            : VaultKeyKind.VaultSigning;
-        if (!string.Equals(contract.SchemeId, expectedScheme, StringComparison.Ordinal))
-            throw new DomainException("Vault public-key scheme is not supported.");
         var publicKey = DecodeCanonicalBase64Url(contract.EncodedPublicKey);
         var fingerprint = DecodeCanonicalBase64Url(contract.Fingerprint);
-        if (publicKey.Length != 32 || fingerprint.Length != VaultProtocol.FingerprintBytes
-            || !CryptographicOperations.FixedTimeEquals(fingerprint,
-                VaultKeyFingerprint.Compute(publicKey, fingerprintKind)))
+        byte[] expectedFingerprint;
+        if (expectedKind == VaultPublicKeyKindContract.AgentMessage)
+        {
+            KeyWrapperSuites.ResolveForSeal(contract.SchemeId).ValidatePublicKey(publicKey);
+            expectedFingerprint = RecipientKeyFingerprint.Compute(contract.SchemeId, VaultKeyKind.VaultAgentMessage, publicKey);
+        }
+        else
+        {
+            if (!string.Equals(contract.SchemeId, ManifestSigningSchemeId, StringComparison.Ordinal))
+                throw new DomainException("Vault public-key scheme is not supported.");
+            expectedFingerprint = VaultKeyFingerprint.Compute(publicKey, VaultKeyKind.VaultSigning);
+        }
+
+        if (fingerprint.Length != VaultProtocol.FingerprintBytes
+            || !CryptographicOperations.FixedTimeEquals(fingerprint, expectedFingerprint))
             throw new DomainException("Vault public-key fingerprint is invalid.");
         return new ValidatedVaultPublicKey(
-            expectedKind == VaultPublicKeyKindContract.AgentMessageX25519
-                ? VaultPublicKeyKind.AgentMessageX25519
-                : VaultPublicKeyKind.ManifestSigningEd25519,
-            contract.KeyVersion, publicKey, fingerprint);
+            expectedKind == VaultPublicKeyKindContract.AgentMessage
+                ? VaultPublicKeyKind.AgentMessage
+                : VaultPublicKeyKind.ManifestSigning,
+            contract.KeyVersion, publicKey, fingerprint, contract.SchemeId);
     }
 
     internal static VaultPublicKeyContract ToAgentMessagePublicKeyContract(Domain.Vault vault) =>
-        ToPublicKeyContract(vault, VaultPublicKeyKindContract.AgentMessageX25519,
-            vault.CurrentKeyEpoch.AgentMessageKeyVersion.Value, vault.AgentMessagePublicKey,
-            vault.AgentMessageKeyFingerprint);
+        new(vault.ProtocolVersion, vault.AgentMessageKeySuiteId, VaultPublicKeyKindContract.AgentMessage,
+            vault.CurrentKeyEpoch.AgentMessageKeyVersion.Value, WebEncoders.Base64UrlEncode(vault.AgentMessagePublicKey),
+            WebEncoders.Base64UrlEncode(vault.AgentMessageKeyFingerprint));
 
     internal static VaultPublicKeyContract ToManifestSigningPublicKeyContract(Domain.Vault vault) =>
-        ToPublicKeyContract(vault, VaultPublicKeyKindContract.ManifestSigningEd25519,
-            vault.CurrentKeyEpoch.ManifestSigningKeyVersion.Value, vault.ManifestSigningPublicKey,
-            vault.ManifestSigningKeyFingerprint);
-
-    private static VaultPublicKeyContract ToPublicKeyContract(
-        Domain.Vault vault, VaultPublicKeyKindContract kind, uint version, byte[] publicKey, byte[] fingerprint) =>
-        new(vault.ProtocolVersion,
-            kind == VaultPublicKeyKindContract.AgentMessageX25519 ? "palladin-x25519-v1" : "palladin-ed25519-v1",
-            kind, version, WebEncoders.Base64UrlEncode(publicKey), WebEncoders.Base64UrlEncode(fingerprint));
+        new(vault.ProtocolVersion, ManifestSigningSchemeId, VaultPublicKeyKindContract.ManifestSigning,
+            vault.CurrentKeyEpoch.ManifestSigningKeyVersion.Value,
+            WebEncoders.Base64UrlEncode(vault.ManifestSigningPublicKey),
+            WebEncoders.Base64UrlEncode(vault.ManifestSigningKeyFingerprint));
 
     internal static EntryRevision ToEntryRevision(string value) => new(ParseUInt64(value));
 
@@ -233,7 +235,7 @@ internal static class VaultEnvelopeContractMapper
         value.ProtocolVersion, value.OrganizationId, value.VaultId, value.AgentId, value.VdkVersion.Value,
         new WrappedKeyContract(
             new KeyWrapperDescriptorContract(value.ProtocolVersion, value.WrapperSuiteId,
-                KeyWrapperPurposeContract.AgentDiscoveryVdk,
+                KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
                 new EnvelopeScopeContract(value.OrganizationId, value.VaultId, AgentId: value.AgentId),
                 value.VdkVersion.Value.ToString(CultureInfo.InvariantCulture), value.VdkVersion.Value,
                 null, RecipientKeyKindContract.AgentEncryption, value.RecipientAgentKeyVersion.Value,
@@ -251,7 +253,8 @@ internal static class VaultEnvelopeContractMapper
         WebEncoders.Base64UrlEncode(value.VaultAgentMessageKeyFingerprint), value.AgentMessageKeyVersion.Value,
         value.VdkVersion.Value, WebEncoders.Base64UrlEncode(value.AgentWrappedVdkDigest),
         value.ManifestRevision.Value.ToString(CultureInfo.InvariantCulture), value.IssuedAt,
-        value.MinimumAgentRuntimeProtocol, WebEncoders.Base64UrlEncode(value.ManifestSignature));
+        value.MinimumAgentRuntimeProtocol, WebEncoders.Base64UrlEncode(value.ManifestSignature),
+        value.VaultAgentMessageKeySuiteId);
 
     private static VaultKeyMaterialEnvelope ToVaultKeyMaterial<T>(
         EnvelopeDescriptorContract<T> contract, string encodedPayload, EnvelopePurpose purpose,

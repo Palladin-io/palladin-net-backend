@@ -196,10 +196,9 @@ internal sealed class ApproveGrantEndpoint(
         GrantEntryScope scope;
         try
         {
-            scope = GrantEnvelopeContractMapper.ToDomain(grantEntry, finalMethods, granularGrant.AgentId);
+            scope = GrantEnvelopeContractMapper.ToDomain(grantEntry, finalMethods, currentAgent);
             scope.SetFieldSelectionMode(req.FieldSelectionMode);
-            var expectedFingerprint = VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(currentAgent.PublicKey), VaultKeyKind.AgentEncryption);
+            var expectedFingerprint = AgentRecipientKey.Fingerprint(currentAgent);
             if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(expectedFingerprint))
             {
                 throw new Palladin.Core.Types.Exceptions.DomainException("Agent key fingerprint mismatch.");
@@ -323,8 +322,7 @@ internal sealed class ApproveGrantEndpoint(
                 grant.AgentId,
                 grant.AgentAccessEpoch,
                 grant.ScriptEntryId,
-                currentAgent.PublicKey,
-                currentAgent.RecipientKeyVersion,
+                currentAgent,
                 lockedRevisions);
             ScriptExecutionPackageCryptoValidator.ValidateProducer(req.ScriptPackage, lockedVault);
         }

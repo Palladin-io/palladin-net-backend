@@ -12,8 +12,8 @@ namespace Palladin.Tests.Unit.Modules.Vault;
 public sealed class EnvelopeDescriptorCodecTests
 {
     [Theory]
-    [InlineData(VaultPublicKeyKindContract.AgentMessageX25519, "palladin-x25519-v1", 4)]
-    [InlineData(VaultPublicKeyKindContract.ManifestSigningEd25519, "palladin-ed25519-v1", 3)]
+    [InlineData(VaultPublicKeyKindContract.AgentMessage, "palladin-x25519-v1", 4)]
+    [InlineData(VaultPublicKeyKindContract.ManifestSigning, "palladin-ed25519-v1", 3)]
     public void VaultPublicKey_ValidatesDomainSeparatedFingerprintAndVersion(
         VaultPublicKeyKindContract kind, string scheme, int fingerprintKind)
     {
@@ -33,11 +33,11 @@ public sealed class EnvelopeDescriptorCodecTests
     {
         var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
         var contract = new VaultPublicKeyContract(2, "palladin-x25519-v1",
-            VaultPublicKeyKindContract.AgentMessageX25519, 1, WebEncoders.Base64UrlEncode(key),
+            VaultPublicKeyKindContract.AgentMessage, 1, WebEncoders.Base64UrlEncode(key),
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigning)));
 
         var action = () => VaultEnvelopeContractMapper.ToDomain(
-            contract, VaultPublicKeyKindContract.AgentMessageX25519, 1);
+            contract, VaultPublicKeyKindContract.AgentMessage, 1);
 
         action.ShouldThrow<DomainException>().Message.ShouldContain("fingerprint");
     }

@@ -50,10 +50,11 @@ internal sealed class XChaCha20Poly1305VaultEnvelopeSuite : IVaultEnvelopeSuite
 internal enum KeyWrapperPurpose : ushort
 {
     MemberVaultKey = 1,
-    AgentDiscoveryVdk = 2,
+    AgentVaultDiscoveryKey = 2,
     ReasonDek = 3,
     GrantDek = 4,
     AgentVaultKey = 5,
+    ScriptExecutionDek = 6,
     SubmissionDek = 7,
     ApproverMessagePrivateKey = 8,
     ApproverSigningPrivateKey = 9,

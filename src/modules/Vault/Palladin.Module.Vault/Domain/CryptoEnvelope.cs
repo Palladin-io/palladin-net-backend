@@ -134,10 +134,11 @@ internal sealed record ValidatedVaultPublicKey(
     VaultPublicKeyKind Kind,
     uint Version,
     byte[] PublicKey,
-    byte[] Fingerprint);
+    byte[] Fingerprint,
+    string SchemeId);
 
 internal enum VaultPublicKeyKind : ushort
 {
-    AgentMessageX25519 = 1,
-    ManifestSigningEd25519 = 2,
+    AgentMessage = 1,
+    ManifestSigning = 2,
 }

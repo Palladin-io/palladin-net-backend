@@ -108,7 +108,7 @@ internal sealed class ProvisionAgentDiscoveryEndpoint(
             return;
         }
 
-        var provisioning = VaultManifestCryptoValidator.Validate(req.Envelope, req.Manifest, agent);
+        var provisioning = VaultManifestCryptoValidator.ValidateNew(req.Envelope, req.Manifest, agent);
         vault.ProvisionAgentDiscovery(agent, provisioning, userId, clock.GetCurrentInstant());
         agent.FenceAccessMutation();
         await domainWriteContext.CommitAsync(ct);

@@ -4,10 +4,10 @@ using Palladin.Module.Vault.Infrastructure.Crypto;
 
 namespace Palladin.Module.Vault.Infrastructure.Persistence;
 
-internal sealed record CurrentApprover(Guid MemberId, uint KeyVersion, byte[] Fingerprint, byte[] PublicKey);
+internal sealed record CurrentApprover(Guid MemberId, uint KeyVersion, byte[] Fingerprint, byte[] PublicKey, string KeySuiteId);
 
 // The authoritative approver set: Identity-fed GrantManage eligibility joined with the current Member
-// X25519 key directory. A wrap is served only to a current approver whose current key it addresses.
+// key directory. A wrap is served only to a current approver whose current key it addresses.
 internal sealed class ApproverKeySetState
 {
     private readonly Dictionary<Guid, CurrentApprover> _approvers;
@@ -49,6 +49,7 @@ internal sealed class ApproverKeySetState
 
     private static bool Addresses(ApproverKeyWrap wrap, CurrentApprover approver) =>
         wrap.RecipientKeyVersion.Value == approver.KeyVersion
+        && wrap.WrapperSuiteId == approver.KeySuiteId
         && wrap.RecipientFingerprint.AsSpan().SequenceEqual(approver.Fingerprint);
 }
 
@@ -86,7 +87,8 @@ internal static class ApproverQueries
         }
 
         return new ApproverKeySetState(keySet, approvers
-            .Select(key => new CurrentApprover(key.UserId, key.KeyVersion.Value, key.Fingerprint, key.PublicKey))
+            .Select(key => new CurrentApprover(
+                key.UserId, key.KeyVersion.Value, key.Fingerprint, key.PublicKey, key.PublicKeySuiteId))
             .ToList());
     }
 }

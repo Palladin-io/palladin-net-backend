@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -23,7 +24,7 @@ internal sealed class EncryptedReasonEnvelopeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.RequestedMethods).IsRequired();
         builder.Property(x => x.EncodedSuitePayload).HasMaxLength(4_120);
         builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.AgentMessageWrappedReasonDek).HasMaxLength(120);
+        builder.Property(x => x.AgentMessageWrappedReasonDek).HasMaxLength(KeyWrapperSuites.MaximumPackageBytes);
         builder.Property(x => x.AgentSignature).HasMaxLength(64);
         builder.HasIndex(x => new { x.OrganizationId, x.VaultId, x.EntryId });
     }

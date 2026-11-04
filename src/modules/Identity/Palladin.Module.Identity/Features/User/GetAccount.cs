@@ -37,8 +37,10 @@ public sealed record GetAccountResponse(
     string? EncryptedPrivateKey,
     string? RecoverySalt,
     string? EncryptedPrivateKeyByRecovery,
+    ushort SecurityVersion,
     uint? MemberKeyVersion,
     string? MemberPublicKeySuiteId,
+    string? MemberPublicKey,
     LegacyMemberKeyResponse? LegacyMemberKey,
     IdentityKdfStateResponse? Kdf,
     OnboardingStepsResponse OnboardingSteps);
@@ -95,8 +97,10 @@ internal sealed class GetAccountEndpoint(IdentityDomainReadContext domainReadCon
                 u.EncryptedPrivateKeyByRecovery != null
                     ? WebEncoders.Base64UrlEncode(u.EncryptedPrivateKeyByRecovery)
                     : null,
+                u.SecurityVersion,
                 u.MemberKeyVersion,
                 u.MemberPublicKeySuiteId,
+                u.PublicKey != null ? WebEncoders.Base64UrlEncode(u.PublicKey) : null,
                 u.LegacyMemberKeyVersion == null || u.LegacyEncryptedPrivateKey == null
                     ? null
                     : new LegacyMemberKeyResponse(

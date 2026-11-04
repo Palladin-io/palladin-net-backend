@@ -59,12 +59,6 @@ internal sealed class AgentWrappedVaultKey
             recipientAgentKeyFingerprint,
             null);
         _ = KeyWrapperContextCodec.Encode(context);
-        FrozenContractWrapperSuite.Suite.ValidatePackage(encodedSealedVaultKeyPackage);
-        if (protocolVersion != VaultProtocol.CurrentVersion
-            || !string.Equals(wrapperSuiteId, FrozenContractWrapperSuite.Id, StringComparison.Ordinal))
-        {
-            throw new DomainException("Agent Vault-key wrapper suite is invalid.");
-        }
         vaultSigningKeyFingerprint ??= new byte[VaultProtocol.FingerprintBytes];
         producerSignature ??= new byte[64];
         if (vaultSigningKeyVersion == 0

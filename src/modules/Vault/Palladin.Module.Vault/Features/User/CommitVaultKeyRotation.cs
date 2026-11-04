@@ -170,21 +170,22 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         ValidatedVaultPublicKey? manifestSigningPublicKey = null;
         if (rotatesManifestSigning
             && trustAnchors.TryGetValue(
-                VaultPublicKeyKindContract.ManifestSigningEd25519,
+                VaultPublicKeyKindContract.ManifestSigning,
                 out var manifestSigningContract))
         {
             manifestSigningPublicKey = VaultEnvelopeContractMapper.ToDomain(
                 manifestSigningContract,
-                VaultPublicKeyKindContract.ManifestSigningEd25519,
+                VaultPublicKeyKindContract.ManifestSigning,
                 rotation.TargetKeyEpoch.ManifestSigningKeyVersion.Value);
         }
         var wrapperSigningAnchor = rotatesManifestSigning
             ? manifestSigningPublicKey
             : new ValidatedVaultPublicKey(
-                VaultPublicKeyKind.ManifestSigningEd25519,
+                VaultPublicKeyKind.ManifestSigning,
                 vault.CurrentManifestSigningKeyVersion.Value,
                 vault.ManifestSigningPublicKey,
-                vault.ManifestSigningKeyFingerprint);
+                vault.ManifestSigningKeyFingerprint,
+                VaultEnvelopeContractMapper.ManifestSigningSchemeId);
         var memberCoverage = rotatesVaultKey
             ? await InspectMemberCoverageAsync(
                 organizationId, req.VaultId, req.RotationId, rotation.ExcludedMemberId, ct)
@@ -231,8 +232,8 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             .ToArray();
         var agentMessagePublicKey = rotation.Scope.HasFlag(VaultKeyRotationScope.AgentMessage)
             ? VaultEnvelopeContractMapper.ToDomain(
-                trustAnchors[VaultPublicKeyKindContract.AgentMessageX25519],
-                VaultPublicKeyKindContract.AgentMessageX25519,
+                trustAnchors[VaultPublicKeyKindContract.AgentMessage],
+                VaultPublicKeyKindContract.AgentMessage,
                 rotation.TargetKeyEpoch.AgentMessageKeyVersion.Value)
             : null;
         var targetMemberKeyGeneration = rotation.TargetMemberKeyGeneration;
@@ -728,12 +729,11 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                         throw new DomainException("FULL grant rotation source is stale.");
                     }
 
-                    var fingerprint = VaultKeyFingerprint.Compute(
-                        Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
+                    var fingerprint = AgentRecipientKey.Fingerprint(agent);
                     _ = AgentWrappedVaultKeyContractMapper.ToDomain(
                         VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
                         organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
-                        targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint,
+                        targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint, agent.PublicKeySuiteId,
                         expectedSigningKeyVersion,
                         expectedSigningKeyFingerprint,
                         expectedSigningPublicKey);
@@ -800,12 +800,11 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             {
                 var agent = agents[grant.AgentId];
                 var item = items.Single(x => x.SubjectId == grant.Id);
-                var fingerprint = VaultKeyFingerprint.Compute(
-                    Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentEncryption);
+                var fingerprint = AgentRecipientKey.Fingerprint(agent);
                 var replacement = AgentWrappedVaultKeyContractMapper.ToDomain(
                     VaultPreparedPayloadCodec.Decode<AgentWrappedVaultKeyContract>(item.Payload),
                     organizationId, vaultId, grant.Id, grant.AgentId, grant.AgentAccessEpoch,
-                    targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint,
+                    targetVaultKeyVersion, agent.RecipientKeyVersion, fingerprint, agent.PublicKeySuiteId,
                     expectedSigningKeyVersion,
                     expectedSigningKeyFingerprint,
                     expectedSigningPublicKey);
@@ -1070,7 +1069,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
                 .Select(x =>
                 {
                     var agent = agentById[x.AgentId];
-                    return (VaultManifestCryptoValidator.Validate(x.Envelope, x.Manifest, agent), agent.AccessEpoch);
+                    return (VaultManifestCryptoValidator.ValidateNew(x.Envelope, x.Manifest, agent), agent.AccessEpoch);
                 })
                 .ToArray();
             var vault = await domainWriteContext.Vaults
@@ -1300,10 +1299,10 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         new[]
         {
             scope.HasFlag(VaultKeyRotationScope.AgentMessage)
-                ? VaultPublicKeyKindContract.AgentMessageX25519
+                ? VaultPublicKeyKindContract.AgentMessage
                 : (VaultPublicKeyKindContract?)null,
             scope.HasFlag(VaultKeyRotationScope.ManifestSigning)
-                ? VaultPublicKeyKindContract.ManifestSigningEd25519
+                ? VaultPublicKeyKindContract.ManifestSigning
                 : null,
         }.OfType<VaultPublicKeyKindContract>().ToArray();
 

@@ -4,7 +4,7 @@ using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using NodaTime;
-using Palladin.Core.Cryptography;
+using Palladin.Module.Identity.Infrastructure.Crypto;
 using Palladin.Core.Json;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure.Login;
@@ -29,7 +29,7 @@ public sealed record StartSecretKeyTransferAsRecipientResponse(
 internal sealed class StartSecretKeyTransferAsRecipientValidator : Validator<StartSecretKeyTransferAsRecipientRequest>
 {
     public StartSecretKeyTransferAsRecipientValidator() =>
-        RuleFor(x => x.RecipientPublicKey).Must(key => key.Length == XWingKem.PublicKeyBytes);
+        RuleFor(x => x.RecipientPublicKey).Must(key => key.Length == DevicePairingProtocol.RecipientPublicKeyBytes);
 }
 
 [PublicAPI]

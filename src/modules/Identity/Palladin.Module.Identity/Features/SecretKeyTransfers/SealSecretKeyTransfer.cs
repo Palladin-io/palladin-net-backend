@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
-using Palladin.Core.Cryptography;
+using Palladin.Module.Identity.Infrastructure.Crypto;
 using Palladin.Core.Json;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Domain;
@@ -27,7 +27,7 @@ internal sealed class SealSecretKeyTransferValidator : Validator<SealSecretKeyTr
 {
     public SealSecretKeyTransferValidator()
     {
-        RuleFor(x => x.KemCiphertext).Must(value => value.Length == XWingKem.CiphertextBytes);
+        RuleFor(x => x.KemCiphertext).Must(value => value.Length == DevicePairingProtocol.KemCiphertextBytes);
         RuleFor(x => x.Ciphertext).Must(value => value.Length == SecretKeyTransfer.SealedSecretBytes);
     }
 }

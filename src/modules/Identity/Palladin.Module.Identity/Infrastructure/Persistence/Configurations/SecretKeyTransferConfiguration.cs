@@ -1,7 +1,7 @@
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Palladin.Core.Cryptography;
+using Palladin.Module.Identity.Infrastructure.Crypto;
 using Palladin.Module.Identity.Domain;
 
 namespace Palladin.Module.Identity.Infrastructure.Persistence.Configurations;
@@ -16,8 +16,8 @@ internal sealed class SecretKeyTransferConfiguration : IEntityTypeConfiguration<
         builder.Property(transfer => transfer.Revision).IsConcurrencyToken();
         builder.Property(transfer => transfer.Challenge).HasMaxLength(SecretKeyTransfer.ChallengeBytes).IsRequired();
         builder.Property(transfer => transfer.PollTokenHash).HasMaxLength(32);
-        builder.Property(transfer => transfer.RecipientPublicKey).HasMaxLength(XWingKem.PublicKeyBytes);
-        builder.Property(transfer => transfer.KemCiphertext).HasMaxLength(XWingKem.CiphertextBytes);
+        builder.Property(transfer => transfer.RecipientPublicKey).HasMaxLength(DevicePairingProtocol.RecipientPublicKeyBytes);
+        builder.Property(transfer => transfer.KemCiphertext).HasMaxLength(DevicePairingProtocol.KemCiphertextBytes);
         builder.Property(transfer => transfer.SealedSecret).HasMaxLength(SecretKeyTransfer.SealedSecretBytes);
         builder.HasOne<User>().WithMany().HasForeignKey(transfer => transfer.SenderUserId).OnDelete(DeleteBehavior.Cascade);
     }

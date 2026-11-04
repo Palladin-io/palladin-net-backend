@@ -5,7 +5,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
-using Palladin.Core.Cryptography;
+using Palladin.Module.Identity.Infrastructure.Crypto;
 using Palladin.Core.Json;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure.Login;
@@ -32,7 +32,7 @@ internal sealed class AttachSecretKeyTransferRecipientValidator : Validator<Atta
     public AttachSecretKeyTransferRecipientValidator()
     {
         RuleFor(x => x.Challenge).Must(challenge => challenge.Length == SecretKeyTransfer.ChallengeBytes);
-        RuleFor(x => x.RecipientPublicKey).Must(key => key.Length == XWingKem.PublicKeyBytes);
+        RuleFor(x => x.RecipientPublicKey).Must(key => key.Length == DevicePairingProtocol.RecipientPublicKeyBytes);
     }
 }
 

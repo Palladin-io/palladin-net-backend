@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using NodaTime;
-using Palladin.Core.Cryptography;
+using Palladin.Module.Identity.Infrastructure.Crypto;
 
 namespace Palladin.Module.Identity.Domain;
 
@@ -104,7 +104,7 @@ internal sealed class SecretKeyTransfer
             throw new SecretKeyTransferStateException("pairing-consumed");
         }
 
-        if (kemCiphertext.Length != XWingKem.CiphertextBytes || sealedSecret.Length != SealedSecretBytes)
+        if (kemCiphertext.Length != DevicePairingProtocol.KemCiphertextBytes || sealedSecret.Length != SealedSecretBytes)
         {
             throw new SecretKeyTransferStateException("malformed-envelope");
         }
@@ -144,7 +144,7 @@ internal sealed class SecretKeyTransfer
 
     private static void ValidateRecipientKey(byte[] recipientPublicKey)
     {
-        if (recipientPublicKey.Length != XWingKem.PublicKeyBytes)
+        if (recipientPublicKey.Length != DevicePairingProtocol.RecipientPublicKeyBytes)
         {
             throw new SecretKeyTransferStateException("malformed-recipient-key");
         }

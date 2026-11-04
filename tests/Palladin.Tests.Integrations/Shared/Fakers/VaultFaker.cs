@@ -11,7 +11,8 @@ internal static class VaultFaker
         Guid? id = null,
         Guid? organizationId = null,
         Guid? createdBy = null,
-        bool isDefault = false)
+        bool isDefault = false,
+        string? memberWrapperSuiteId = null)
     {
         var vaultId = id ?? Guid.NewGuid();
         var tenantId = organizationId ?? Guid.NewGuid();
@@ -24,7 +25,7 @@ internal static class VaultFaker
             new AgentMessageKeyVersion(1),
             new ManifestSigningKeyVersion(1));
         var metadata = CreateMetadata(scope, 1, generation, epoch.VaultKeyVersion);
-        var memberKey = CreateMemberKey(scope, userId, generation, epoch.VaultKeyVersion);
+        var memberKey = CreateMemberKey(scope, userId, generation, epoch.VaultKeyVersion, memberWrapperSuiteId);
         var keyMaterial = CreateKeyMaterial(scope, generation, epoch);
         var now = SystemClock.Instance.GetCurrentInstant();
 
@@ -76,17 +77,21 @@ internal static class VaultFaker
         VaultScope scope,
         Guid memberId,
         MemberKeyGeneration? generation = null,
-        VaultKeyVersion? keyVersion = null) =>
-        MemberWrappedVaultKey.Create(
+        VaultKeyVersion? keyVersion = null,
+        string? wrapperSuiteId = null)
+    {
+        var suite = KeyWrapperSuites.Resolve(wrapperSuiteId ?? KeyWrapperSuites.Current.Id);
+        return MemberWrappedVaultKey.Create(
             scope,
             memberId,
             VaultProtocol.CurrentVersion,
-            KeyWrapperSuites.Current.Id,
+            suite.Id,
             keyVersion ?? new VaultKeyVersion(1),
             generation ?? new MemberKeyGeneration(1),
             new MemberRecipientKeyVersion(1),
             Enumerable.Range(0, VaultProtocol.FingerprintBytes).Select(x => (byte)x).ToArray(),
-            VaultContractFaker.MemberSealedPackage);
+            Enumerable.Range(0, suite.PackageBytes).Select(x => (byte)(x + 1)).ToArray());
+    }
 
     internal static VaultKeyMaterialEnvelope[] CreateKeyMaterial(
         VaultScope scope,

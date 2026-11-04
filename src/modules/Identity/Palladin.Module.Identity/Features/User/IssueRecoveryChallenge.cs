@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
-using Palladin.Core.Cryptography;
 using Palladin.Core.Json;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Infrastructure.Persistence;
@@ -59,21 +58,15 @@ internal sealed class IssueRecoveryChallengeEndpoint(
             return;
         }
 
-        var isCurrentSuite = suiteId == KeyWrapperSuites.Current.Id;
 
         var secret = RandomNumberGenerator.GetBytes(RecoveryChallengeSealer.SecretBytes);
         try
         {
             var expiresAt = clock.GetCurrentInstant() + Duration.FromSeconds(options.Value.ChallengeTtlSeconds);
-            var sealedChallenge = isCurrentSuite
-                ? XWingRecoveryChallengeSealer.Seal(user.Id, secret, publicKey)
-                : RecoveryChallengeSealer.Seal(user.Id, secret, publicKey);
+            var (version, sealedChallenge) = RecoveryChallenges.Seal(user.Id, secret, publicKey, suiteId);
             user.IssueRecoveryChallenge(secret, expiresAt);
             await domainWriteContext.CommitAsync(ct);
-            await Send.OkAsync(new IssueRecoveryChallengeResponse(
-                isCurrentSuite ? XWingRecoveryChallengeSealer.Version : RecoveryChallengeSealer.Version,
-                sealedChallenge,
-                expiresAt), ct);
+            await Send.OkAsync(new IssueRecoveryChallengeResponse(version, sealedChallenge, expiresAt), ct);
         }
         finally
         {

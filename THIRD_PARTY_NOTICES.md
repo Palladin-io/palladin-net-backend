@@ -25,6 +25,7 @@ The table is an attribution aid, not a substitute for the complete license terms
 | AspNetCore.HealthChecks.NpgSql | 9.0.0 | Apache-2.0 | `pkg:nuget/AspNetCore.HealthChecks.NpgSql@9.0.0` |
 | Azure.AI.OpenAI | 2.9.0-beta.1 | MIT | `pkg:nuget/Azure.AI.OpenAI@2.9.0-beta.1` |
 | Azure.Core | 1.51.1 | MIT | `pkg:nuget/Azure.Core@1.51.1` |
+| BouncyCastle.Cryptography | 2.6.2 | MIT | `pkg:nuget/BouncyCastle.Cryptography@2.6.2` |
 | Dapper | 2.0.123 | Apache-2.0 | `pkg:nuget/Dapper@2.0.123` |
 | Dapper.AOT | 1.0.48 | Apache-2.0 | `pkg:nuget/Dapper.AOT@1.0.48` |
 | FastEndpoints | 7.2.0 | MIT | `pkg:nuget/FastEndpoints@7.2.0` |

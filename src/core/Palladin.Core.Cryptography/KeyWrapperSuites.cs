@@ -99,11 +99,7 @@ public static class KeyWrapperSuites
 
     public static KeyWrapperSuite Current => KeyWrapperSuite.XWing;
 
-    public static IReadOnlyList<KeyWrapperSuite> All => Registered;
-
     public static int MaximumPublicKeyBytes { get; } = Registered.Max(suite => suite.PublicKeyBytes);
-
-    public static int MaximumPackageBytes { get; } = Registered.Max(suite => suite.PackageBytes);
 
     public static KeyWrapperSuite Resolve(string? suiteId) =>
         Registered.FirstOrDefault(suite => string.Equals(suite.Id, suiteId, StringComparison.Ordinal))
@@ -124,7 +120,4 @@ public static class KeyWrapperSuites
             ? suite
             : throw new DomainException("The key-wrapper suite no longer accepts new envelopes.");
     }
-
-    public static IReadOnlyList<string> NonCurrentSuiteIds =>
-        Registered.Where(suite => suite != Current).Select(suite => suite.Id).ToArray();
 }

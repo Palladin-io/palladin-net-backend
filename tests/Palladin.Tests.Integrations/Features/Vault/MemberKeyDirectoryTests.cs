@@ -17,7 +17,7 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class MemberKeyDirectoryTests(ApiFactory apiFactory) : TestBase
 {
     private static readonly string CurrentSuite = KeyWrapperSuites.Current.Id;
-    private static readonly string LegacySuite = KeyWrapperSuites.NonCurrentSuiteIds.Single();
+    private static readonly string LegacySuite = FrozenContractWrapperSuite.Id;
 
     [Fact]
     public async Task When_IdentityPublishesMemberKey_Then_VaultStoresSuiteAndSuiteBoundFingerprint()

@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.7",
-  "serialNumber": "urn:uuid:6680ef98-a997-4dc8-846a-e6fbaba62a96",
+  "serialNumber": "urn:uuid:89824f82-ff1e-4840-8c87-33ec19d355ff",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-31T13:07:27Z",
+    "timestamp": "2026-11-04T19:58:23Z",
     "tools": {
       "components": [
         {
@@ -49,7 +49,8 @@
           "type": "vcs"
         }
       ]
-    }
+    },
+    "lifecycles": []
   },
   "components": [
     {
@@ -91,20 +92,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/AWSSDK.Core@4.0.100.6",
+      "bom-ref": "pkg:nuget/AWSSDK.Core@4.0.102.1",
       "authors": [
         {
           "name": "Amazon Web Services"
         }
       ],
       "name": "AWSSDK.Core",
-      "version": "4.0.100.6",
+      "version": "4.0.102.1",
       "description": "The Amazon Web Services SDK for .NET - Core Runtime",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "3E4C8FE3D278644134E08E52D18FC53AF8D7547EE5D62F84879564D08CC0E7AEBD066793AFFDE59FCB2AB352CAAE436C363500A5F98AA831750B3310EAC39AF8"
+          "content": "B12C4C2D2E6529861045D74BA0E723F773E494071EE56D197F4EE04DED112021805186482156E507963FD776ABCBFD7A5E012F9B90ACDF9BC2C60710E23E7060"
         }
       ],
       "licenses": [
@@ -114,7 +115,7 @@
           }
         }
       ],
-      "purl": "pkg:nuget/AWSSDK.Core@4.0.100.6",
+      "purl": "pkg:nuget/AWSSDK.Core@4.0.102.1",
       "externalReferences": [
         {
           "url": "https://github.com/aws/aws-sdk-net/",
@@ -124,86 +125,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/AWSSDK.Core@4.0.3.12",
-      "authors": [
-        {
-          "name": "Amazon Web Services"
-        }
-      ],
-      "name": "AWSSDK.Core",
-      "version": "4.0.3.12",
-      "description": "The Amazon Web Services SDK for .NET - Core Runtime",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "EBD64D0FEFDEF37741510BC4BE8EF788248AD08A554CDF5D8B2AD7538A30AE09A5DE727B0E0F0F86941F5ACA5F0D38E686F7DD74621ED8E97B5E57D74ED408B6"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "purl": "pkg:nuget/AWSSDK.Core@4.0.3.12",
-      "externalReferences": [
-        {
-          "url": "https://github.com/aws/aws-sdk-net/",
-          "type": "website"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "pkg:nuget/AWSSDK.Core@4.0.9.7",
-      "authors": [
-        {
-          "name": "Amazon Web Services"
-        }
-      ],
-      "name": "AWSSDK.Core",
-      "version": "4.0.9.7",
-      "description": "The Amazon Web Services SDK for .NET - Core Runtime",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "EA4FB98BCEAE508404BE303AA6E02DBF8BF85EC4020091C212E4E95BFE7A214203887F74ABCD896279FC78CFCA7C234A4CABD057DCFD512193A27E30A7F90A56"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "purl": "pkg:nuget/AWSSDK.Core@4.0.9.7",
-      "externalReferences": [
-        {
-          "url": "https://github.com/aws/aws-sdk-net/",
-          "type": "website"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "pkg:nuget/AWSSDK.S3@4.0.18.6",
+      "bom-ref": "pkg:nuget/AWSSDK.S3@4.0.102.4",
       "authors": [
         {
           "name": "Amazon Web Services"
         }
       ],
       "name": "AWSSDK.S3",
-      "version": "4.0.18.6",
+      "version": "4.0.102.4",
       "description": "Amazon Simple Storage Service (Amazon S3), provides developers and IT teams with secure, durable, highly-scalable object storage.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "34C64916A9B53596A8FFDE7E1AF83C1C4837F9FC3C6D166F0006A36137B4DBF9DECF4B3152F515BE2C2CC39CAFCA007FCB498F8A1AE58A2390D017EC8DB66E04"
+          "content": "C40979C9C845516A6A2D2F529770A2B776C35996CBC0122C7B8E52746B227A6AE1A118C67EC36873B409DD6BAEB3A3F911574F17154C88C20779A1ABC9D70074"
         }
       ],
       "licenses": [
@@ -213,7 +148,7 @@
           }
         }
       ],
-      "purl": "pkg:nuget/AWSSDK.S3@4.0.18.6",
+      "purl": "pkg:nuget/AWSSDK.S3@4.0.102.4",
       "externalReferences": [
         {
           "url": "https://github.com/aws/aws-sdk-net/",
@@ -223,20 +158,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.14.9",
+      "bom-ref": "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.103.1",
       "authors": [
         {
           "name": "Amazon Web Services"
         }
       ],
       "name": "AWSSDK.SimpleEmailV2",
-      "version": "4.0.14.9",
+      "version": "4.0.103.1",
       "description": "This is the first release of version 2 of the Amazon SES API. You can use this API to configure your Amazon SES account, and to send email. This API extends the functionality that exists in the previous version of the Amazon SES API.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "6E924208EE9E64799E114FE264EFC7775037D6B23D134FDB08F1FF35FCE7A636D7DD0908B416BD1D5CFCB178F54A4A172C36503C14818EC789307AE02AA9483F"
+          "content": "2C12F40B5EF06828FD9BB700D8790247AB51759828B5DEED474669D67D3CAEF6581C7D1827CD88CA36FEEE483E81E5750A0B2DC93FCA0572D604F0C1BCC00643"
         }
       ],
       "licenses": [
@@ -246,7 +181,7 @@
           }
         }
       ],
-      "purl": "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.14.9",
+      "purl": "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.103.1",
       "externalReferences": [
         {
           "url": "https://github.com/aws/aws-sdk-net/",
@@ -256,20 +191,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.102.1",
+      "bom-ref": "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.103.6",
       "authors": [
         {
           "name": "Amazon Web Services"
         }
       ],
       "name": "AWSSDK.SimpleSystemsManagement",
-      "version": "4.0.102.1",
+      "version": "4.0.103.6",
       "description": "Amazon EC2 Simple Systems Manager (SSM) enables you to manage a number of administrative and configuration tasks on your instances.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "1001685A1B13B130C41E8E7EADB052EB6B6B455A6A7DC13C6E521B03FFB1C5986853E47AF2C3AE945750F6404040E6383814BA99454B356EAB3C9FC7570E6133"
+          "content": "362B7CC5965820C3E27471C170C220C5C739E21B5400E77ACCFA6FC6543571C1BB765E7120C917CBD11C3EFE4652DD613BE3D5BB32050E67C16AA09E6E8AF142"
         }
       ],
       "licenses": [
@@ -279,7 +214,7 @@
           }
         }
       ],
-      "purl": "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.102.1",
+      "purl": "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.103.6",
       "externalReferences": [
         {
           "url": "https://github.com/aws/aws-sdk-net/",
@@ -771,20 +706,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/FirebaseAdmin@3.5.0",
+      "bom-ref": "pkg:nuget/FirebaseAdmin@3.6.0",
       "authors": [
         {
           "name": "Google Inc."
         }
       ],
       "name": "FirebaseAdmin",
-      "version": "3.5.0",
+      "version": "3.6.0",
       "description": "Firebase Admin SDK enables server-side .NET developers to integrate Firebase into their\n      services and applications.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "0E86FE949A991A37D35896018A3E365DFB8F760F1B782DCA1A670E3E211C495CE35E0F657C4A1E430DB6AB3CEF0B715D9F98AD4CE986545DB69E6AEDC925D7FD"
+          "content": "EE10D886A9143A160F48FCAABC8AC7CE771FD88AD18908C90ED5D0A62B30597F08200354BCA0F99560EA93D27729C536264005048D7057368AD247638F64A427"
         }
       ],
       "licenses": [
@@ -795,7 +730,7 @@
         }
       ],
       "copyright": "Copyright 2018 Google LLC",
-      "purl": "pkg:nuget/FirebaseAdmin@3.5.0",
+      "purl": "pkg:nuget/FirebaseAdmin@3.6.0",
       "externalReferences": [
         {
           "url": "https://github.com/Firebase/firebase-admin-dotnet",
@@ -961,44 +896,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/Google.Apis@1.69.0",
-      "authors": [
-        {
-          "name": "Google LLC"
-        }
-      ],
-      "name": "Google.Apis",
-      "version": "1.69.0",
-      "description": "The Google APIs Client Library is a runtime client for working with Google services.\nThe library supports service requests, media upload and download, etc.",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "1C76F70345336DB52E0C45260CD06D9FCCF886495446735F882DE486B5B1E27BC17905F430EA1EFFBAA02D679D8AFEF06C4A8A4452AA75B32E744929B014C392"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ],
-      "copyright": "Copyright 2021 Google LLC",
-      "purl": "pkg:nuget/Google.Apis@1.69.0",
-      "externalReferences": [
-        {
-          "url": "https://github.com/googleapis/google-api-dotnet-client",
-          "type": "website"
-        },
-        {
-          "url": "https://github.com/googleapis/google-api-dotnet-client",
-          "type": "vcs"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "pkg:nuget/Google.Apis@1.73.0",
       "authors": [
         {
@@ -1037,20 +934,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/Google.Apis.Auth@1.69.0",
+      "bom-ref": "pkg:nuget/Google.Apis@1.75.0",
       "authors": [
         {
           "name": "Google LLC"
         }
       ],
-      "name": "Google.Apis.Auth",
-      "version": "1.69.0",
-      "description": "The Google APIs Client Library is a runtime client for working with Google services.\n\nThis package includes auth components like user-credential, authorization code flow, etc. for making authenticated calls using the OAuth2 spec.",
+      "name": "Google.Apis",
+      "version": "1.75.0",
+      "description": "The Google APIs Client Library is a runtime client for working with Google services.\nThe library supports service requests, media upload and download, etc.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "A2CA73F248755A301FD8D0FB7CEDFFC1A691E22176CF6618893286AEFAC99046BAB34BD00693079665DFBBFCFFF8D851FC1FA94A1276DD54145C7C11A9658350"
+          "content": "EE6E684C20F58DCF3C153B82B191E2A54BEFCCF125EBA1119829FEEAB79D348E69E80E0D0C4EE9FC9E2E51E1DDC9B7BB80EE6DB002876560C4EF324C971B7AEA"
         }
       ],
       "licenses": [
@@ -1061,7 +958,7 @@
         }
       ],
       "copyright": "Copyright 2021 Google LLC",
-      "purl": "pkg:nuget/Google.Apis.Auth@1.69.0",
+      "purl": "pkg:nuget/Google.Apis@1.75.0",
       "externalReferences": [
         {
           "url": "https://github.com/googleapis/google-api-dotnet-client",
@@ -1113,20 +1010,20 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/Google.Apis.Core@1.69.0",
+      "bom-ref": "pkg:nuget/Google.Apis.Auth@1.75.0",
       "authors": [
         {
           "name": "Google LLC"
         }
       ],
-      "name": "Google.Apis.Core",
-      "version": "1.69.0",
-      "description": "The Google APIs Core Library contains the Google APIs HTTP layer, JSON support, Data-store, logging and so on.",
+      "name": "Google.Apis.Auth",
+      "version": "1.75.0",
+      "description": "The Google APIs Client Library is a runtime client for working with Google services.\n\nThis package includes auth components like user-credential, authorization code flow, etc. for making authenticated calls using the OAuth2 spec.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "27B702230494BF3E4C57F20DB59D980A3B5CAA2A960241D73AE93A1E092440DE385B301EB441B2FDC7B1209CFE677896646581236D7CB1C46815FEBE424CC37B"
+          "content": "5E2340471FC95A936BEB80CA678D18E64862C7DE4E457CE9EBF0872BC450778A94B944854CFC4352737CF6033F6B90631DDBC70C6E3805FA2F2B0F3C263CD11F"
         }
       ],
       "licenses": [
@@ -1137,7 +1034,7 @@
         }
       ],
       "copyright": "Copyright 2021 Google LLC",
-      "purl": "pkg:nuget/Google.Apis.Core@1.69.0",
+      "purl": "pkg:nuget/Google.Apis.Auth@1.75.0",
       "externalReferences": [
         {
           "url": "https://github.com/googleapis/google-api-dotnet-client",
@@ -1189,6 +1086,196 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:nuget/Google.Apis.Core@1.75.0",
+      "authors": [
+        {
+          "name": "Google LLC"
+        }
+      ],
+      "name": "Google.Apis.Core",
+      "version": "1.75.0",
+      "description": "The Google APIs Core Library contains the Google APIs HTTP layer, JSON support, Data-store, logging and so on.",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "B057B5799230AED170726E3BEC215D90F1577DAA311091E90688E4A4270ED10CF2C9EE8B59317BF1EB0F6FF48867D89C0ABA95D1827A9BB25E16E29CF534AADE"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "copyright": "Copyright 2021 Google LLC",
+      "purl": "pkg:nuget/Google.Apis.Core@1.75.0",
+      "externalReferences": [
+        {
+          "url": "https://github.com/googleapis/google-api-dotnet-client",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/googleapis/google-api-dotnet-client",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:nuget/Google.Protobuf@3.30.1",
+      "authors": [
+        {
+          "name": "Google Inc."
+        }
+      ],
+      "name": "Google.Protobuf",
+      "version": "3.30.1",
+      "description": "C# runtime library for Protocol Buffers - Google's data interchange format.",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "8211ED08EF82BF0E95E8D4A474760A32D820091B7AC46C53C965FDD2CBDF624D07B8D74F89E2EF5F19A02F7597BBFDE27E68D53DC04E3B362DA843A0DF8D27D2"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "copyright": "Copyright 2015, Google Inc.",
+      "purl": "pkg:nuget/Google.Protobuf@3.30.1",
+      "externalReferences": [
+        {
+          "url": "https://github.com/protocolbuffers/protobuf",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/protocolbuffers/protobuf.git",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:nuget/Grpc.Core.Api@2.70.0",
+      "authors": [
+        {
+          "name": "The gRPC Authors"
+        }
+      ],
+      "name": "Grpc.Core.Api",
+      "version": "2.70.0",
+      "description": "gRPC C# Surface API",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "128B90FFDF80A0510A5D1BAEE06D40C6697761C8E968ACCDAA33C2D8B9C55C93C547BB98DC0227BDA6F12944AAB0AB0DB3E8667E23029C9C22DDBB0DF9570C07"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "copyright": "Copyright 2019 The gRPC Authors",
+      "purl": "pkg:nuget/Grpc.Core.Api@2.70.0",
+      "externalReferences": [
+        {
+          "url": "https://github.com/grpc/grpc-dotnet",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/grpc/grpc-dotnet.git",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:nuget/Grpc.Net.Client@2.70.0",
+      "authors": [
+        {
+          "name": "The gRPC Authors"
+        }
+      ],
+      "name": "Grpc.Net.Client",
+      "version": "2.70.0",
+      "description": ".NET client for gRPC",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4211A9BDA242BB1947105A42DF4821E329EF4B923CC98308C9FC974CB89949656B119BDB5F10CAC7FEEB01D3BE6C949A78DCCB116D59BAEEEDC46AB317C750C4"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "copyright": "Copyright 2019 The gRPC Authors",
+      "purl": "pkg:nuget/Grpc.Net.Client@2.70.0",
+      "externalReferences": [
+        {
+          "url": "https://github.com/grpc/grpc-dotnet",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/grpc/grpc-dotnet.git",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:nuget/Grpc.Net.Common@2.70.0",
+      "authors": [
+        {
+          "name": "The gRPC Authors"
+        }
+      ],
+      "name": "Grpc.Net.Common",
+      "version": "2.70.0",
+      "description": "Infrastructure for common functionality in gRPC",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "C0E7F2413803DAA2A0E6D4366B137AD0D10C2ADFF954169EEBB36531F6F8A1E2ED400731BBC86070C3C3A8B7D561D7C9489DF88AC908068DA3B2BA26F1528E8D"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "copyright": "Copyright 2019 The gRPC Authors",
+      "purl": "pkg:nuget/Grpc.Net.Common@2.70.0",
+      "externalReferences": [
+        {
+          "url": "https://github.com/grpc/grpc-dotnet",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/grpc/grpc-dotnet.git",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:nuget/Hangfire.AspNetCore@1.8.24",
       "authors": [
         {
@@ -1205,6 +1292,11 @@
           "content": "95CAFF99A17D98B7A44A8AE0577FF45225C247372A94132AD78640996036360A699977A4DB9FE5CD136B8CB8DA621A8509FFF745291AA8EFDA7DBF7DB359B1F2"
         }
       ],
+      "licenses": [
+        {
+          "expression": "LGPL-3.0-or-later"
+        }
+      ],
       "copyright": "Copyright © 2017-2026 Hangfire OÜ",
       "purl": "pkg:nuget/Hangfire.AspNetCore@1.8.24",
       "externalReferences": [
@@ -1215,11 +1307,6 @@
         {
           "url": "https://github.com/HangfireIO/Hangfire.git",
           "type": "vcs"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "LGPL-3.0-or-later"
         }
       ]
     },
@@ -1241,6 +1328,11 @@
           "content": "1B098C6A5037865CE527C8FD4E90D22C4818E69585BC7B0D44B92F45F308C44AA8BB3C664E5FDCB8D7A45618A34987EC87488E795C97EDDED03AF5DAA0B2595E"
         }
       ],
+      "licenses": [
+        {
+          "expression": "LGPL-3.0-or-later"
+        }
+      ],
       "copyright": "Copyright © 2013-2026 Hangfire OÜ",
       "purl": "pkg:nuget/Hangfire.Core@1.8.24",
       "externalReferences": [
@@ -1251,11 +1343,6 @@
         {
           "url": "https://github.com/HangfireIO/Hangfire.git",
           "type": "vcs"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "LGPL-3.0-or-later"
         }
       ]
     },
@@ -1277,6 +1364,11 @@
           "content": "E89E296757CE70D28545F6198E9DF6304D0E3EEAF0A418BE1597CB055434BF63FF9C49C314F89A2A06D01235A449D6733D7D05C68E2240981AEE2D302FF98893"
         }
       ],
+      "licenses": [
+        {
+          "expression": "LGPL-3.0-or-later"
+        }
+      ],
       "copyright": "Copyright © 2019-2026 Hangfire OÜ",
       "purl": "pkg:nuget/Hangfire.NetCore@1.8.24",
       "externalReferences": [
@@ -1287,11 +1379,6 @@
         {
           "url": "https://github.com/HangfireIO/Hangfire.git",
           "type": "vcs"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "LGPL-3.0-or-later"
         }
       ]
     },
@@ -1313,6 +1400,11 @@
           "content": "32C13EF10867C039C1B2AD020773C3AB9515B34D23C9893C7C94E44CFE4C2BFE9D2493076786FBE1F8F88903A2354ED68BF9B1D720D8A1CB1B780468BF76844D"
         }
       ],
+      "licenses": [
+        {
+          "expression": "LGPL-3.0-or-later"
+        }
+      ],
       "copyright": "Copyright © 2014-2024 Frank Hommers and others",
       "purl": "pkg:nuget/Hangfire.PostgreSql@1.21.1",
       "externalReferences": [
@@ -1323,11 +1415,6 @@
         {
           "url": "https://github.com/frankhommers/Hangfire.PostgreSql",
           "type": "vcs"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "LGPL-3.0-or-later"
         }
       ]
     },
@@ -6042,44 +6129,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/Newtonsoft.Json@13.0.3",
-      "authors": [
-        {
-          "name": "James Newton-King"
-        }
-      ],
-      "name": "Newtonsoft.Json",
-      "version": "13.0.3",
-      "description": "Json.NET is a popular high-performance JSON framework for .NET",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "99B252BC77D1C5F5F7B51FD4EA7D5653E9961D7B3061CF9207F8643A9C7CC9965EEBC84D6467F2989BB4723B1A244915CC232A78F894E8B748CA882A7C89FB92"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ],
-      "copyright": "Copyright © James Newton-King 2008",
-      "purl": "pkg:nuget/Newtonsoft.Json@13.0.3",
-      "externalReferences": [
-        {
-          "url": "https://www.newtonsoft.com/json",
-          "type": "website"
-        },
-        {
-          "url": "https://github.com/JamesNK/Newtonsoft.Json",
-          "type": "vcs"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "pkg:nuget/Newtonsoft.Json@13.0.4",
       "authors": [
         {
@@ -7193,6 +7242,13 @@
           "content": "431E012A1BF9D59BB3EDF9316A254C415FD2377068D1107012C215A2028F67E51C510D5A178AAD17C4F0628B9FFE67C0BDC1BB18B077570E017F9D3C7F12730A"
         }
       ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
       "copyright": "Kyle Spearrin",
       "purl": "pkg:nuget/Otp.NET@1.4.0",
       "externalReferences": [
@@ -7203,13 +7259,6 @@
         {
           "url": "https://github.com/kspearrin/Otp.NET",
           "type": "vcs"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
         }
       ]
     },
@@ -8001,24 +8050,69 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:nuget/SixLabors.ImageSharp@3.1.11",
+      "bom-ref": "pkg:nuget/Serilog.Sinks.OpenTelemetry@4.2.0",
+      "authors": [
+        {
+          "name": "Serilog Contributors"
+        }
+      ],
+      "name": "Serilog.Sinks.OpenTelemetry",
+      "version": "4.2.0",
+      "description": "This Serilog sink transforms Serilog events into OpenTelemetry\n            logs and sends them to an OTLP (gRPC or HTTP) endpoint.",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "62CF8B823997C508CA8489AD3A83DC10949CEEB9E1F5E3BC813563B3B016EC4C7C9A1F315AA344F8680C1A9B1DEEE054B5BC3B02111F288FE13B7C4CC2D95B6F"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "purl": "pkg:nuget/Serilog.Sinks.OpenTelemetry@4.2.0",
+      "externalReferences": [
+        {
+          "url": "https://github.com/serilog/serilog-sinks-opentelemetry",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/serilog/serilog-sinks-opentelemetry",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:nuget/SixLabors.ImageSharp@4.1.3",
       "authors": [
         {
           "name": "Six Labors and contributors"
         }
       ],
       "name": "SixLabors.ImageSharp",
-      "version": "3.1.11",
+      "version": "4.1.3",
       "description": "A new, fully featured, fully managed, cross-platform, 2D graphics API for .NET",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "A3305E5784285DE117B9498FCF578BF651BFC8D3D08C38F897E6B879BF41449A144B2B8863F56407646C2A332E62D45061456EA6EBA153D2E950B52DD3540897"
+          "content": "97E14386CD083A392BCDA6B30BD8E50E7B7082630D7214F3C8B9989196124CF8621C09CD1411B683790F5A451467A4311B367EC80AE3EA92EAD98BCC517822FB"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "Six Labors Split License, Version 1.0",
+            "url": "https://github.com/SixLabors/ImageSharp/blob/v4.1.3/LICENSE"
+          }
         }
       ],
       "copyright": "Copyright © Six Labors",
-      "purl": "pkg:nuget/SixLabors.ImageSharp@3.1.11",
+      "purl": "pkg:nuget/SixLabors.ImageSharp@4.1.3",
       "externalReferences": [
         {
           "url": "https://github.com/SixLabors/ImageSharp",
@@ -8027,14 +8121,6 @@
         {
           "url": "https://github.com/SixLabors/ImageSharp",
           "type": "vcs"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "name": "Six Labors Split License, Version 1.0",
-            "url": "https://github.com/SixLabors/ImageSharp/blob/v3.1.11/LICENSE"
-          }
         }
       ]
     },
@@ -8382,6 +8468,44 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:nuget/System.IO.Hashing@8.0.0",
+      "authors": [
+        {
+          "name": "Microsoft"
+        }
+      ],
+      "name": "System.IO.Hashing",
+      "version": "8.0.0",
+      "description": "Provides non-cryptographic hash algorithms, such as CRC-32.\n\nCommonly Used Types:\nSystem.IO.Hashing.Crc32\nSystem.IO.Hashing.XxHash32",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "842B1DFF4B1DCB484689F244A93B1F65FA94DA7082D11736A65080E669353CDD6A95CA18214B9A79C94B635FE8CEC13057B0DBF0D6B8D67A4A79AACA5C7534EC"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "copyright": "© Microsoft Corporation. All rights reserved.",
+      "purl": "pkg:nuget/System.IO.Hashing@8.0.0",
+      "externalReferences": [
+        {
+          "url": "https://dot.net/",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/dotnet/runtime",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:nuget/System.Management@7.0.2",
       "authors": [
         {
@@ -8612,7 +8736,6 @@
     {
       "ref": "Palladin.Backend@1.0.0",
       "dependsOn": [
-        "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
         "pkg:nuget/JetBrains.Annotations@2025.2.4",
         "pkg:nuget/Microsoft.Extensions.Configuration@10.0.2",
         "pkg:nuget/Microsoft.Extensions.DependencyInjection@10.0.2",
@@ -8645,26 +8768,27 @@
         "pkg:nuget/OpenTelemetry.Extensions.Hosting@1.17.0",
         "pkg:nuget/NodaTime@3.2.2",
         "pkg:nuget/PostHog.AspNetCore@1.0.4",
-        "pkg:nuget/Google.Apis.Auth@1.69.0",
+        "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
+        "pkg:nuget/Google.Apis.Auth@1.75.0",
         "pkg:nuget/Konscious.Security.Cryptography.Argon2@1.3.1",
         "pkg:nuget/Microsoft.AspNetCore.Authentication.JwtBearer@10.0.3",
+        "pkg:nuget/NSec.Cryptography@26.4.0",
         "pkg:nuget/Otp.NET@1.4.0",
-        "pkg:nuget/AWSSDK.S3@4.0.18.6",
-        "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.14.9",
-        "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.102.1",
+        "pkg:nuget/AWSSDK.S3@4.0.102.4",
+        "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.103.1",
+        "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.103.6",
         "pkg:nuget/AWSSDK.SQS@4.0.3.8",
         "pkg:nuget/FastEndpoints.Swagger@7.2.0",
-        "pkg:nuget/FirebaseAdmin@3.5.0",
+        "pkg:nuget/FirebaseAdmin@3.6.0",
         "pkg:nuget/Fluid.Core@2.31.0",
-        "pkg:nuget/Google.Apis.Auth@1.73.0",
         "pkg:nuget/Microsoft.AspNetCore.OpenApi@10.0.10",
         "pkg:nuget/Microsoft.EntityFrameworkCore@10.0.3",
         "pkg:nuget/Microsoft.OpenApi@2.11.0",
         "pkg:nuget/NodaTime.Serialization.SystemTextJson@1.3.1",
-        "pkg:nuget/NSec.Cryptography@26.4.0",
         "pkg:nuget/Scalar.AspNetCore@2.12.41",
         "pkg:nuget/Serilog.AspNetCore@10.0.0",
-        "pkg:nuget/SixLabors.ImageSharp@3.1.11"
+        "pkg:nuget/Serilog.Sinks.OpenTelemetry@4.2.0",
+        "pkg:nuget/SixLabors.ImageSharp@4.1.3"
       ]
     },
     {
@@ -8675,39 +8799,31 @@
       ]
     },
     {
-      "ref": "pkg:nuget/AWSSDK.Core@4.0.100.6",
+      "ref": "pkg:nuget/AWSSDK.Core@4.0.102.1",
       "dependsOn": []
     },
     {
-      "ref": "pkg:nuget/AWSSDK.Core@4.0.3.12",
-      "dependsOn": []
-    },
-    {
-      "ref": "pkg:nuget/AWSSDK.Core@4.0.9.7",
-      "dependsOn": []
-    },
-    {
-      "ref": "pkg:nuget/AWSSDK.S3@4.0.18.6",
+      "ref": "pkg:nuget/AWSSDK.S3@4.0.102.4",
       "dependsOn": [
-        "pkg:nuget/AWSSDK.Core@4.0.100.6"
+        "pkg:nuget/AWSSDK.Core@4.0.102.1"
       ]
     },
     {
-      "ref": "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.14.9",
+      "ref": "pkg:nuget/AWSSDK.SimpleEmailV2@4.0.103.1",
       "dependsOn": [
-        "pkg:nuget/AWSSDK.Core@4.0.100.6"
+        "pkg:nuget/AWSSDK.Core@4.0.102.1"
       ]
     },
     {
-      "ref": "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.102.1",
+      "ref": "pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.103.6",
       "dependsOn": [
-        "pkg:nuget/AWSSDK.Core@4.0.100.6"
+        "pkg:nuget/AWSSDK.Core@4.0.102.1"
       ]
     },
     {
       "ref": "pkg:nuget/AWSSDK.SQS@4.0.3.8",
       "dependsOn": [
-        "pkg:nuget/AWSSDK.Core@4.0.100.6"
+        "pkg:nuget/AWSSDK.Core@4.0.102.1"
       ]
     },
     {
@@ -8726,11 +8842,11 @@
       ]
     },
     {
-      "ref": "pkg:nuget/Dapper.AOT@1.0.48",
+      "ref": "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
+      "ref": "pkg:nuget/Dapper.AOT@1.0.48",
       "dependsOn": []
     },
     {
@@ -8787,10 +8903,10 @@
       ]
     },
     {
-      "ref": "pkg:nuget/FirebaseAdmin@3.5.0",
+      "ref": "pkg:nuget/FirebaseAdmin@3.6.0",
       "dependsOn": [
         "pkg:nuget/Google.Api.Gax.Rest@4.13.1",
-        "pkg:nuget/Google.Apis.Auth@1.73.0"
+        "pkg:nuget/Google.Apis.Auth@1.75.0"
       ]
     },
     {
@@ -8808,7 +8924,7 @@
       "ref": "pkg:nuget/Google.Api.Gax.Rest@4.13.1",
       "dependsOn": [
         "pkg:nuget/Google.Api.Gax@4.13.1",
-        "pkg:nuget/Google.Apis.Auth@1.73.0"
+        "pkg:nuget/Google.Apis.Auth@1.75.0"
       ]
     },
     {
@@ -8816,14 +8932,6 @@
       "dependsOn": [
         "pkg:nuget/Microsoft.Bcl.AsyncInterfaces@10.0.2",
         "pkg:nuget/Newtonsoft.Json@13.0.4"
-      ]
-    },
-    {
-      "ref": "pkg:nuget/Google.Apis.Auth@1.69.0",
-      "dependsOn": [
-        "pkg:nuget/Google.Apis@1.69.0",
-        "pkg:nuget/Google.Apis.Core@1.69.0",
-        "pkg:nuget/System.Management@7.0.2"
       ]
     },
     {
@@ -8835,9 +8943,11 @@
       ]
     },
     {
-      "ref": "pkg:nuget/Google.Apis.Core@1.69.0",
+      "ref": "pkg:nuget/Google.Apis.Auth@1.75.0",
       "dependsOn": [
-        "pkg:nuget/Newtonsoft.Json@13.0.3"
+        "pkg:nuget/Google.Apis@1.75.0",
+        "pkg:nuget/Google.Apis.Core@1.75.0",
+        "pkg:nuget/System.Management@7.0.2"
       ]
     },
     {
@@ -8847,15 +8957,41 @@
       ]
     },
     {
-      "ref": "pkg:nuget/Google.Apis@1.69.0",
+      "ref": "pkg:nuget/Google.Apis.Core@1.75.0",
       "dependsOn": [
-        "pkg:nuget/Google.Apis.Core@1.69.0"
+        "pkg:nuget/Newtonsoft.Json@13.0.4"
       ]
     },
     {
       "ref": "pkg:nuget/Google.Apis@1.73.0",
       "dependsOn": [
         "pkg:nuget/Google.Apis.Core@1.73.0"
+      ]
+    },
+    {
+      "ref": "pkg:nuget/Google.Apis@1.75.0",
+      "dependsOn": [
+        "pkg:nuget/Google.Apis.Core@1.75.0"
+      ]
+    },
+    {
+      "ref": "pkg:nuget/Google.Protobuf@3.30.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:nuget/Grpc.Core.Api@2.70.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:nuget/Grpc.Net.Client@2.70.0",
+      "dependsOn": [
+        "pkg:nuget/Grpc.Net.Common@2.70.0"
+      ]
+    },
+    {
+      "ref": "pkg:nuget/Grpc.Net.Common@2.70.0",
+      "dependsOn": [
+        "pkg:nuget/Grpc.Core.Api@2.70.0"
       ]
     },
     {
@@ -9720,10 +9856,6 @@
       "dependsOn": []
     },
     {
-      "ref": "pkg:nuget/Newtonsoft.Json@13.0.3",
-      "dependsOn": []
-    },
-    {
       "ref": "pkg:nuget/Newtonsoft.Json@13.0.4",
       "dependsOn": []
     },
@@ -10044,12 +10176,22 @@
       ]
     },
     {
+      "ref": "pkg:nuget/Serilog.Sinks.OpenTelemetry@4.2.0",
+      "dependsOn": [
+        "pkg:nuget/Google.Protobuf@3.30.1",
+        "pkg:nuget/Grpc.Net.Client@2.70.0",
+        "pkg:nuget/Serilog@4.3.1"
+      ]
+    },
+    {
       "ref": "pkg:nuget/Serilog@4.3.1",
       "dependsOn": []
     },
     {
-      "ref": "pkg:nuget/SixLabors.ImageSharp@3.1.11",
-      "dependsOn": []
+      "ref": "pkg:nuget/SixLabors.ImageSharp@4.1.3",
+      "dependsOn": [
+        "pkg:nuget/System.IO.Hashing@8.0.0"
+      ]
     },
     {
       "ref": "pkg:nuget/System.ClientModel@1.10.0",
@@ -10108,6 +10250,10 @@
         "pkg:nuget/Microsoft.IdentityModel.JsonWebTokens@8.14.0",
         "pkg:nuget/Microsoft.IdentityModel.Tokens@8.14.0"
       ]
+    },
+    {
+      "ref": "pkg:nuget/System.IO.Hashing@8.0.0",
+      "dependsOn": []
     },
     {
       "ref": "pkg:nuget/System.Management@7.0.2",

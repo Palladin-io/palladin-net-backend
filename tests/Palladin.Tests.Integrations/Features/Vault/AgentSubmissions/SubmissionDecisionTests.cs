@@ -489,7 +489,7 @@ public sealed class SubmissionDecisionTests(ApiFactory apiFactory) : TestBase
                     :
                     [
                         GrantEnvelopeTestData.Contract(
-                            scenario.OrganizationId, scenario.VaultId, grantId.Value, entryId, agent.X25519PublicKey,
+                            scenario.OrganizationId, scenario.VaultId, grantId.Value, entryId, agent.EncryptionPublicKey,
                             entryRevision: baseRevision + 1, envelopeRevision: baseRevision + 1,
                             grantKeyVersion: (uint)baseRevision + 1, agentId: agent.Id, methods: GrantMethods.Inject),
                     ],

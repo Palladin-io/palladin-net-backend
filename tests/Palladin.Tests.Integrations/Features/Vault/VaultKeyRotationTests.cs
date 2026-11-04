@@ -153,7 +153,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                 VaultKeyKind.VaultSigning),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
             Enumerable.Repeat((byte)0x5A, 64).ToArray(),
-            new byte[64]);
+            new byte[64],
+            "palladin-x25519-sealed-box-v1");
         var scriptGrant = ScriptExecutionGrant.CreateProactively(
             scriptGrantId,
             vault.Id,
@@ -1000,8 +1001,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         var recipient = source!.Items.Single();
         recipient.MemberId.ShouldBe(user.Id);
         recipient.RecipientKeyVersion.ShouldBe(1u);
-        recipient.RecipientKeySuiteId.ShouldBe(Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id);
-        WebEncoders.Base64UrlDecode(recipient.RecipientPublicKey)
+        recipient.KeySuiteId.ShouldBe(Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id);
+        WebEncoders.Base64UrlDecode(recipient.PublicKey)
             .ShouldBe(new byte[Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes]);
         source.NextAfterId.ShouldBe(user.Id);
     }

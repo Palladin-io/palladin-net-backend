@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
+using Palladin.Core.Cryptography;
 using NodaTime;
 using NSec.Cryptography;
 using Palladin.Module.Vault.Features;
@@ -10,8 +11,10 @@ using Palladin.Module.Vault.Shared;
 
 namespace Palladin.Tests.Integrations.Shared.Fakers;
 
+// X25519PublicKey is the Agent's 32-byte X-Agent-Key identifier; EncryptionPublicKey is its X-Wing recipient key.
 internal sealed record AgentDiscoveryProvisioningFixture(
     string X25519PublicKey,
+    string EncryptionPublicKey,
     AgentRequestSigning RequestSigning,
     ProvisionAgentDiscoveryRequest Request);
 
@@ -27,10 +30,12 @@ internal static class AgentDiscoveryProvisioningContractFaker
         ulong revision = 1)
     {
         var requestSigning = AgentRequestSigning.Generate();
-        var x25519PublicKey = AgentFaker.GeneratePublicKey();
-        var agentX25519Key = Convert.FromBase64String(x25519PublicKey);
+        var suiteId = KeyWrapperSuites.Current.Id;
+        var encryptionPublicKey = VaultAgentFaker.GenerateEncryptionPublicKey();
+        var agentEncryptionFingerprint = Encode(RecipientKeyFingerprint.Compute(
+            suiteId, VaultKeyKind.AgentEncryption, Convert.FromBase64String(encryptionPublicKey)));
         var agentEd25519Key = Convert.FromBase64String(requestSigning.PublicKeyBase64);
-        var wrappedVdk = RandomNumberGenerator.GetBytes(120);
+        var wrappedVdk = RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PackageBytes);
         using var vaultSigningKey = VaultTrustAnchorFaker.CreateManifestSigningKey();
         var vaultSigningPublicKey = vaultSigningKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
         var vaultMessagePublicKey = VaultTrustAnchorFaker.AgentMessagePublicKey;
@@ -40,20 +45,24 @@ internal static class AgentDiscoveryProvisioningContractFaker
             organizationId,
             vaultId,
             agentId,
-            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption)),
+            agentEncryptionFingerprint,
             Encode(VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentSigning)),
             Encode(vaultSigningPublicKey),
             Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigning)),
             1,
             Encode(vaultMessagePublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultAgentMessage)),
+            Encode(VaultTrustAnchorFaker.AgentMessageFingerprint(vaultMessagePublicKey)),
             1,
             1,
             Encode(ComputeWrappedVdkDigest(wrappedVdk)),
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             TruncateToMicroseconds(SystemClock.Instance.GetCurrentInstant()),
             2,
-            string.Empty);
+            string.Empty) with
+        {
+            WrapperSuiteId = suiteId,
+            VaultAgentMessageKeySuiteId = VaultTrustAnchorFaker.AgentMessageKeySuiteId,
+        };
         var signature = Encode(SignatureAlgorithm.Ed25519.Sign(vaultSigningKey, CreateSignatureInput(manifest)));
         manifest = manifest with { Signature = signature };
         var envelope = new AgentVaultDiscoveryEnvelopeContract(
@@ -64,12 +73,20 @@ internal static class AgentDiscoveryProvisioningContractFaker
             1,
             1,
             1,
-            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption)),
+            agentEncryptionFingerprint,
             Encode(wrappedVdk),
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             signature);
+        envelope = envelope with
+        {
+            WrappedVdk = envelope.WrappedVdk with
+            {
+                Descriptor = envelope.WrappedVdk.Descriptor with { WrapperSuiteId = suiteId },
+            },
+        };
         return new AgentDiscoveryProvisioningFixture(
-            x25519PublicKey,
+            AgentFaker.GeneratePublicKey(),
+            encryptionPublicKey,
             requestSigning,
             new ProvisionAgentDiscoveryRequest
             {

@@ -245,7 +245,9 @@ public sealed class AgentVaultDiscoveryEnvelopeTests
             new ManifestRevision(revision),
             Instant.FromUtc(2026, 7, 17, 9, 0),
             2,
-            signature);
+            signature,
+            "palladin-x25519-sealed-box-v1",
+            null);
         return new ValidatedAgentDiscoveryProvisioning(
             scope,
             agentId,

@@ -65,7 +65,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             organization.Id,
             status: AgentStatus.Active,
             id: identityAgent.Id,
-            publicKey: publicKey,
+            publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: signing.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(
             provisioning.Request, user.Id);
@@ -880,7 +880,8 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
                 VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigning),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
             Enumerable.Repeat((byte)0x5A, 64).ToArray(),
-            new byte[64]);
+            new byte[64],
+            "palladin-x25519-sealed-box-v1");
         return ScriptExecutionGrant.CreateProactively(
             grantId,
             setup.VaultId,

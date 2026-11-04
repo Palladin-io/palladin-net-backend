@@ -26,7 +26,7 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
 
         // When
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "signing-pubkey", "Claude", "ci", "key:robot", "#FF4F4F", 1, now, now));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Claude", "ci", "key:robot", "#FF4F4F", 1, now, now));
 
         // Then
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -49,12 +49,12 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
         var organizationId = Guid.NewGuid();
         var t0 = TruncateToMs(apiFactory.FakeClock.GetCurrentInstant());
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Pending, "pubkey", 1, "signing-pubkey", "Claude", "ci", null, null, 0, null, t0));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Pending, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Claude", "ci", null, null, 0, null, t0));
 
         // When
         var t1 = t0 + Duration.FromSeconds(1);
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "signing-pubkey", "Claude", "ci", null, null, 1, t1, t1));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Claude", "ci", null, null, 1, t1, t1));
 
         // Then
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -84,6 +84,8 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
             status,
             "pubkey",
             1,
+            "pubkey",
+            "palladin-x25519-sealed-box-v1",
             "signing-pubkey",
             "Agent",
             "ci",
@@ -105,12 +107,12 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
         var organizationId = Guid.NewGuid();
         var t1 = TruncateToMs(apiFactory.FakeClock.GetCurrentInstant()) + Duration.FromSeconds(10);
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "signing-pubkey", "Current", "ci", null, null, 1, t1, t1));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Current", "ci", null, null, 1, t1, t1));
 
         // When
         var t0 = apiFactory.FakeClock.GetCurrentInstant();
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Deactivated, "pubkey", 1, "signing-pubkey", "Stale", "ci", null, null, 1, null, t0));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Deactivated, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Stale", "ci", null, null, 1, null, t0));
 
         // Then
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -149,7 +151,7 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
         var organizationId = Guid.NewGuid();
         var t0 = TruncateToMs(apiFactory.FakeClock.GetCurrentInstant());
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "signing-pubkey", "Claude", "ci", null, null, 1, t0, t0));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Claude", "ci", null, null, 1, t0, t0));
 
         var t2 = t0 + Duration.FromSeconds(2);
         await ConsumeDeactivatedAsync(
@@ -158,7 +160,7 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
         // When
         var t1 = t0 + Duration.FromSeconds(1);
         await ConsumeUpsertedAsync(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "signing-pubkey", "Claude", "ci", null, null, 1, t0, t1));
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pubkey", 1, "pubkey", "palladin-x25519-sealed-box-v1", "signing-pubkey", "Claude", "ci", null, null, 1, t0, t1));
 
         // Then
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -193,6 +195,8 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
             AgentStatus.Active,
             agent.PublicKey,
             agent.RecipientKeyVersion,
+            agent.PublicKey,
+            "palladin-x25519-sealed-box-v1",
             agent.SigningPublicKey,
             agent.Name,
             "ci",
@@ -208,6 +212,8 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
             AgentStatus.Active,
             agent.PublicKey,
             agent.RecipientKeyVersion,
+            agent.PublicKey,
+            "palladin-x25519-sealed-box-v1",
             agent.SigningPublicKey,
             "Renamed after reactivation",
             "ci",
@@ -273,6 +279,8 @@ public sealed class AgentUpsertTests(ApiFactory apiFactory) : TestBase
             AgentStatus.Active,
             "pubkey",
             1,
+            "pubkey",
+            "palladin-x25519-sealed-box-v1",
             "signing-pubkey",
             "Agent",
             "ci",

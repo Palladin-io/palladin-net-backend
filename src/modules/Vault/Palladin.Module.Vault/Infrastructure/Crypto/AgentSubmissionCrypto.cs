@@ -45,9 +45,9 @@ internal sealed record ParsedAgentSubmission(
 internal static class AgentSubmissionCrypto
 {
     internal const string SubmissionSchema = "palladin.agent-entry-submission.v1";
-    internal const string SubmissionSchemaV2 = "palladin.agent-entry-submission.v2";
+    internal const string SuccessorSubmissionSchema = "palladin.agent-entry-submission.v2";
     internal const string ManifestSchema = "palladin.organization-approver-manifest.v1";
-    internal const string ManifestSchemaV2 = "palladin.organization-approver-manifest.v2";
+    internal const string SuccessorManifestSchema = "palladin.organization-approver-manifest.v2";
     internal const ushort ApproverWrapScopeBitmap = 33;
 
     private static readonly byte[] SubmissionSignatureDomain = "PLDNSUB1SIG:AGENT-SUBMISSION:"u8.ToArray();
@@ -58,7 +58,7 @@ internal static class AgentSubmissionCrypto
 
     internal static ParsedAgentSubmission ParseSubmission(AgentEntrySubmissionContract? contract)
     {
-        var isSuccessor = contract?.Schema == SubmissionSchemaV2;
+        var isSuccessor = contract?.Schema == SuccessorSubmissionSchema;
         if (contract is null || contract.Target is null
             || (contract.Schema != SubmissionSchema && !isSuccessor)
             || isSuccessor != (contract.AgentWrappedDekSuiteId is not null)
@@ -164,7 +164,7 @@ internal static class AgentSubmissionCrypto
 
     internal static ApproverManifest ParseManifest(OrganizationApproverManifestContract? contract)
     {
-        var isSuccessor = contract?.Schema == ManifestSchemaV2;
+        var isSuccessor = contract?.Schema == SuccessorManifestSchema;
         if (contract is null || (contract.Schema != ManifestSchema && !isSuccessor)
             || isSuccessor != (contract.MessageKeySuiteId is not null)
             || contract.ContractVersion != AgentSubmissionLimits.ContractVersion

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using NSec.Cryptography;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -61,6 +62,7 @@ public sealed class VaultManifestCryptoValidatorTests
             OrganizationId,
             AgentStatus.Active,
             Convert.ToBase64String(new byte[32]),
+            "palladin-x25519-sealed-box-v1",
             1,
             Convert.ToBase64String(Convert.FromHexString("0F57FDC1EB05F7DF4A144FE572D805C83E811287B7C6AF8143DF8202DE9B019E")),
             "runtime",
@@ -148,22 +150,25 @@ public sealed class VaultManifestCryptoValidatorTests
         action.ShouldThrow<DomainException>().Message.ShouldContain("microsecond precision");
     }
 
-    private static (AgentVaultDiscoveryEnvelopeContract Envelope, VaultManifestContract Manifest, VaultAgent Agent) CreateFixture()
+    private static (AgentVaultDiscoveryEnvelopeContract Envelope, VaultManifestContract Manifest, VaultAgent Agent) CreateFixture(
+        bool successor = false)
     {
-        var agentEncryptionPublicKey = RandomNumberGenerator.GetBytes(32);
+        var suite = successor ? KeyWrapperSuites.Current : LegacyWrapperSuite.Suite;
+        var agentEncryptionPublicKey = RandomNumberGenerator.GetBytes(suite.PublicKeyBytes);
         var agentSigningPublicKey = RandomNumberGenerator.GetBytes(32);
-        var recipientFingerprint = Encode(VaultKeyFingerprint.Compute(agentEncryptionPublicKey, VaultKeyKind.AgentEncryption));
-        var wrappedVdk = RandomNumberGenerator.GetBytes(120);
+        var recipientFingerprint = Encode(RecipientKeyFingerprint.Compute(
+            suite.Id, VaultKeyKind.AgentEncryption, agentEncryptionPublicKey));
+        var wrappedVdk = RandomNumberGenerator.GetBytes(suite.PackageBytes);
         using var vaultSigningKey = Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
         {
             ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
         });
         var vaultSigningPublicKey = vaultSigningKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
-        var vaultMessagePublicKey = RandomNumberGenerator.GetBytes(32);
+        var vaultMessagePublicKey = RandomNumberGenerator.GetBytes(suite.PublicKeyBytes);
         const uint vdkVersion = 6;
         const string revision = "14";
         var wrapper = new WrappedKeyContract(
-            new KeyWrapperDescriptorContract(2, "palladin-x25519-sealed-box-v1",
+            new KeyWrapperDescriptorContract(2, suite.Id,
                 KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
                 new EnvelopeScopeContract(OrganizationId, VaultId, AgentId: AgentId),
                 vdkVersion.ToString(), vdkVersion, null,
@@ -172,15 +177,16 @@ public sealed class VaultManifestCryptoValidatorTests
         var envelope = new AgentVaultDiscoveryEnvelopeContract(
             2, OrganizationId, VaultId, AgentId, vdkVersion, wrapper, revision, string.Empty);
         var manifest = new VaultManifestContract(
-            2, "palladin-vault-xchacha-v1", "palladin-x25519-sealed-box-v1", "palladin-ed25519-v1",
+            2, "palladin-vault-xchacha-v1", suite.Id, "palladin-ed25519-v1",
             OrganizationId, VaultId, AgentId, recipientFingerprint,
             Encode(VaultKeyFingerprint.Compute(agentSigningPublicKey, VaultKeyKind.AgentSigning)),
             Encode(vaultSigningPublicKey),
             Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigning)), 9,
             Encode(vaultMessagePublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultAgentMessage)), 4,
+            Encode(RecipientKeyFingerprint.Compute(suite.Id, VaultKeyKind.VaultAgentMessage, vaultMessagePublicKey)), 4,
             vdkVersion, Encode(ComputeWrappedVdkDigest(wrappedVdk)), revision,
-            Instant.FromUtc(2026, 7, 17, 6, 0) + Duration.FromTicks(1_234_560), 2, string.Empty);
+            Instant.FromUtc(2026, 7, 17, 6, 0) + Duration.FromTicks(1_234_560), 2, string.Empty,
+            successor ? suite.Id : null);
         var signatureInput = CreateSignatureInput(manifest);
         var signature = Encode(SignatureAlgorithm.Ed25519.Sign(vaultSigningKey, signatureInput));
         manifest = manifest with { Signature = signature };
@@ -191,6 +197,7 @@ public sealed class VaultManifestCryptoValidatorTests
             OrganizationId,
             AgentStatus.Active,
             Convert.ToBase64String(agentEncryptionPublicKey),
+            suite.Id,
             1,
             Convert.ToBase64String(agentSigningPublicKey),
             "runtime",
@@ -200,6 +207,44 @@ public sealed class VaultManifestCryptoValidatorTests
             now,
             now);
         return (envelope, manifest, agent);
+    }
+
+    [Fact]
+    public void When_SuccessorManifestNamesTheActiveMessageKeySuite_Then_NewProvisioningIsAccepted()
+    {
+        // Given
+        var (envelope, manifest, agent) = CreateFixture(successor: true);
+
+        // When
+        var provisioning = VaultManifestCryptoValidator.ValidateNew(envelope, manifest, agent);
+
+        // Then
+        provisioning.Manifest.VaultAgentMessageKeySuiteId.ShouldBe(KeyWrapperSuites.Current.Id);
+        provisioning.Manifest.WrapperSuiteId.ShouldBe(KeyWrapperSuites.Current.Id);
+    }
+
+    [Fact]
+    public void When_SuccessorSuiteFieldIsStripped_Then_SignatureNoLongerVerifies()
+    {
+        // Given
+        var (envelope, manifest, agent) = CreateFixture(successor: true);
+
+        // When
+        var action = () => VaultManifestCryptoValidator.Validate(envelope, manifest with { VaultAgentMessageKeySuiteId = null }, agent);
+
+        // Then
+        action.ShouldThrow<DomainException>();
+    }
+
+    [Fact]
+    public void When_LegacyManifestIsProvisionedAgain_Then_NewWriteFailsButStoredCopyStillValidates()
+    {
+        // Given
+        var (envelope, manifest, agent) = CreateFixture();
+
+        // When / Then
+        Should.Throw<DomainException>(() => VaultManifestCryptoValidator.ValidateNew(envelope, manifest, agent));
+        Should.NotThrow(() => VaultManifestCryptoValidator.Validate(envelope, manifest, agent));
     }
 
     private static byte[] CreateSignatureInput(VaultManifestContract manifest)

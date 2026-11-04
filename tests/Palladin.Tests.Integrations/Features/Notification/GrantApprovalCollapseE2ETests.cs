@@ -45,7 +45,7 @@ public sealed class GrantApprovalCollapseE2ETests(ApiFactory apiFactory) : TestB
                     signingPublicKey: signing.PublicKeyBase64)
                 .RuleFor(x => x.Status, AgentStatus.Active));
         await apiFactory.Services.SeedVaultAgentAsync(
-            organization.Id, id: authAgent.Id, publicKey: publicKey,
+            organization.Id, id: authAgent.Id, publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: signing.PublicKeyBase64, iconKey: "smart_toy", iconColor: "#FF4F4F");
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
 

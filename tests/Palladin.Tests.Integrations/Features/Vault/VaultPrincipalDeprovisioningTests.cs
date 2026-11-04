@@ -285,7 +285,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: fixture.X25519PublicKey,
+            publicKey: fixture.EncryptionPublicKey,
             signingPublicKey: fixture.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(fixture.Request, member.Id);
         var requestId = Guid.NewGuid();

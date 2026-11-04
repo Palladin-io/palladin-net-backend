@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http.Json;
@@ -41,7 +42,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var agentKeys = CreateAgentKeys();
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var request = CreateRequest(organization.Id, vault.Id, agent.Id, agentKeys, 1);
         var client = apiFactory.CreateAuthenticatedClient(user);
@@ -74,7 +75,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var agentKeys = CreateAgentKeys();
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var request = CreateRequest(organization.Id, vault.Id, agent.Id, agentKeys, 1);
         var changedPrefix = request.Manifest.Signature[0] == 'A' ? 'B' : 'A';
@@ -117,7 +118,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: sourceAgent.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var provisioning = CreateRequest(organization.Id, vault.Id, sourceAgent.Id, agentKeys, 1);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
@@ -192,7 +193,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var agentKeys = CreateAgentKeys();
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var issuedAt = TruncateToMicroseconds(SystemClock.Instance.GetCurrentInstant()) + Duration.FromTicks(1);
         var request = CreateRequest(organization.Id, vault.Id, agent.Id, agentKeys, 1, issuedAt);
@@ -219,7 +220,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var currentKeys = CreateAgentKeys();
         var current = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: currentKeys.X25519PublicKey,
+            publicKey: currentKeys.EncryptionPublicKey,
             signingPublicKey: currentKeys.Ed25519PublicKey);
         var pending = await apiFactory.Services.SeedVaultAgentAsync(organization.Id);
         await apiFactory.Services.SeedVaultAgentAsync(organization.Id, status: AgentStatus.Deactivated);
@@ -300,7 +301,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: sourceAgent.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
         var provisioning = CreateRequest(organization.Id, vault.Id, sourceAgent.Id, agentKeys, 1);
@@ -364,7 +365,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: sourceAgent.Id,
-            publicKey: keys.X25519PublicKey,
+            publicKey: keys.EncryptionPublicKey,
             signingPublicKey: keys.Ed25519PublicKey);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
         (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
@@ -406,7 +407,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: sourceAgent.Id,
-            publicKey: keys.X25519PublicKey,
+            publicKey: keys.EncryptionPublicKey,
             signingPublicKey: keys.Ed25519PublicKey);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
         (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
@@ -461,7 +462,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: sourceAgent.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
         (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
@@ -504,7 +505,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var replica = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: sourceAgent.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
         (await memberClient.PUTAsync<ProvisionAgentDiscoveryEndpoint, ProvisionAgentDiscoveryRequest>(
@@ -521,6 +522,8 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
                 AgentStatus.Active,
                 agentKeys.X25519PublicKey,
                 replica.RecipientKeyVersion,
+                agentKeys.X25519PublicKey,
+                "palladin-x25519-sealed-box-v1",
                 agentKeys.Ed25519PublicKey,
                 sourceAgent.Name,
                 sourceAgent.Type,
@@ -572,7 +575,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         await apiFactory.Services.SeedVaultAgentAsync(
             organizationId,
             id: sourceAgent.Id,
-            publicKey: publicKey,
+            publicKey: publicKey, publicKeySuiteId: "palladin-x25519-sealed-box-v1",
             signingPublicKey: requestSigning.PublicKeyBase64);
         var client = apiFactory.CreateSignedAgentClient(sourceAgent.Id, apiKey, publicKey, requestSigning);
 
@@ -596,7 +599,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var agentUpdatedAt = now - Duration.FromMilliseconds(2);
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey,
             updatedAt: agentUpdatedAt);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
@@ -618,6 +621,8 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
                 AgentStatus.Deactivated,
                 agent.PublicKey,
                 agent.RecipientKeyVersion,
+                agent.PublicKey,
+                "palladin-x25519-sealed-box-v1",
                 agent.SigningPublicKey,
                 agent.Name,
                 "runtime",
@@ -676,7 +681,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         var t0 = now - Duration.FromMilliseconds(3);
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey,
             updatedAt: t0);
         var memberClient = apiFactory.CreateAuthenticatedClient(user);
@@ -704,6 +709,8 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
                 AgentStatus.Active,
                 agent.PublicKey,
                 agent.RecipientKeyVersion,
+                agent.PublicKey,
+                "palladin-x25519-sealed-box-v1",
                 agent.SigningPublicKey,
                 agent.Name,
                 "runtime",
@@ -769,7 +776,7 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
                  - Duration.FromMilliseconds(3);
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
-            publicKey: agentKeys.X25519PublicKey,
+            publicKey: agentKeys.EncryptionPublicKey,
             signingPublicKey: agentKeys.Ed25519PublicKey,
             updatedAt: t0);
         var deactivatedAt = t0 + Duration.FromMilliseconds(1);
@@ -785,6 +792,8 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
                 AgentStatus.Active,
                 agent.PublicKey,
                 agent.RecipientKeyVersion,
+                agent.PublicKey,
+                "palladin-x25519-sealed-box-v1",
                 agent.SigningPublicKey,
                 agent.Name,
                 "runtime",
@@ -848,9 +857,10 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         ulong revision,
         Instant? issuedAt = null)
     {
-        var agentX25519Key = Convert.FromBase64String(agentKeys.X25519PublicKey);
+        var agentEncryptionFingerprint = Encode(AgentRecipientKey.Fingerprint(
+            KeyWrapperSuites.Current.Id, agentKeys.EncryptionPublicKey));
         var agentEd25519Key = Convert.FromBase64String(agentKeys.Ed25519PublicKey);
-        var wrappedVdk = RandomNumberGenerator.GetBytes(120);
+        var wrappedVdk = RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PackageBytes);
         using var vaultSigningKey = VaultTrustAnchorFaker.CreateManifestSigningKey();
         var vaultSigningPublicKey = vaultSigningKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
         var vaultMessagePublicKey = VaultTrustAnchorFaker.AgentMessagePublicKey;
@@ -860,20 +870,24 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
             organizationId,
             vaultId,
             agentId,
-            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption)),
+            agentEncryptionFingerprint,
             Encode(VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentSigning)),
             Encode(vaultSigningPublicKey),
             Encode(VaultKeyFingerprint.Compute(vaultSigningPublicKey, VaultKeyKind.VaultSigning)),
             1,
             Encode(vaultMessagePublicKey),
-            Encode(VaultKeyFingerprint.Compute(vaultMessagePublicKey, VaultKeyKind.VaultAgentMessage)),
+            Encode(VaultTrustAnchorFaker.AgentMessageFingerprint(vaultMessagePublicKey)),
             1,
             1,
             Encode(ComputeWrappedVdkDigest(wrappedVdk)),
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             issuedAt ?? TruncateToMicroseconds(SystemClock.Instance.GetCurrentInstant()),
             2,
-            string.Empty);
+            string.Empty) with
+        {
+            WrapperSuiteId = KeyWrapperSuites.Current.Id,
+            VaultAgentMessageKeySuiteId = VaultTrustAnchorFaker.AgentMessageKeySuiteId,
+        };
         var signature = Encode(SignatureAlgorithm.Ed25519.Sign(vaultSigningKey, CreateSignatureInput(manifest)));
         manifest = manifest with { Signature = signature };
         var envelope = new AgentVaultDiscoveryEnvelopeContract(
@@ -884,10 +898,17 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
             1,
             1,
             1,
-            Encode(VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentEncryption)),
+            agentEncryptionFingerprint,
             Encode(wrappedVdk),
             revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             signature);
+        envelope = envelope with
+        {
+            WrappedVdk = envelope.WrappedVdk with
+            {
+                Descriptor = envelope.WrappedVdk.Descriptor with { WrapperSuiteId = KeyWrapperSuites.Current.Id },
+            },
+        };
         return new ProvisionAgentDiscoveryRequest
         {
             VaultId = vaultId,
@@ -924,5 +945,8 @@ public sealed class AgentDiscoveryProvisioningTests(ApiFactory apiFactory) : Tes
         return Instant.FromUnixTimeTicks(ticks - (ticks % 10));
     }
 
-    private sealed record AgentKeys(string X25519PublicKey, string Ed25519PublicKey);
+    private sealed record AgentKeys(string X25519PublicKey, string Ed25519PublicKey)
+    {
+        internal string EncryptionPublicKey { get; } = VaultAgentFaker.GenerateEncryptionPublicKey();
+    }
 }

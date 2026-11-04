@@ -26,10 +26,10 @@ public sealed class GrantMethodsTests
         var grantId = Guid.NewGuid();
         var entryId = Guid.NewGuid();
         var contract = GrantEnvelopeTestData.Contract(
-            organizationId, vaultId, grantId, entryId, Convert.ToBase64String(new byte[32]));
+            organizationId, vaultId, grantId, entryId, GrantEnvelopeTestData.DefaultAgentPublicKey);
 
         Should.Throw<DomainException>(() =>
-            GrantEnvelopeContractMapper.ToDomain(contract, (GrantMethods)128, contract.AgentId));
+            GrantEnvelopeContractMapper.ToDomain(contract, (GrantMethods)128, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
@@ -37,9 +37,9 @@ public sealed class GrantMethodsTests
     {
         var contract = GrantEnvelopeTestData.Contract(
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Convert.ToBase64String(new byte[32]), fieldIds: ["password", "username"]);
+            GrantEnvelopeTestData.DefaultAgentPublicKey, fieldIds: ["password", "username"]);
 
-        var scope = GrantEnvelopeContractMapper.ToDomain(contract, GrantMethods.Get, contract.AgentId);
+        var scope = GrantEnvelopeContractMapper.ToDomain(contract, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId));
 
         scope.FieldIds.ShouldBe("password\nusername");
     }

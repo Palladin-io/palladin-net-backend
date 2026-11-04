@@ -11,30 +11,54 @@ namespace Palladin.Tests.Unit.Modules.Vault;
 
 public sealed class EnvelopeDescriptorCodecTests
 {
-    [Theory]
-    [InlineData(VaultPublicKeyKindContract.AgentMessage, "palladin-x25519-v1", 4)]
-    [InlineData(VaultPublicKeyKindContract.ManifestSigning, "palladin-ed25519-v1", 3)]
-    public void VaultPublicKey_ValidatesDomainSeparatedFingerprintAndVersion(
-        VaultPublicKeyKindContract kind, string scheme, int fingerprintKind)
+    [Fact]
+    public void VaultPublicKey_AgentMessageKeyUsesItsActiveSuiteFingerprint()
     {
-        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
-        var contract = new VaultPublicKeyContract(2, scheme, kind, 7,
+        var key = Enumerable.Range(0, KeyWrapperSuites.Current.PublicKeyBytes).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, KeyWrapperSuites.Current.Id, VaultPublicKeyKindContract.AgentMessage, 7,
             WebEncoders.Base64UrlEncode(key),
-            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, (VaultKeyKind)fingerprintKind)));
+            WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+                KeyWrapperSuites.Current.Id, VaultKeyKind.VaultAgentMessage, key)));
 
-        var result = VaultEnvelopeContractMapper.ToDomain(contract, kind, 7);
+        var result = VaultEnvelopeContractMapper.ToDomain(contract, VaultPublicKeyKindContract.AgentMessage, 7);
 
         result.PublicKey.ShouldBe(key);
-        result.Version.ShouldBe(7u);
+        result.SchemeId.ShouldBe(KeyWrapperSuites.Current.Id);
+    }
+
+    [Fact]
+    public void VaultPublicKey_NewAgentMessageKeyOnReadOnlySuite_FailsClosed()
+    {
+        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, LegacyWrapperSuite.Id, VaultPublicKeyKindContract.AgentMessage, 7,
+            WebEncoders.Base64UrlEncode(key),
+            WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+                LegacyWrapperSuite.Id, VaultKeyKind.VaultAgentMessage, key)));
+
+        Should.Throw<DomainException>(() =>
+            VaultEnvelopeContractMapper.ToDomain(contract, VaultPublicKeyKindContract.AgentMessage, 7));
+    }
+
+    [Fact]
+    public void VaultPublicKey_ManifestSigningKeyKeepsEd25519Scheme()
+    {
+        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, "palladin-ed25519-v1", VaultPublicKeyKindContract.ManifestSigning, 7,
+            WebEncoders.Base64UrlEncode(key),
+            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigning)));
+
+        VaultEnvelopeContractMapper.ToDomain(contract, VaultPublicKeyKindContract.ManifestSigning, 7)
+            .Version.ShouldBe(7u);
     }
 
     [Fact]
     public void VaultPublicKey_WithFingerprintFromDifferentKeyKind_FailsClosed()
     {
-        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
-        var contract = new VaultPublicKeyContract(2, "palladin-x25519-v1",
+        var key = Enumerable.Range(0, KeyWrapperSuites.Current.PublicKeyBytes).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, KeyWrapperSuites.Current.Id,
             VaultPublicKeyKindContract.AgentMessage, 1, WebEncoders.Base64UrlEncode(key),
-            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigning)));
+            WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+                KeyWrapperSuites.Current.Id, VaultKeyKind.MemberEncryption, key)));
 
         var action = () => VaultEnvelopeContractMapper.ToDomain(
             contract, VaultPublicKeyKindContract.AgentMessage, 1);

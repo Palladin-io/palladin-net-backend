@@ -43,10 +43,11 @@ internal static class VaultFaker
         var key = kind == VaultPublicKeyKind.AgentMessage
             ? VaultTrustAnchorFaker.AgentMessagePublicKey
             : VaultTrustAnchorFaker.ManifestSigningPublicKey;
-        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessage
-            ? VaultKeyKind.VaultAgentMessage
-            : VaultKeyKind.VaultSigning;
-        return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind));
+        return kind == VaultPublicKeyKind.AgentMessage
+            ? new ValidatedVaultPublicKey(kind, version, key, VaultTrustAnchorFaker.AgentMessageFingerprint(key),
+                VaultTrustAnchorFaker.AgentMessageKeySuiteId)
+            : new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigning),
+                VaultEnvelopeContractMapper.ManifestSigningSchemeId);
     }
 
     internal static MemberVaultMetadataCiphertext CreateMetadata(

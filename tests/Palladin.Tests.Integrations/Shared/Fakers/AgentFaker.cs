@@ -22,6 +22,8 @@ internal static class AgentFaker
             .RuleFor(x => x.OrganizationId, organizationId ?? Guid.NewGuid())
             .RuleFor(x => x.PublicKey, publicKey ?? GeneratePublicKey())
             .RuleFor(x => x.SigningPublicKey, signingPublicKey ?? GeneratePublicKey())
+            .RuleFor(x => x.EncryptionPublicKey, (_, agent) => agent.PublicKey)
+            .RuleFor(x => x.EncryptionKeySuiteId, "palladin-x25519-sealed-box-v1")
             .RuleFor(x => x.RecipientKeyVersion, 1u)
             .RuleFor(x => x.AccessEpoch, 1u)
             .RuleFor(x => x.Name, f => f.Internet.UserName())

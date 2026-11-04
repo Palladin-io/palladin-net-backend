@@ -398,6 +398,44 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
+      "authors": [
+        {
+          "name": "Legion of the Bouncy Castle Inc."
+        }
+      ],
+      "name": "BouncyCastle.Cryptography",
+      "version": "2.6.2",
+      "description": "BouncyCastle.NET is a popular cryptography library for .NET",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4E1A32F937EEBBA134F1C6646C0B554EDAA1BC41969DEC5816D11C3C285906E106377113EA6C1CB0B161749FF08AE8AD39DF05956B62ABE2274D4B3060F0DAEF"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "copyright": "Copyright © Legion of the Bouncy Castle Inc. 2000-2025",
+      "purl": "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
+      "externalReferences": [
+        {
+          "url": "https://www.bouncycastle.org/stable/nuget/csharp/website",
+          "type": "website"
+        },
+        {
+          "url": "https://github.com/bcgit/bc-csharp",
+          "type": "vcs"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:nuget/Dapper@2.0.123",
       "authors": [
         {
@@ -8574,6 +8612,7 @@
     {
       "ref": "Palladin.Backend@1.0.0",
       "dependsOn": [
+        "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
         "pkg:nuget/JetBrains.Annotations@2025.2.4",
         "pkg:nuget/Microsoft.Extensions.Configuration@10.0.2",
         "pkg:nuget/Microsoft.Extensions.DependencyInjection@10.0.2",
@@ -8688,6 +8727,10 @@
     },
     {
       "ref": "pkg:nuget/Dapper.AOT@1.0.48",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:nuget/BouncyCastle.Cryptography@2.6.2",
       "dependsOn": []
     },
     {

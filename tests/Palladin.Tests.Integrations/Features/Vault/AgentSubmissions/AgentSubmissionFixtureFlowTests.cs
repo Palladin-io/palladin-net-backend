@@ -163,7 +163,7 @@ public sealed class AgentSubmissionFixtureFlowTests(ApiFactory apiFactory) : Tes
             AgentFaker.Create(Fixture.AgentId, organizationId, x25519, ed25519)
                 .RuleFor(x => x.RecipientKeyVersion, Fixture.AgentKeyVersion)
                 .RuleFor(x => x.AccessEpoch, Fixture.AgentAccessEpoch));
-        var agent = await apiFactory.Services.SeedVaultAgentAsync(organizationId, id: Fixture.AgentId, publicKey: x25519,
+        var agent = await apiFactory.Services.SeedVaultAgentAsync(organizationId, id: Fixture.AgentId, publicKey: x25519, publicKeySuiteId: "palladin-x25519-sealed-box-v1",
             signingPublicKey: ed25519, recipientKeyVersion: Fixture.AgentKeyVersion, accessEpoch: Fixture.AgentAccessEpoch);
         var grant = GrantFaker.CreateGranular(vaultId: Fixture.VaultId, organizationId: organizationId, agentId: agent.Id,
             entryId: Fixture.EntryId, agentAccessEpoch: Fixture.AgentAccessEpoch, createdBy: user.Id).Generate();

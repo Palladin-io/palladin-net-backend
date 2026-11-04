@@ -93,6 +93,7 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
             replica.Apply(
                 AgentStatus.Active,
                 replica.PublicKey,
+                replica.PublicKeySuiteId,
                 replica.RecipientKeyVersion,
                 replica.SigningPublicKey,
                 replica.Name,

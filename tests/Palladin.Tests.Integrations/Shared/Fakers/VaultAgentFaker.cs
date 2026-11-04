@@ -7,12 +7,16 @@ namespace Palladin.Tests.Integrations.Shared.Fakers;
 
 internal static class VaultAgentFaker
 {
+    public static string GenerateEncryptionPublicKey() => Convert.ToBase64String(
+        RandomNumberGenerator.GetBytes(Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes));
+
     public static PrivateCtorFaker<VaultAgent> Create(
         Guid? id = null,
         Guid? organizationId = null,
         AgentStatus status = AgentStatus.Active,
         string? publicKey = null,
         string? signingPublicKey = null,
+        string? publicKeySuiteId = null,
         uint recipientKeyVersion = 1,
         uint? accessEpoch = null,
         string? iconKey = null,
@@ -22,7 +26,8 @@ internal static class VaultAgentFaker
             .RuleFor(x => x.Id, id ?? Guid.NewGuid())
             .RuleFor(x => x.OrganizationId, organizationId ?? Guid.NewGuid())
             .RuleFor(x => x.Status, status)
-            .RuleFor(x => x.PublicKey, publicKey ?? Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)))
+            .RuleFor(x => x.PublicKey, publicKey ?? GenerateEncryptionPublicKey())
+            .RuleFor(x => x.PublicKeySuiteId, publicKeySuiteId ?? Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id)
             .RuleFor(x => x.SigningPublicKey, signingPublicKey ?? Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)))
             .RuleFor(x => x.RecipientKeyVersion, recipientKeyVersion)
             .RuleFor(x => x.Name, f => f.Internet.UserName())

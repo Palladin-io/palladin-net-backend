@@ -222,7 +222,8 @@ public sealed class VaultKeyRotationTests
         var fingerprintKind = kind == VaultPublicKeyKind.AgentMessage
             ? VaultKeyKind.VaultAgentMessage
             : VaultKeyKind.VaultSigning;
-        return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind));
+        return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind),
+            kind == VaultPublicKeyKind.AgentMessage ? "palladin-x25519-sealed-box-v1" : "palladin-ed25519-v1");
     }
 
     private static VaultKeyMaterialEnvelope[] CreateKeyMaterial(

@@ -6,6 +6,7 @@ using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Cryptography;
+using Palladin.Module.Identity.Contracts.Commands;
 using Palladin.Module.Identity.Features;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Vault.Contracts.Commands;
@@ -147,7 +148,55 @@ public sealed class AccountSecurityUpgradeTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
-    public async Task When_LegacyKeyIsDeleted_Then_OnlyTheMatchingVersionIsRemovedOnce()
+    public async Task When_OAuthAccountHasNoStoredCredential_Then_UpgradeIssuesItsFirstAuthCredential()
+    {
+        // Given
+        var (user, client, _) = await SeedV1AccountAsync(withPasswordCredential: false);
+        var request = UpgradeRequest([]) with { BaseCredentialRevision = 0 };
+
+        // When
+        var response = await client.PostAsJsonAsync("api/account/security-upgrade", request);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var persisted = await ReadUserAsync(user.Id);
+        persisted.CredentialRevision.ShouldBe(1u);
+        persisted.SecurityVersion.ShouldBe((ushort)2);
+        persisted.PublicKey.ShouldBe(request.MemberPublicKey);
+        (await LoginAsync(user.Email, request.NewAuthCredential, 2)).ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task When_OAuthAccountSendsACredentialProof_Then_ConflictWithoutChanges()
+    {
+        // Given
+        var (user, client, _) = await SeedV1AccountAsync(withPasswordCredential: false);
+
+        // When
+        var response = await client.PostAsJsonAsync("api/account/security-upgrade",
+            UpgradeRequest(RandomNumberGenerator.GetBytes(32)) with { BaseCredentialRevision = 0 });
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        await ShouldStillBeV1Async(user);
+    }
+
+    [Fact]
+    public async Task When_PasswordAccountOmitsTheCredentialProof_Then_ForbiddenWithoutChanges()
+    {
+        // Given
+        var (user, client, _) = await SeedV1AccountAsync();
+
+        // When
+        var response = await client.PostAsJsonAsync("api/account/security-upgrade", UpgradeRequest([]));
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        await ShouldStillBeV1Async(user);
+    }
+
+    [Fact]
+    public async Task When_DeleteLegacyMemberKeyCommandIsConsumed_Then_OnlyTheMatchingVersionIsRemoved()
     {
         // Given
         var (user, client, authHash) = await SeedV1AccountAsync();
@@ -155,14 +204,14 @@ public sealed class AccountSecurityUpgradeTests(ApiFactory apiFactory) : TestBas
             .StatusCode.ShouldBe(HttpStatusCode.OK);
 
         // When
-        var mismatch = await client.DeleteAsync("api/account/legacy-member-key?legacyMemberKeyVersion=2");
-        var deleted = await client.DeleteAsync("api/account/legacy-member-key?legacyMemberKeyVersion=1");
-        var repeated = await client.DeleteAsync("api/account/legacy-member-key?legacyMemberKeyVersion=1");
+        await apiFactory.ConsumeAsync<DeleteLegacyMemberKeyConsumer, DeleteLegacyMemberKeyCommand>(
+            new DeleteLegacyMemberKeyCommand(user.Id, 2));
+        var afterMismatch = await ReadUserAsync(user.Id);
+        await apiFactory.ConsumeAsync<DeleteLegacyMemberKeyConsumer, DeleteLegacyMemberKeyCommand>(
+            new DeleteLegacyMemberKeyCommand(user.Id, 1));
 
         // Then
-        mismatch.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        deleted.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        repeated.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        afterMismatch.LegacyMemberKeyVersion.ShouldBe(1u);
         var persisted = await ReadUserAsync(user.Id);
         persisted.LegacyEncryptedPrivateKey.ShouldBeNull();
         persisted.LegacyMemberKeyVersion.ShouldBeNull();
@@ -171,11 +220,13 @@ public sealed class AccountSecurityUpgradeTests(ApiFactory apiFactory) : TestBas
         account.MemberPublicKeySuiteId.ShouldBe(KeyWrapperSuites.Current.Id);
     }
 
-    private async Task<(Palladin.Module.Identity.Domain.User User, HttpClient Client, byte[] AuthHash)> SeedV1AccountAsync()
+    private async Task<(Palladin.Module.Identity.Domain.User User, HttpClient Client, byte[] AuthHash)> SeedV1AccountAsync(
+        bool withPasswordCredential = true)
     {
         var authHash = RandomNumberGenerator.GetBytes(32);
         var (user, _) = await apiFactory.Services.SeedPasswordUserAsync(
-            authHash, email: $"upgrade-{Guid.NewGuid():N}@example.com", emailVerified: true, securityVersion: 1);
+            authHash, email: $"upgrade-{Guid.NewGuid():N}@example.com", emailVerified: true, securityVersion: 1,
+            withPasswordCredential: withPasswordCredential);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, RandomNumberGenerator.GetBytes(32), 1, LegacySuite);
         return (user, apiFactory.CreateAuthenticatedClient(user), authHash);
     }
@@ -219,7 +270,7 @@ public sealed class AccountSecurityUpgradeTests(ApiFactory apiFactory) : TestBas
         persisted.KdfProfileId.ShouldBe("identity-argon2id-password-v1");
         persisted.MemberKeyVersion.ShouldBe(1u);
         persisted.MemberPublicKeySuiteId.ShouldBe(LegacySuite);
-        persisted.CredentialRevision.ShouldBe(1u);
+        persisted.CredentialRevision.ShouldBe(user.CredentialRevision);
         persisted.LegacyEncryptedPrivateKey.ShouldBeNull();
     }
 

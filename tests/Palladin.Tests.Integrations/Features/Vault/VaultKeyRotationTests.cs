@@ -1103,6 +1103,73 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                 seed: seed));
     }
 
+    [Fact]
+    public async Task When_LegacyAgentMessageKeyIsMigrated_Then_OnlyThatKeyMovesToTheCurrentSuite()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            await seedScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>().Vaults
+                .Where(x => x.Id == vault.Id)
+                .ExecuteUpdateAsync(x => x.SetProperty(v => v.AgentMessageKeySuiteId, LegacyWrapperSuite.Id),
+                    TestContext.Current.CancellationToken);
+        }
+        await SeedMemberDirectoryAsync(user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+
+        // When
+        var (startResponse, started) = await client.POSTAsync<
+            StartAgentMessageKeyMigrationEndpoint,
+            StartAgentMessageKeyMigrationRequest,
+            VaultKeyRotationResponse>(new StartAgentMessageKeyMigrationRequest { VaultId = vault.Id });
+        var (_, claim) = await client.POSTAsync<ClaimVaultKeyRotationEndpoint, ClaimVaultKeyRotationRequest, ClaimVaultKeyRotationResponse>(
+            new ClaimVaultKeyRotationRequest { VaultId = vault.Id, RotationId = started!.Id });
+        var (batchResponse, _) = await client.PUTAsync<
+            PrepareVaultKeyRotationBatchEndpoint,
+            PrepareVaultKeyRotationBatchRequest,
+            PrepareVaultKeyRotationBatchResponse>(new PrepareVaultKeyRotationBatchRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim!.Rotation.Id,
+                FencingToken = claim.FencingToken,
+                VaultPrivateKeys = [VaultContractFaker.CreatePrivateKeys(organization.Id, vault.Id, 2, agentMessageKeyVersion: 2)[0]],
+                VaultAgentMessagePublicKey = VaultContractFaker.CreateAgentMessagePublicKey(),
+            });
+        var (commitResponse, committed) = await client.POSTAsync<
+            CommitVaultKeyRotationEndpoint,
+            CommitVaultKeyRotationRequest,
+            VaultKeyRotationResponse>(new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim.Rotation.Id,
+                FencingToken = claim.FencingToken,
+            });
+        var current = await client.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/agent-message-key-migration",
+            new StartAgentMessageKeyMigrationRequest { VaultId = vault.Id });
+
+        // Then
+        startResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        started.Scope.ShouldBe([nameof(VaultKeyRotationScope.AgentMessage)]);
+        started.Cause.ShouldBe(nameof(VaultKeyRotationCause.ProtocolMigration));
+        started.TargetKeyEpoch.ShouldBe(new VaultKeyEpochContract(1, 1, 2, 1));
+        batchResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        commitResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        committed!.Status.ShouldBe(nameof(VaultKeyRotationStatus.Committed));
+        current.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await current.Content.ReadAsStringAsync()).ShouldContain("agent-message-key-current");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
+            .Vaults.SingleAsync(x => x.OrganizationId == organization.Id && x.Id == vault.Id);
+        persisted.CurrentKeyEpoch.ShouldBe(new VaultKeyEpoch(
+            new VaultKeyVersion(1), new VdkVersion(1), new AgentMessageKeyVersion(2), new ManifestSigningKeyVersion(1)));
+        persisted.MemberKeyGeneration.Value.ShouldBe(1U);
+        persisted.AgentMessageKeySuiteId.ShouldBe(Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id);
+        persisted.AgentMessagePublicKey.ShouldBe(VaultTrustAnchorFaker.RotatedAgentMessagePublicKey);
+    }
+
     private async Task<ClaimVaultKeyRotationResponse> StartAndClaimAsync(HttpClient client, Guid vaultId)
     {
         var (_, started) = await client.POSTAsync<StartVaultKeyRotationEndpoint, StartVaultKeyRotationRequest, VaultKeyRotationResponse>(

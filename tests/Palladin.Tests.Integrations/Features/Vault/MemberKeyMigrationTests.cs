@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using MassTransit.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Palladin.Core.Cryptography;
 using Palladin.Core.Json;
+using Palladin.Module.Identity.Contracts.Commands;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -109,6 +111,65 @@ public sealed class MemberKeyMigrationTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task When_LegacyEnvelopeRemainsInAnotherOrganization_Then_ReportCountsItAndDeletionIsRefused()
+    {
+        // Given
+        var scenario = await SeedUpgradedMemberWithLegacyEnvelopeAsync();
+        (await scenario.Client.PutAsJsonAsync($"api/vaults/{scenario.VaultId}/members/me/key-envelope",
+            RewrapRequest(scenario), PalladinJsonSerializationSettings.DefaultOptions)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var otherOrganizationId = Guid.NewGuid();
+        await apiFactory.Services.SeedVaultAsync(otherOrganizationId, scenario.UserId, VaultFaker.Create(
+            organizationId: otherOrganizationId, createdBy: scenario.UserId, memberWrapperSuiteId: LegacyWrapperSuite.Id));
+
+        // When
+        var report = await ReportAsync(scenario.Client);
+        var delete = await scenario.Client.DeleteAsync("api/account/legacy-member-key?legacyMemberKeyVersion=1");
+
+        // Then
+        report.MemberEnvelopesPendingRewrap.ShouldBe(0);
+        report.AccountMemberEnvelopesPendingRewrap.ShouldBe(1);
+        report.OrganizationIdsPendingRewrap.ShouldBe([otherOrganizationId]);
+        delete.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await delete.Content.ReadAsStringAsync()).ShouldContain("legacy-member-key-in-use");
+        (await PublishedDeleteAsync(scenario.UserId)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_NoEnvelopeAddressesTheLegacyKey_Then_DeletionIsHandedToIdentity()
+    {
+        // Given
+        var scenario = await SeedUpgradedMemberWithLegacyEnvelopeAsync();
+        (await scenario.Client.PutAsJsonAsync($"api/vaults/{scenario.VaultId}/members/me/key-envelope",
+            RewrapRequest(scenario), PalladinJsonSerializationSettings.DefaultOptions)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // When
+        var delete = await scenario.Client.DeleteAsync("api/account/legacy-member-key?legacyMemberKeyVersion=1");
+
+        // Then
+        delete.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        (await PublishedDeleteAsync(scenario.UserId)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_DirectoryDoesNotHoldANewerCurrentSuiteKey_Then_DeletionIsRefused()
+    {
+        // Given
+        var scenario = await SeedUpgradedMemberWithLegacyEnvelopeAsync();
+
+        // When
+        var delete = await scenario.Client.DeleteAsync("api/account/legacy-member-key?legacyMemberKeyVersion=2");
+
+        // Then
+        delete.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await delete.Content.ReadAsStringAsync()).ShouldContain("member-key-directory-not-current");
+    }
+
+    private Task<bool> PublishedDeleteAsync(Guid userId) =>
+        apiFactory.Services.GetRequiredService<ITestHarness>().Published.Any<DeleteLegacyMemberKeyCommand>(
+            x => x.Context.Message.UserId == userId && x.Context.Message.LegacyMemberKeyVersion == 1,
+            TestContext.Current.CancellationToken);
 
     private async Task<Scenario> SeedUpgradedMemberWithLegacyEnvelopeAsync()
     {

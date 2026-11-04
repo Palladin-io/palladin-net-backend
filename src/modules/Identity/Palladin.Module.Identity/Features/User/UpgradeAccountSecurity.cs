@@ -62,12 +62,12 @@ internal sealed class UpgradeAccountSecurityValidator : Validator<UpgradeAccount
     {
         RuleFor(x => x.MigrationId).NotEmpty();
         RuleFor(x => x.SourceSecurityVersion).GreaterThan((ushort)0);
-        RuleFor(x => x.BaseCredentialRevision).GreaterThan(0u);
         RuleFor(x => x.BasePrivateKeyWrapRevision).GreaterThan(0u);
         RuleFor(x => x.BaseMemberKeyVersion).GreaterThan(0u);
         RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.Current.SecurityVersion);
         RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.Current.Id);
-        RuleFor(x => x.CurrentAuthCredential).Must(b => b is { Length: IdentityKdfProfiles.AuthCredentialBytes });
+        RuleFor(x => x.CurrentAuthCredential)
+            .Must(b => b is { Length: IdentityKdfProfiles.AuthCredentialBytes } || (b is { Length: 0 }));
         RuleFor(x => x.NewAuthCredential).Must(b => b is { Length: IdentityKdfProfiles.AuthCredentialBytes });
         RuleFor(x => x.KdfSalt).Must(b => b is { Length: IdentityKdfProfiles.KdfSaltBytes });
         RuleFor(x => x.MemberPublicKeySuiteId).Equal(KeyWrapperSuites.Current.Id);
@@ -100,7 +100,9 @@ internal sealed class UpgradeAccountSecurityEndpoint(
                 + "(current key-wrapper suite, next key version), private-key wrappers and recovery material after "
                 + "verifying the current AuthCredential and the compare-and-swap bases. The previous private key is "
                 + "kept only as an opaque wrapped legacy record. A retry with the committed migrationId returns the "
-                + "resulting state without another write; stale bases return 409 security-upgrade-conflict.";
+                + "resulting state without another write; stale bases return 409 security-upgrade-conflict. An account "
+                + "onboarded through OAuth without a stored AuthCredential (credentialRevision 0) sends an empty "
+                + "currentAuthCredential and receives its first AuthCredential from newAuthCredential.";
         });
         Tags("Identity/Account");
     }
@@ -117,7 +119,7 @@ internal sealed class UpgradeAccountSecurityEndpoint(
         var user = await domainWriteContext.Users
             .Include(u => u.PasswordCredential)
             .FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is not { IsOnboarded: true, PasswordCredential: { } credential })
+        if (user is not { IsOnboarded: true })
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -135,18 +137,39 @@ internal sealed class UpgradeAccountSecurityEndpoint(
             return;
         }
 
-        var credentialCheck = await credentialVerifier.VerifyAsync(user, credential, req.CurrentAuthCredential, HttpContext, ct);
-        if (credentialCheck.RetryAfterSeconds is { } retryAfter)
+        var credential = user.PasswordCredential;
+        if (credential is null)
         {
-            HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
-            await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
-            return;
+            // OAuth-onboarded v1 accounts never stored an AuthCredential (credentialRevision 0). The authenticated
+            // session is their only authority, exactly as for the removed setup retry that created the credential.
+            if (user.CredentialRevision != 0 || req.CurrentAuthCredential.Length != 0)
+            {
+                await SendConflictAsync(ct);
+                return;
+            }
         }
-
-        if (!credentialCheck.IsVerified)
+        else
         {
-            await Send.ForbiddenAsync(ct);
-            return;
+            if (req.CurrentAuthCredential.Length == 0)
+            {
+                await Send.ForbiddenAsync(ct);
+                return;
+            }
+
+            var credentialCheck = await credentialVerifier.VerifyAsync(
+                user, credential, req.CurrentAuthCredential, HttpContext, ct);
+            if (credentialCheck.RetryAfterSeconds is { } retryAfter)
+            {
+                HttpContext.Response.Headers.RetryAfter = retryAfter.ToString(CultureInfo.InvariantCulture);
+                await Send.StatusCodeAsync(StatusCodes.Status429TooManyRequests, ct);
+                return;
+            }
+
+            if (!credentialCheck.IsVerified)
+            {
+                await Send.ForbiddenAsync(ct);
+                return;
+            }
         }
 
         var now = clock.GetCurrentInstant();
@@ -168,7 +191,14 @@ internal sealed class UpgradeAccountSecurityEndpoint(
                 req.DeviceWrapperMetadata,
                 now);
             var (serverHash, serverSalt) = passwordHasher.Hash(req.NewAuthCredential);
-            credential.Reset(serverHash, req.KdfSalt, serverSalt, now);
+            if (credential is null)
+            {
+                domainWriteContext.Add(PasswordCredential.Create(user.Id, serverHash, req.KdfSalt, serverSalt, now));
+            }
+            else
+            {
+                credential.Reset(serverHash, req.KdfSalt, serverSalt, now);
+            }
             await domainWriteContext.CommitAsync(ct);
         }
         catch (InvalidOperationException)

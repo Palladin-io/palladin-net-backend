@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using FastEndpoints;
 using Microsoft.AspNetCore.WebUtilities;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
@@ -167,7 +168,7 @@ public sealed class CredentialDeliveryTests(ApiFactory apiFactory) : TestBase
         envelope.GetProperty("encodedSuitePayload").GetString()
             .ShouldBe(WebEncoders.Base64UrlEncode(Bytes(24 + 64)));
         envelope.GetProperty("wrappedGrantDek").GetProperty("encodedSealedKeyPackage").GetString()
-            .ShouldBe(WebEncoders.Base64UrlEncode(Bytes(120)));
+            .ShouldBe(WebEncoders.Base64UrlEncode(Bytes(KeyWrapperSuites.Current.PackageBytes)));
         envelope.GetProperty("descriptor").GetProperty("binding").GetProperty("recipientKeyFingerprint")
             .GetString().ShouldNotContain("=");
         envelope.GetProperty("descriptor").GetProperty("resourceRevision").GetString().ShouldBe("1");

@@ -80,7 +80,7 @@ public sealed class GrantApprovalCollapseE2ETests(ApiFactory apiFactory) : TestB
                 VaultId = vault.Id,
                 GrantId = grantId,
                 GrantEntry = GrantEnvelopeTestData.Contract(
-                    organization.Id, vault.Id, grantId, entry.Id, publicKey, remainingUses: 5,
+                    organization.Id, vault.Id, grantId, entry.Id, provisioning.EncryptionPublicKey, remainingUses: 5,
                     agentId: authAgent.Id),
                 QueryLimit = 5,
             });

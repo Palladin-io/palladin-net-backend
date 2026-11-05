@@ -167,8 +167,8 @@ public sealed class AgentSubmissionFixtureFlowTests(ApiFactory apiFactory) : Tes
             signingPublicKey: ed25519, recipientKeyVersion: Fixture.AgentKeyVersion, accessEpoch: Fixture.AgentAccessEpoch);
         var grant = GrantFaker.CreateGranular(vaultId: Fixture.VaultId, organizationId: organizationId, agentId: agent.Id,
             entryId: Fixture.EntryId, agentAccessEpoch: Fixture.AgentAccessEpoch, createdBy: user.Id).Generate();
-        grant.GrantEntryScopes.Add(GrantEnvelopeTestData.Scope(organizationId, Fixture.VaultId, grant.Id, Fixture.EntryId,
-            grant.Methods, grant.ExpiresAt, grant.QueryLimit, entryRevision: 7, agentId: agent.Id, agentPublicKey: x25519));
+        grant.GrantEntryScopes.Add(GrantEnvelopeTestData.LegacyScope(organizationId, Fixture.VaultId, grant.Id, Fixture.EntryId,
+            grant.Methods, grant.ExpiresAt, grant.QueryLimit, entryRevision: 7, agentPublicKey: x25519));
         await apiFactory.Services.SeedGranularGrantAsync(grant);
 
         return (

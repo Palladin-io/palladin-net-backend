@@ -16,13 +16,20 @@ public sealed class AgentSubmissionContractDriftTests
     private static readonly JsonNode Contract = JsonNode.Parse(File.ReadAllText(
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "AgentSubmission", "contract-v1.json")))!;
 
+    private static readonly JsonArray SuitePublications = JsonNode.Parse(File.ReadAllText(
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "KeyWrapper", "v1", "recipient-key-publication.json")))!
+        ["publications"]!.AsArray();
+
     [Fact]
     public void When_ContractTransportFieldsAreCompared_Then_TheBackendShapeIsExactlyTheContractShape()
     {
         // Given
-        var contractFields = Contract["submission"]!["transportFields"]!.AsArray().Select(x => x!.GetValue<string>());
+        // Successor readers accept exactly the v1 fields plus the suite fields added by recipient-key-publication.
+        var contractFields = Contract["submission"]!["transportFields"]!.AsArray().Select(x => x!.GetValue<string>())
+            .Concat(SuccessorFields("AgentEntrySubmission (agent-submission v1)"));
         var manifestFields = Contract["approverKeySet"]!["manifest"]!["requiredFields"]!.AsArray().Select(x => x!.GetValue<string>())
-            .Concat(Contract["approverKeySet"]!["manifest"]!["conditionalFields"]!.AsObject().Select(x => x.Key));
+            .Concat(Contract["approverKeySet"]!["manifest"]!["conditionalFields"]!.AsObject().Select(x => x.Key))
+            .Concat(SuccessorFields("OrganizationApproverManifest (agent-submission v1)"));
 
         // When
         var backendFields = WireNames(typeof(AgentEntrySubmissionContract));
@@ -88,6 +95,14 @@ public sealed class AgentSubmissionContractDriftTests
         limits["payloadPlaintextBytes"]!.GetValue<int>().ShouldBe(AgentSubmissionLimits.MaximumPayloadPlaintextBytes);
         limits["approverCount"]!.GetValue<int>().ShouldBe(AgentSubmissionLimits.MaximumApprovers);
         Contract["lifecycle"]!["trashRetentionDays"]!.GetValue<int>().ShouldBe(AgentSubmissionLimits.TrashRetentionDays);
+    }
+
+    private static IEnumerable<string> SuccessorFields(string publishedObject)
+    {
+        var publication = SuitePublications.Single(x => x!["object"]!.GetValue<string>() == publishedObject)!;
+        return publication["addedFields"] is JsonArray fields
+            ? fields.Select(x => x!["name"]!.GetValue<string>())
+            : [publication["addedField"]!["name"]!.GetValue<string>()];
     }
 
     private static IEnumerable<string> WireNames(Type type) => type

@@ -105,6 +105,23 @@ public sealed class EnvelopeDescriptorCodecTests
     }
 
     [Fact]
+    public void GrantDescriptor_WithCurrentWrapperSuite_EncodesItsSuiteId()
+    {
+        var encoded = EnvelopeDescriptorCodec.Encode(GrantDescriptorWithSuite(KeyWrapperSuites.Current.Id));
+
+        Convert.ToHexStringLower(encoded).ShouldContain(
+            Convert.ToHexStringLower(System.Text.Encoding.ASCII.GetBytes(KeyWrapperSuites.Current.Id)));
+    }
+
+    [Fact]
+    public void GrantDescriptor_WithUnregisteredWrapperSuite_FailsClosed()
+    {
+        var act = () => EnvelopeDescriptorCodec.Encode(GrantDescriptorWithSuite("palladin-unregistered-v1"));
+
+        act.ShouldThrow<DomainException>().Message.ShouldBe("The key-wrapper suite is not registered.");
+    }
+
+    [Fact]
     public void FieldSetCommitment_IsSortedAndMatchesFrozenVector()
     {
         var first = EnvelopeDescriptorCodec.ComputeFieldSetCommitment(["username", "password"]);
@@ -233,6 +250,17 @@ public sealed class EnvelopeDescriptorCodecTests
             Convert.FromHexString(value.GetProperty("fieldSetCommitmentHex").GetString()!),
             value.GetProperty("expiresAtUnixSeconds").GetInt64(),
             value.GetProperty("expiresAtNanoseconds").GetUInt32(), value.GetProperty("remainingUses").GetUInt32()));
+
+    private static EnvelopeDescriptor GrantDescriptorWithSuite(string wrapperSuiteId) => new(
+        2,
+        new CryptoSuiteId(CryptoSuiteId.XChaCha20Poly1305V1),
+        EnvelopePurpose.GrantPayload,
+        new EnvelopeScope(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
+        1,
+        1,
+        1,
+        new GrantEnvelopeBinding(1, wrapperSuiteId, 1, new byte[32], (ushort)GrantMethods.Get,
+            (ushort)GrantDeliveryPolicy.Standard, new byte[32], null, null, null));
 
     private static EnvelopeScope Scope(JsonElement value) => new(
         Guid.Parse(value.GetProperty("organizationId").GetString()!),

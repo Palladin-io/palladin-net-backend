@@ -44,7 +44,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         return new Setup(
             apiFactory.CreateSignedAgentClient(agent.Id, plaintext, publicKey, signing),
-            apiFactory.CreateAuthenticatedClient(user), signing, agent.Id, publicKey,
+            apiFactory.CreateAuthenticatedClient(user), signing, agent.Id, provisioning.EncryptionPublicKey,
             organization.Id, vault.Id, entry.Id, user.Id,
             provisioning.Request.Manifest.VaultAgentMessageKeyFingerprint);
     }
@@ -242,7 +242,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             apiFactory.FakeClock.GetCurrentInstant() + Duration.FromHours(1));
         var envelope = GrantEnvelopeTestData.Contract(
             setup.OrganizationId, setup.VaultId, grantId, setup.EntryId,
-            setup.AgentPublicKey, expiresAt, agentId: setup.AgentId);
+            setup.AgentEncryptionPublicKey, expiresAt, agentId: setup.AgentId);
 
         var originalTime = apiFactory.FakeClock.GetCurrentInstant();
         apiFactory.FakeClock.Advance(Duration.FromSeconds(5));
@@ -298,7 +298,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         var setup = await ArrangeAsync();
         var grantId = await RequestPendingGrantAsync(setup, Request(setup));
         var envelope = GrantEnvelopeTestData.Contract(
-            setup.OrganizationId, setup.VaultId, grantId, Guid.NewGuid(), setup.AgentPublicKey,
+            setup.OrganizationId, setup.VaultId, grantId, Guid.NewGuid(), setup.AgentEncryptionPublicKey,
             agentId: setup.AgentId);
 
         var response = await setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(
@@ -321,7 +321,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             Methods = GrantMethods.Get,
             GrantEntry = GrantEnvelopeTestData.Contract(
                 setup.OrganizationId, setup.VaultId, grantId, setup.EntryId,
-                setup.AgentPublicKey,
+                setup.AgentEncryptionPublicKey,
                 agentId: setup.AgentId),
         };
 
@@ -358,7 +358,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         HttpClient UserClient,
         AgentRequestSigning Signing,
         Guid AgentId,
-        string AgentPublicKey,
+        string AgentEncryptionPublicKey,
         Guid OrganizationId,
         Guid VaultId,
         Guid EntryId,

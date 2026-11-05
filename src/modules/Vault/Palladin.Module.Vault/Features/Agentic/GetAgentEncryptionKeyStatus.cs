@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Features;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
+using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -22,8 +23,8 @@ internal sealed class GetAgentEncryptionKeyStatusEndpoint(VaultDomainReadContext
         {
             summary.Summary = "Report the authenticated Agent's encryption key and old-key envelopes";
             summary.Description = "Returns the encryption key publication Vault currently seals to and the number of "
-                + "live envelopes (discovery VDK, grant DEK, Agent Vault key, script package) still addressed to an "
-                + "older Agent key version. The Agent may delete its previous private key only at zero.";
+                + "live envelopes (discovery VDK, grant DEK, Agent Vault key, script package) still addressed to any "
+                + "non-current Agent key version. The Agent may delete its previous private key only at zero.";
         });
         Tags("Vault/Agents");
     }
@@ -41,21 +42,22 @@ internal sealed class GetAgentEncryptionKeyStatusEndpoint(VaultDomainReadContext
 
         var organizationId = agent.OrganizationId;
         var version = agent.RecipientKeyVersion;
+        var current = new AgentRecipientKeyVersion(version);
         var discovery = await domainReadContext.AgentVaultDiscoveryEnvelopes.CountAsync(x =>
             x.OrganizationId == organizationId && x.AgentId == agentId && x.RevokedAt == null
-            && x.RecipientAgentKeyVersion.Value < version, ct);
+            && x.RecipientAgentKeyVersion != current, ct);
         var vaultKeys = await domainReadContext.AgentWrappedVaultKeys.CountAsync(x =>
             x.OrganizationId == organizationId && x.AgentId == agentId
-            && x.RecipientAgentKeyVersion.Value < version, ct);
+            && x.RecipientAgentKeyVersion != current, ct);
         var grantEnvelopes = await (
             from envelope in domainReadContext.GrantEntryEnvelopes
             join grant in domainReadContext.Grants on envelope.GrantId equals grant.Id
             where grant.OrganizationId == organizationId && grant.AgentId == agentId
                   && grant.Status == GrantStatus.Active
-                  && envelope.RecipientAgentKeyVersion.Value < version
+                  && envelope.RecipientAgentKeyVersion != current
             select envelope).CountAsync(ct);
         var scriptPackages = await domainReadContext.ScriptExecutionPackages.CountAsync(x =>
-            x.OrganizationId == organizationId && x.AgentId == agentId && x.RecipientAgentKeyVersion < version, ct);
+            x.OrganizationId == organizationId && x.AgentId == agentId && x.RecipientAgentKeyVersion != version, ct);
 
         await Send.OkAsync(new AgentEncryptionKeyStatusResponse(
             agent.PublicKeySuiteId,

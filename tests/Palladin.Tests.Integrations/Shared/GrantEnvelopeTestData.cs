@@ -137,6 +137,31 @@ internal static class GrantEnvelopeTestData
             contract, methods, VaultAgentFaker.Create(id: recipientAgentId, publicKey: publicKey).Generate());
     }
 
+    // A grant persisted before the key-wrapper migration: its legacy suite stays openable, but the contract mapper
+    // (correctly) refuses to seal it anew, so it is built from the domain directly.
+    internal static GrantEntryScope LegacyScope(
+        Guid organizationId,
+        Guid vaultId,
+        Guid grantId,
+        Guid entryId,
+        GrantMethods methods,
+        Instant? expiresAt,
+        int? remainingUses,
+        ulong entryRevision,
+        string agentPublicKey)
+    {
+        var scope = new EntryScope(organizationId, vaultId, entryId);
+        var envelope = GrantEntryEnvelope.Create(scope, grantId, 1, new EntryRevision(entryRevision), 1,
+            new MemberKeyGeneration(1), new AgentRecipientKeyVersion(1),
+            [.. Enumerable.Range(0, 64).Select(i => (byte)i)],
+            [.. Enumerable.Range(0, VaultProtocol.NonceBytes).Select(i => (byte)i)],
+            [.. Enumerable.Range(0, LegacyWrapperSuite.PackageBytes).Select(i => (byte)i)],
+            LegacyWrapperSuite.Id, AgentRecipientKey.Fingerprint(LegacyWrapperSuite.Id, agentPublicKey),
+            expiresAt, remainingUses);
+        return GrantEntryScope.Create(scope, grantId, methods, GrantDeliveryPolicy.Standard,
+            ["username", "password"], envelope);
+    }
+
     internal static AgentWrappedVaultKey AgentVaultKey(
         Guid organizationId,
         Guid vaultId,

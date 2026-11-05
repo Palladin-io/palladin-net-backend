@@ -418,13 +418,21 @@ internal sealed class AgentSubmissionScenario
         ApproverGroupKey key,
         ulong manifestRevision,
         IssueApproverKeyChallengeResponse challenge,
+        ApproverGroupKey? previous) =>
+        SignManifest(OrganizationId, key, manifestRevision, challenge, previous);
+
+    internal static OrganizationApproverManifestContract SignManifest(
+        Guid organizationId,
+        ApproverGroupKey key,
+        ulong manifestRevision,
+        IssueApproverKeyChallengeResponse challenge,
         ApproverGroupKey? previous)
     {
         var unsigned = new OrganizationApproverManifestContract(
             ManifestSchema,
             1,
             2,
-            OrganizationId.ToString("D"),
+            organizationId.ToString("D"),
             key.KeyVersion,
             manifestRevision.ToString(),
             challenge.ApproverSetRevision,
@@ -446,11 +454,15 @@ internal sealed class AgentSubmissionScenario
     }
 
     private List<ApproverKeyWrapContract> Wraps(IEnumerable<ApproverContract> approvers, uint keyVersion, string approverSetRevision) =>
+        Wraps(OrganizationId, approvers, keyVersion, approverSetRevision);
+
+    internal static List<ApproverKeyWrapContract> Wraps(
+        Guid organizationId, IEnumerable<ApproverContract> approvers, uint keyVersion, string approverSetRevision) =>
         approvers.SelectMany(approver => new ushort[] { 8, 9 }.Select(purpose => new ApproverKeyWrapContract(
             new ApproverKeyWrapDescriptorContract(
                 purpose,
                 33,
-                OrganizationId.ToString("D"),
+                organizationId.ToString("D"),
                 approver.MemberId,
                 approverSetRevision,
                 keyVersion,

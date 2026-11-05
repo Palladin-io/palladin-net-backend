@@ -358,6 +358,27 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_AnApproverStillHasALegacyMemberKey_Then_WrapsAreRejectedAsKeyMigrationPending()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var legacy = await scenario.AddApproverMemberAsync();
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(
+            legacy.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 1,
+            "palladin-x25519-sealed-box-v1");
+
+        // When
+        var response = await scenario.BootstrapRequestAsync(scenario.Owner);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("key-migration-pending");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>().OrganizationApproverKeySets
+            .AnyAsync(x => x.OrganizationId == scenario.OrganizationId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task When_RotationOmitsContinuity_Then_ItIsRejected()
     {
         // Given

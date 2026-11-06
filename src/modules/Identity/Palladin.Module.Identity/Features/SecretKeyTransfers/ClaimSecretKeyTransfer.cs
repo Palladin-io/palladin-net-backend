@@ -25,6 +25,9 @@ public sealed record ClaimSecretKeyTransferResponse(
     [property: JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] byte[] KemCiphertext,
     [property: JsonConverter(typeof(Base64UrlByteArrayJsonConverter))] byte[] Ciphertext);
 
+[PublicAPI]
+public sealed record ClaimSecretKeyTransferPendingResponse(Guid? AccountId, string? Email);
+
 [UsedImplicitly]
 internal sealed class ClaimSecretKeyTransferValidator : Validator<ClaimSecretKeyTransferRequest>
 {
@@ -48,8 +51,12 @@ internal sealed class ClaimSecretKeyTransferEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Poll for and claim the sealed Secret Key";
-            summary.Description = "Returns 202 while the sender has not delivered the envelope and 200 with the "
-                + "sender account ID and ciphertext exactly once; the envelope is deleted in the same commit. An "
+            summary.Description = "Returns 202 while the sender has not delivered the envelope, with "
+                + "{accountId, email} of the bound sender account (both null before a sender is bound), and 200 with "
+                + "the sender account ID and ciphertext exactly once; the envelope is deleted in the same commit. The "
+                + "202 values are unauthenticated hints: the recipient binds the accountId into the SAS the user "
+                + "compares on both devices, rejects a 200 with a different accountId and uses the e-mail only for "
+                + "display and sign-in. An "
                 + "unknown transfer or wrong poll token returns 404, an expired one 410 pairing-expired and a "
                 + "repeated claim 410 pairing-consumed.";
         });
@@ -64,13 +71,22 @@ internal sealed class ClaimSecretKeyTransferEndpoint(
             return;
         }
 
-        var transfer = await domainWriteContext.SecretKeyTransfers.SingleOrDefaultAsync(x => x.Id == req.TransferId, ct);
-        if (transfer is null || !transfer.MatchesPollToken(req.PollToken))
+        var users = domainWriteContext.Users;
+        var found = await domainWriteContext.SecretKeyTransfers
+            .Where(x => x.Id == req.TransferId)
+            .Select(x => new
+            {
+                Transfer = x,
+                SenderEmail = users.Where(user => user.Id == x.SenderUserId).Select(user => user.Email).SingleOrDefault(),
+            })
+            .SingleOrDefaultAsync(ct);
+        if (found is null || !found.Transfer.MatchesPollToken(req.PollToken))
         {
             await Send.NotFoundAsync(ct);
             return;
         }
 
+        var transfer = found.Transfer;
         HttpContext.Response.Headers.CacheControl = "no-store";
         if (transfer.State == SecretKeyTransferState.Claimed)
         {
@@ -86,7 +102,10 @@ internal sealed class ClaimSecretKeyTransferEndpoint(
 
         if (transfer.Claim() is not { } envelope)
         {
-            await Send.StatusCodeAsync(StatusCodes.Status202Accepted, ct);
+            await HttpContext.Response.SendAsync(
+                new ClaimSecretKeyTransferPendingResponse(transfer.SenderUserId, found.SenderEmail),
+                StatusCodes.Status202Accepted,
+                cancellation: ct);
             return;
         }
 

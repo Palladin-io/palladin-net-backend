@@ -67,6 +67,46 @@ public sealed class SecretKeyTransferTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_RecipientShowsQrBeforeSignIn_Then_PendingClaimHintsOnlyTheBoundSenderAccount()
+    {
+        // Given
+        var anonymous = apiFactory.CreateClient();
+        var started = await StartAsRecipientAsync(anonymous, XWingTestKeys.CreateKeyPair().PublicKey);
+        var sender = await SeedAccountAsync();
+        var otherAccount = await SeedAccountAsync();
+
+        // When
+        var beforeBind = await ClaimAsync(anonymous, started.TransferId, started.PollToken);
+        var beforeBindBody = await beforeBind.Content.ReadAsStringAsync();
+        (await sender.Client.GetAsync($"api/account/secret-key-transfers/{started.TransferId}"))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+        var foreignView = await otherAccount.Client.GetAsync($"api/account/secret-key-transfers/{started.TransferId}");
+        var afterBind = await ClaimAsync(anonymous, started.TransferId, started.PollToken);
+        var afterBindBody = await afterBind.Content.ReadAsStringAsync();
+        var wrongToken = await ClaimAsync(anonymous, started.TransferId, RandomNumberGenerator.GetBytes(32));
+        var wrongTokenBody = await wrongToken.Content.ReadAsStringAsync();
+        (await sender.Client.PostAsJsonAsync($"api/account/secret-key-transfers/{started.TransferId}/envelope", Envelope()))
+            .StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var claimed = await ClaimAsync(anonymous, started.TransferId, started.PollToken);
+
+        // Then
+        beforeBind.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        beforeBindBody.ShouldBe("""{"accountId":null,"email":null}""");
+        foreignView.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        afterBind.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        afterBind.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        var hint = JsonSerializer.Deserialize<ClaimSecretKeyTransferPendingResponse>(afterBindBody, Json)!;
+        hint.AccountId.ShouldBe(sender.User.Id);
+        hint.Email.ShouldBe(sender.User.Email);
+        afterBindBody.ShouldNotContain(otherAccount.User.Email);
+        wrongToken.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        wrongTokenBody.ShouldNotContain(sender.User.Email);
+        wrongTokenBody.ShouldNotContain(sender.User.Id.ToString());
+        claimed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await claimed.Content.ReadFromJsonAsync<ClaimSecretKeyTransferResponse>(Json))!.AccountId.ShouldBe(sender.User.Id);
+    }
+
+    [Fact]
     public async Task When_SenderShowsQr_Then_OnlyTheMatchingChallengeAttachesTheRecipientOnce()
     {
         // Given

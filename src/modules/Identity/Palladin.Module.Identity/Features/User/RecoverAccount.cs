@@ -1,5 +1,6 @@
 using Palladin.Core.Security;
 using Palladin.Core.Api;
+using Palladin.Core.Transport;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Infrastructure;
 using Palladin.Module.Identity.Infrastructure.PasswordAuth;
@@ -38,8 +39,8 @@ internal sealed class RecoverAccountValidator : Validator<RecoverAccountRequest>
 {
     public RecoverAccountValidator()
     {
-        RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.CurrentSecurityVersion);
-        RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.CurrentProfileId);
+        RuleFor(x => x).Must(x => IdentityKdfProfiles.IsRegistered(x.SecurityVersion, x.KdfProfileId))
+            .WithName("kdfProfileId");
         RuleFor(x => x.BasePrivateKeyWrapRevision).GreaterThan(0u);
         RuleFor(x => x.NewKdfSalt).Must(b => b is { Length: IdentityKdfProfiles.KdfSaltBytes });
         RuleFor(x => x.NewEncryptedPrivateKey).NotEmpty().Must(b => b is { Length: >= 32 and <= 4096 });
@@ -58,6 +59,7 @@ internal sealed class RecoverAccountEndpoint(
     IdentityDomainWriteContext domainWriteContext,
     RecoveryChallengeConsumer recoveryChallengeConsumer,
     IPasswordHasher passwordHasher,
+    ITransportContext transportContext,
     IClock clock) : Endpoint<RecoverAccountRequest>
 {
     public override void Configure()
@@ -68,7 +70,7 @@ internal sealed class RecoverAccountEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Recover the account using pre-encrypted key material";
-            summary.Description = "Replaces the user's salt, encrypted private key and recovery key material. Requires recoveryProof: the secret opened from POST api/account/recovery/challenge with the account private key; a missing, wrong, expired or reused proof returns 403 and consumes the challenge. The server never sees the plaintext master password or recovery key — only the ciphertexts and salts derived client-side from the new password and new recovery key.";
+            summary.Description = "Replaces the user's KDF salt, server verifier, encrypted private key and recovery key material within the account's registered profile, revokes every refresh session, clears the unusable wrapped legacy Member key and sends the account-recovered e-mail. Requires recoveryProof: the secret opened from POST api/account/recovery/challenge with the account private key; a missing, wrong, expired or reused proof returns 403 and consumes the challenge. The server never sees the plaintext master password or recovery key — only the ciphertexts and salts derived client-side from the new password and new recovery key.";
         });
         Tags("Identity/Account");
     }
@@ -129,6 +131,7 @@ internal sealed class RecoverAccountEndpoint(
                 req.NewEncryptedPrivateKeyByRecovery,
                 req.DeviceWrapperMetadata,
                 isPasswordAccount,
+                transportContext.Platform ?? "unknown",
                 now);
 
             if (user.PasswordCredential is { } credential)

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 
@@ -9,7 +10,6 @@ namespace Palladin.Module.Vault.Infrastructure.Crypto;
 internal static class EnvelopeDescriptorCodec
 {
     private static readonly byte[] Magic = "PLDNENV2"u8.ToArray();
-    private const string WrapperSuite = "palladin-x25519-sealed-box-v1";
 
     internal static byte[] Encode(EnvelopeDescriptor descriptor)
     {
@@ -146,8 +146,9 @@ internal static class EnvelopeDescriptorCodec
 
     private static void WriteWrapperRecipient(Stream stream, string suiteId, uint version, byte[] fingerprint)
     {
-        if (!string.Equals(suiteId, WrapperSuite, StringComparison.Ordinal) || version == 0)
-            throw new DomainException("Recipient wrapper is not registered.");
+        KeyWrapperSuites.ResolveForOpen(suiteId);
+        if (version == 0)
+            throw new DomainException("Recipient wrapper key version is not registered.");
         WriteAscii(stream, suiteId);
         WriteUInt32(stream, version);
         WriteFixed(stream, fingerprint, 32, "recipient fingerprint");

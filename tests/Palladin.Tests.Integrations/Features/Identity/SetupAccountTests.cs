@@ -26,11 +26,12 @@ public sealed class SetupAccountTests(ApiFactory apiFactory) : TestBase
 
         var payload = new SetupAccountRequest
         {
-            SecurityVersion = 1,
-            KdfProfileId = "identity-argon2id-password-v1",
+            SecurityVersion = 2,
+            KdfProfileId = "identity-argon2id-account-secret-v2",
+            PublicKeySuiteId = "palladin-xwing-v1",
             KdfSalt = Enumerable.Range(0, 16).Select(i => (byte)i).ToArray(),
             RecoverySalt = Enumerable.Range(0, 16).Select(i => (byte)(i + 0x40)).ToArray(),
-            PublicKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x10)).ToArray(),
+            PublicKey = Enumerable.Range(0, 1216).Select(i => (byte)(i + 0x10)).ToArray(),
             EncryptedPrivateKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x20)).ToArray(),
             EncryptedPrivateKeyByRecovery = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x30)).ToArray(),
             NewAuthCredential = RandomNumberGenerator.GetBytes(32),
@@ -60,8 +61,8 @@ public sealed class SetupAccountTests(ApiFactory apiFactory) : TestBase
             new LoginRequest
             {
                 Email = user.Email,
-                SecurityVersion = 1,
-                KdfProfileId = "identity-argon2id-password-v1",
+                SecurityVersion = 2,
+                KdfProfileId = "identity-argon2id-account-secret-v2",
                 AuthCredential = payload.NewAuthCredential,
             });
         loginResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -83,11 +84,12 @@ public sealed class SetupAccountTests(ApiFactory apiFactory) : TestBase
 
         var payload = new SetupAccountRequest
         {
-            SecurityVersion = 1,
-            KdfProfileId = "identity-argon2id-password-v1",
+            SecurityVersion = 2,
+            KdfProfileId = "identity-argon2id-account-secret-v2",
+            PublicKeySuiteId = "palladin-xwing-v1",
             KdfSalt = Enumerable.Range(0, 16).Select(i => (byte)i).ToArray(),
             RecoverySalt = Enumerable.Range(0, 16).Select(i => (byte)(i + 0x40)).ToArray(),
-            PublicKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x10)).ToArray(),
+            PublicKey = Enumerable.Range(0, 1216).Select(i => (byte)(i + 0x10)).ToArray(),
             EncryptedPrivateKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x20)).ToArray(),
             EncryptedPrivateKeyByRecovery = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x30)).ToArray(),
             NewAuthCredential = RandomNumberGenerator.GetBytes(32),
@@ -103,13 +105,14 @@ public sealed class SetupAccountTests(ApiFactory apiFactory) : TestBase
     [Fact]
     public async Task When_ExactSetupRetryArrives_Then_DoesNotReplaceStoredKeyMaterial()
     {
-        var storedPublicKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x10)).ToArray();
+        var storedPublicKey = Enumerable.Range(0, 1216).Select(i => (byte)(i + 0x10)).ToArray();
         var storedSalt = Enumerable.Repeat((byte)0xA1, 16).ToArray();
         var storedRecoverySalt = Enumerable.Repeat((byte)0xA2, 16).ToArray();
         var storedEncryptedPrivateKey = Enumerable.Repeat((byte)0xA3, 32).ToArray();
         var storedEncryptedPrivateKeyByRecovery = Enumerable.Repeat((byte)0xA4, 32).ToArray();
         var userFaker = UserFaker.CreateOnboarded()
             .RuleFor(x => x.PublicKey, storedPublicKey)
+            .RuleFor(x => x.MemberPublicKeySuiteId, "palladin-xwing-v1")
             .RuleFor(x => x.MemberKeyVersion, (uint)1)
             .RuleFor(x => x.Salt, storedSalt)
             .RuleFor(x => x.RecoverySalt, storedRecoverySalt)
@@ -119,8 +122,9 @@ public sealed class SetupAccountTests(ApiFactory apiFactory) : TestBase
         var client = apiFactory.CreateAuthenticatedClient(user);
         var payload = new SetupAccountRequest
         {
-            SecurityVersion = 1,
-            KdfProfileId = "identity-argon2id-password-v1",
+            SecurityVersion = 2,
+            KdfProfileId = "identity-argon2id-account-secret-v2",
+            PublicKeySuiteId = "palladin-xwing-v1",
             KdfSalt = Enumerable.Repeat((byte)0xB1, 16).ToArray(),
             RecoverySalt = Enumerable.Repeat((byte)0xB2, 16).ToArray(),
             PublicKey = storedPublicKey,
@@ -166,11 +170,12 @@ public sealed class SetupAccountTests(ApiFactory apiFactory) : TestBase
 
         var payload = new SetupAccountRequest
         {
-            SecurityVersion = 1,
-            KdfProfileId = "identity-argon2id-password-v1",
+            SecurityVersion = 2,
+            KdfProfileId = "identity-argon2id-account-secret-v2",
+            PublicKeySuiteId = "palladin-xwing-v1",
             KdfSalt = Enumerable.Range(0, 16).Select(i => (byte)i).ToArray(),
             RecoverySalt = Enumerable.Range(0, 16).Select(i => (byte)(i + 0x40)).ToArray(),
-            PublicKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x10)).ToArray(),
+            PublicKey = Enumerable.Range(0, 1216).Select(i => (byte)(i + 0x10)).ToArray(),
             EncryptedPrivateKey = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x20)).ToArray(),
             EncryptedPrivateKeyByRecovery = Enumerable.Range(0, 32).Select(i => (byte)(i + 0x30)).ToArray(),
             NewAuthCredential = RandomNumberGenerator.GetBytes(32),

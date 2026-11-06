@@ -11,7 +11,7 @@ public sealed record AgentVaultDiscoveryEnvelopeContract(
     Guid VaultId,
     Guid AgentId,
     uint VdkVersion,
-    X25519WrappedKeyContract WrappedVdk,
+    WrappedKeyContract WrappedVdk,
     string ManifestRevision,
     string ManifestSignature)
 {
@@ -27,12 +27,12 @@ public sealed record AgentVaultDiscoveryEnvelopeContract(
         ushort _, uint recipientKeyVersion, string recipientFingerprint, string encodedPackage,
         string manifestRevision, string manifestSignature)
         : this(protocolVersion, organizationId, vaultId, agentId, vdkVersion,
-            new X25519WrappedKeyContract(
-                new X25519WrapperDescriptorContract(protocolVersion,
-                    "palladin-x25519-sealed-box-v1", X25519WrapperPurposeContract.AgentDiscoveryVdk,
+            new WrappedKeyContract(
+                new KeyWrapperDescriptorContract(protocolVersion,
+                    Infrastructure.Crypto.LegacyWrapperSuite.Id, KeyWrapperPurposeContract.AgentVaultDiscoveryKey,
                     new EnvelopeScopeContract(organizationId, vaultId, AgentId: agentId),
                     vdkVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), vdkVersion, null,
-                    X25519RecipientKeyKindContract.AgentX25519, recipientKeyVersion,
+                    RecipientKeyKindContract.AgentEncryption, recipientKeyVersion,
                     recipientFingerprint, null), encodedPackage), manifestRevision, manifestSignature) { }
 }
 
@@ -59,7 +59,8 @@ public sealed record VaultManifestContract(
     string ManifestRevision,
     Instant IssuedAt,
     ushort MinimumAgentRuntimeProtocol,
-    string Signature)
+    string Signature,
+    string? VaultAgentMessageKeySuiteId = null)
 {
     public VaultManifestContract(
         ushort protocolVersion, ushort _, Guid organizationId, Guid vaultId, Guid agentId,
@@ -68,7 +69,7 @@ public sealed record VaultManifestContract(
         string vaultAgentMessagePublicKey, string vaultAgentMessageKeyFingerprint,
         uint agentMessageKeyVersion, uint vdkVersion, string agentWrappedVdkDigest,
         string manifestRevision, Instant issuedAt, ushort minimumAgentRuntimeProtocol, string signature)
-        : this(protocolVersion, "palladin-vault-xchacha-v1", "palladin-x25519-sealed-box-v1",
+        : this(protocolVersion, "palladin-vault-xchacha-v1", Infrastructure.Crypto.LegacyWrapperSuite.Id,
             "palladin-ed25519-v1", organizationId, vaultId, agentId, agentX25519Fingerprint,
             agentEd25519Fingerprint, vaultSigningPublicKey, vaultSigningKeyFingerprint,
             manifestSigningKeyVersion, vaultAgentMessagePublicKey, vaultAgentMessageKeyFingerprint,

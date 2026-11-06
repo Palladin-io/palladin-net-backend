@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -25,7 +26,7 @@ internal sealed class GrantEntryEnvelopeConfiguration : IEntityTypeConfiguration
             .HasPrecision(10, 0)
             .IsRequired();
         builder.Property(x => x.EncodedSuitePayload).HasMaxLength(262_168);
-        builder.Property(x => x.AgentWrappedGrantDek).HasMaxLength(120);
+        builder.Property(x => x.AgentWrappedGrantDek).HasMaxLength(KeyWrapperSuites.MaximumPackageBytes);
         builder.Property(x => x.AgentKeyFingerprint).HasMaxLength(VaultProtocol.FingerprintBytes);
         builder.Ignore(x => x.AgentWrapperSuite);
         builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();

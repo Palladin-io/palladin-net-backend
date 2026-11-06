@@ -13,26 +13,25 @@ internal sealed class LoginSaltService(
     IdentityDbReadContext readContext,
     IOptions<PasswordAuthOptions> options) : ILoginSaltService
 {
-    public async Task<LoginBootstrap> GetBootstrapAsync(
-        string normalizedEmail,
-        string profileId,
-        CancellationToken ct)
+    public async Task<LoginBootstrap> GetBootstrapAsync(string normalizedEmail, CancellationToken ct)
     {
         var stored = await readContext.Users
-            .Where(u => u.Email == normalizedEmail
-                        && u.PasswordCredential != null
-                        && u.KdfProfileId == profileId)
-            .Select(u => new LoginBootstrap(u.Id, u.PasswordCredential!.AuthSalt))
+            .Where(u => u.Email == normalizedEmail && u.PasswordCredential != null)
+            .Select(u => new { u.Id, u.PasswordCredential!.AuthSalt, u.SecurityVersion, u.KdfProfileId })
             .FirstOrDefaultAsync(ct);
 
-        if (stored is not null)
+        if (stored is not null
+            && IdentityKdfProfiles.Find(stored.KdfProfileId) is { } profile
+            && profile.SecurityVersion == stored.SecurityVersion)
         {
-            return stored;
+            return new LoginBootstrap(stored.Id, stored.AuthSalt, profile);
         }
 
+        var pseudoProfile = IdentityKdfProfiles.Current;
         return new LoginBootstrap(
-            PseudoAccountId(normalizedEmail, profileId),
-            PseudoBytes("kdf-salt", normalizedEmail, profileId, options.Value.PseudoSaltLength));
+            PseudoAccountId(normalizedEmail, pseudoProfile.Id),
+            PseudoBytes("kdf-salt", normalizedEmail, pseudoProfile.Id, options.Value.PseudoSaltLength),
+            pseudoProfile);
     }
 
     private Guid PseudoAccountId(string normalizedEmail, string profileId)

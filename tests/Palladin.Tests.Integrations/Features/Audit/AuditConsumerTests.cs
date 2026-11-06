@@ -256,7 +256,7 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
         // Given
         var orgId = Guid.NewGuid();
         var now = apiFactory.FakeClock.GetCurrentInstant();
-        var evt = new AgentUpsertedEvent(Guid.NewGuid(), orgId, AgentStatus.Active, "pk", 1, "signing-pk", "Claude", "ci", null, null,
+        var evt = new AgentUpsertedEvent(Guid.NewGuid(), orgId, AgentStatus.Active, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "Claude", "ci", null, null,
             1, now, now);
 
         // When
@@ -567,7 +567,7 @@ public sealed class AuditConsumerTests(ApiFactory apiFactory) : TestBase
         // Given
         var orgId = Guid.NewGuid();
         var userId = Guid.NewGuid();
-        var evt = new AccountRecoveryCompletedEvent(userId, orgId, "Dave",
+        var evt = new AccountRecoveryCompletedEvent(userId, orgId, "Dave", "dave@example.com", "en", "web",
             apiFactory.FakeClock.GetCurrentInstant());
 
         // When

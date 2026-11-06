@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -16,6 +17,7 @@ internal sealed class ApproverKeyWrapConfiguration : IEntityTypeConfiguration<Ap
             .HasConversion(x => (decimal)x.Value, x => new MemberRecipientKeyVersion((uint)x))
             .HasPrecision(10, 0);
         builder.Property(x => x.RecipientFingerprint).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.SealedPackage).HasMaxLength(ApproverKeyWrap.SealedPackageBytes).IsRequired();
+        builder.Property(x => x.SealedPackage).HasMaxLength(KeyWrapperSuites.MaximumPackageBytes).IsRequired();
+        builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();
     }
 }

@@ -18,9 +18,17 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id");
         builder.Property(x => x.PublicKey).HasColumnName("public_key").HasMaxLength(512);
         builder.Property(x => x.SigningPublicKey).HasColumnName("signing_public_key").HasMaxLength(512);
+        builder.Property(x => x.EncryptionPublicKey).HasColumnName("encryption_public_key").HasMaxLength(2048);
+        builder.Property(x => x.EncryptionKeySuiteId).HasColumnName("encryption_key_suite_id").HasMaxLength(64);
+        builder.Property(x => x.PreviousEncryptionKeyFingerprint).HasColumnName("previous_encryption_key_fingerprint")
+            .HasMaxLength(32);
+        builder.Property(x => x.EncryptionKeyBindingSignature).HasColumnName("encryption_key_binding_signature")
+            .HasMaxLength(64);
+
         builder.Property(x => x.RecipientKeyVersion)
             .HasColumnName("recipient_key_version")
-            .HasDefaultValue(1u);
+            .HasDefaultValue(1u)
+            .IsConcurrencyToken();
         builder.Property(x => x.AccessEpoch)
             .HasColumnName("access_epoch")
             .HasDefaultValue(0u);

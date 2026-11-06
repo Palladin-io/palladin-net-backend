@@ -1,0 +1,11 @@
+{% include '_header.html.liquid', emailTitle: "Twoje konto zostało odzyskane frazą odzyskiwania" %}
+<p style="margin:0 0 16px">Ktoś zalogował się na Twoje konto {{ appName }}, potwierdził znajomość frazy odzyskiwania i ustawił nowe hasło oraz nowy Secret Key.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 20px;background:#fbeaea;border:1px solid #f3caca;border-radius:8px">
+  <tr><td style="padding:16px;font-size:14px;color:#7a1f1f">
+    <p style="margin:0 0 6px"><strong>Czas odzyskania:</strong> {{ occurredAt }}</p>
+    <p style="margin:0"><strong>Klient:</strong> {{ client }}</p>
+  </td></tr>
+</table>
+<p style="margin:0 0 16px">Wszystkie pozostałe sesje zostały wylogowane. Urządzenia z poprzednim Secret Key nie zalogują się, dopóki nie otrzymają nowego.</p>
+<p style="margin:0">Jeśli to Ty, przechowuj nowy Emergency Kit i nową frazę odzyskiwania w bezpiecznym miejscu. Jeśli to nie Ty, natychmiast napisz na {{ supportEmail }}.</p>
+{% include '_footer.pl.html.liquid' %}

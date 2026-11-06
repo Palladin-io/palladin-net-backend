@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.WebUtilities;
+using Palladin.Core.Cryptography;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -8,7 +9,11 @@ namespace Palladin.Tests.Integrations.Shared.Fakers;
 
 internal static class VaultContractFaker
 {
-    internal static byte[] MemberPublicKey => Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
+    internal static byte[] MemberPublicKey =>
+        Enumerable.Range(0, KeyWrapperSuites.Current.PublicKeyBytes).Select(x => (byte)x).ToArray();
+
+    internal static byte[] MemberSealedPackage =>
+        Enumerable.Range(0, KeyWrapperSuites.Current.PackageBytes).Select(x => (byte)(x + 1)).ToArray();
 
     internal static CreateVaultRequest CreateRequest(
         Guid organizationId,
@@ -16,7 +21,8 @@ internal static class VaultContractFaker
         Guid memberId,
         ulong revision = 1)
     {
-        var fingerprint = WebEncoders.Base64UrlEncode(MemberKeyFingerprint.Compute(MemberPublicKey));
+        var fingerprint = WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+            KeyWrapperSuites.Current.Id, VaultKeyKind.MemberEncryption, MemberPublicKey));
         var agentMessageKey = VaultTrustAnchorFaker.AgentMessagePublicKey;
         var signingKey = VaultTrustAnchorFaker.ManifestSigningPublicKey;
 
@@ -31,20 +37,23 @@ internal static class VaultContractFaker
                 WebEncoders.Base64UrlEncode(Enumerable.Range(0, 24 + 48).Select(x => (byte)(x + (int)revision)).ToArray())),
             CurrentKeyEpoch = new VaultKeyEpochContract(1, 1, 1, 1),
             CreatorVaultKey = new MemberVaultKeyEnvelopeContract(
-                new X25519WrappedKeyContract(
-                    new X25519WrapperDescriptorContract(2, X25519SealedBoxContract.SuiteId,
-                        X25519WrapperPurposeContract.MemberVaultKey,
+                new WrappedKeyContract(
+                    new KeyWrapperDescriptorContract(2, KeyWrapperSuites.Current.Id,
+                        KeyWrapperPurposeContract.MemberVaultKey,
                         new EnvelopeScopeContract(organizationId, vaultId, MemberId: memberId), "1", 1, 1,
-                        X25519RecipientKeyKindContract.MemberX25519, 1, fingerprint, null),
-                    WebEncoders.Base64UrlEncode(Enumerable.Range(0, 120).Select(x => (byte)(x + 1)).ToArray()))),
+                        RecipientKeyKindContract.MemberEncryption, 1, fingerprint, null),
+                    WebEncoders.Base64UrlEncode(MemberSealedPackage))),
             DiscoveryKey = CreateDiscoveryKey(organizationId, vaultId),
             VaultPrivateKeys = CreatePrivateKeys(organizationId, vaultId),
-            VaultAgentMessagePublicKey = PublicKey(VaultPublicKeyKindContract.AgentMessageX25519,
-                "palladin-x25519-v1", 1, agentMessageKey, VaultKeyKind.VaultMessageX25519),
-            VaultManifestSigningPublicKey = PublicKey(VaultPublicKeyKindContract.ManifestSigningEd25519,
-                "palladin-ed25519-v1", 1, signingKey, VaultKeyKind.VaultSigningEd25519),
+            VaultAgentMessagePublicKey = AgentMessagePublicKey(1, agentMessageKey),
+            VaultManifestSigningPublicKey = PublicKey(VaultPublicKeyKindContract.ManifestSigning,
+                "palladin-ed25519-v1", 1, signingKey, VaultKeyKind.VaultSigning),
         };
     }
+
+    internal static VaultPublicKeyContract AgentMessagePublicKey(uint version, byte[] key) => new(
+        2, VaultTrustAnchorFaker.AgentMessageKeySuiteId, VaultPublicKeyKindContract.AgentMessage, version,
+        WebEncoders.Base64UrlEncode(key), WebEncoders.Base64UrlEncode(VaultTrustAnchorFaker.AgentMessageFingerprint(key)));
 
     private static VaultPublicKeyContract PublicKey(VaultPublicKeyKindContract kind, string scheme, uint version,
         byte[] key, VaultKeyKind fingerprintKind) => new(2, scheme, kind, version,
@@ -84,12 +93,11 @@ internal static class VaultContractFaker
         ];
 
     internal static VaultPublicKeyContract CreateAgentMessagePublicKey(uint version = 2) =>
-        PublicKey(VaultPublicKeyKindContract.AgentMessageX25519, "palladin-x25519-v1", version,
-            VaultTrustAnchorFaker.RotatedAgentMessagePublicKey, VaultKeyKind.VaultMessageX25519);
+        AgentMessagePublicKey(version, VaultTrustAnchorFaker.RotatedAgentMessagePublicKey);
 
     internal static VaultPublicKeyContract CreateManifestSigningPublicKey(uint version = 2) =>
-        PublicKey(VaultPublicKeyKindContract.ManifestSigningEd25519, "palladin-ed25519-v1", version,
-            VaultTrustAnchorFaker.RotatedManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519);
+        PublicKey(VaultPublicKeyKindContract.ManifestSigning, "palladin-ed25519-v1", version,
+            VaultTrustAnchorFaker.RotatedManifestSigningPublicKey, VaultKeyKind.VaultSigning);
 
     private static VaultKeyMaterialEnvelope CreateKeyMaterialEnvelope(
         Guid organizationId,

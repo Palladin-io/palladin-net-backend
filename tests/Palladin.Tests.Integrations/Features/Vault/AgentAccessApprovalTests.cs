@@ -39,12 +39,12 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
                     signingPublicKey: signing.PublicKeyBase64)
                 .RuleFor(x => x.Status, AgentStatus.Active));
         await apiFactory.Services.SeedVaultAgentAsync(
-            organization.Id, status: AgentStatus.Active, id: agent.Id, publicKey: publicKey,
+            organization.Id, status: AgentStatus.Active, id: agent.Id, publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: signing.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         return new Setup(
             apiFactory.CreateSignedAgentClient(agent.Id, plaintext, publicKey, signing),
-            apiFactory.CreateAuthenticatedClient(user), signing, agent.Id, publicKey,
+            apiFactory.CreateAuthenticatedClient(user), signing, agent.Id, provisioning.EncryptionPublicKey,
             organization.Id, vault.Id, entry.Id, user.Id,
             provisioning.Request.Manifest.VaultAgentMessageKeyFingerprint);
     }
@@ -108,7 +108,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         json.RootElement.GetProperty("agentSigningKeyVersion").GetUInt32().ShouldBe(1u);
         json.RootElement.GetProperty("agentSigningKeyFingerprint").GetString().ShouldBe(
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(setup.Signing.PublicKeyBase64), VaultKeyKind.AgentEd25519)));
+                Convert.FromBase64String(setup.Signing.PublicKeyBase64), VaultKeyKind.AgentSigning)));
 
         var listResponse = await setup.UserClient.GetAsync("api/dashboard/pending-grants");
         var listJson = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
@@ -242,7 +242,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             apiFactory.FakeClock.GetCurrentInstant() + Duration.FromHours(1));
         var envelope = GrantEnvelopeTestData.Contract(
             setup.OrganizationId, setup.VaultId, grantId, setup.EntryId,
-            setup.AgentPublicKey, expiresAt, agentId: setup.AgentId);
+            setup.AgentEncryptionPublicKey, expiresAt, agentId: setup.AgentId);
 
         var originalTime = apiFactory.FakeClock.GetCurrentInstant();
         apiFactory.FakeClock.Advance(Duration.FromSeconds(5));
@@ -298,7 +298,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         var setup = await ArrangeAsync();
         var grantId = await RequestPendingGrantAsync(setup, Request(setup));
         var envelope = GrantEnvelopeTestData.Contract(
-            setup.OrganizationId, setup.VaultId, grantId, Guid.NewGuid(), setup.AgentPublicKey,
+            setup.OrganizationId, setup.VaultId, grantId, Guid.NewGuid(), setup.AgentEncryptionPublicKey,
             agentId: setup.AgentId);
 
         var response = await setup.UserClient.PUTAsync<ApproveGrantEndpoint, ApproveGrantRequest>(
@@ -321,7 +321,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
             Methods = GrantMethods.Get,
             GrantEntry = GrantEnvelopeTestData.Contract(
                 setup.OrganizationId, setup.VaultId, grantId, setup.EntryId,
-                setup.AgentPublicKey,
+                setup.AgentEncryptionPublicKey,
                 agentId: setup.AgentId),
         };
 
@@ -358,7 +358,7 @@ public sealed class AgentAccessApprovalTests(ApiFactory apiFactory) : TestBase
         HttpClient UserClient,
         AgentRequestSigning Signing,
         Guid AgentId,
-        string AgentPublicKey,
+        string AgentEncryptionPublicKey,
         Guid OrganizationId,
         Guid VaultId,
         Guid EntryId,

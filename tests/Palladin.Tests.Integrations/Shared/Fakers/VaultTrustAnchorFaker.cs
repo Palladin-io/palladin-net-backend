@@ -8,8 +8,17 @@ internal static class VaultTrustAnchorFaker
     private static readonly byte[] SigningPrivateKey = CreateSigningPrivateKey();
     private static readonly byte[] RotatedSigningPrivateKey = CreateSigningPrivateKey();
 
-    internal static byte[] AgentMessagePublicKey { get; } = RandomNumberGenerator.GetBytes(32);
-    internal static byte[] RotatedAgentMessagePublicKey { get; } = RandomNumberGenerator.GetBytes(32);
+    internal static string AgentMessageKeySuiteId => Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id;
+
+    internal static byte[] AgentMessagePublicKey { get; } =
+        RandomNumberGenerator.GetBytes(Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes);
+
+    internal static byte[] RotatedAgentMessagePublicKey { get; } =
+        RandomNumberGenerator.GetBytes(Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes);
+
+    internal static byte[] AgentMessageFingerprint(byte[] publicKey) =>
+        Palladin.Module.Vault.Infrastructure.Crypto.RecipientKeyFingerprint.Compute(
+            AgentMessageKeySuiteId, Palladin.Module.Vault.Infrastructure.Crypto.VaultKeyKind.VaultAgentMessage, publicKey);
 
     internal static byte[] ManifestSigningPublicKey
     {

@@ -169,8 +169,7 @@ internal sealed class CreateScriptExecutionGrantEndpoint(
                 req.AgentId,
                 agent.AccessEpoch,
                 req.ScriptEntryId,
-                agent.PublicKey,
-                agent.RecipientKeyVersion,
+                agent,
                 entries.ToDictionary(entry => entry.Id, entry => entry.CurrentRevision.Value));
             ScriptExecutionPackageCryptoValidator.ValidateProducer(req.ScriptPackage, vault);
         }

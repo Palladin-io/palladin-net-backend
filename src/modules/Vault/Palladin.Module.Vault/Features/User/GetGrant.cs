@@ -29,8 +29,8 @@ public sealed record GetGrantRequest : IRequiresVaultMembership
 // plaintext reason, secret values, or private/unwrapped key material.
 // AgentName and actor names are resolved server-side from non-vault replicas. EntryLabel and
 // UrlDomain remain null because vault-entry metadata is encrypted and interpreted only by clients.
-// AgentPublicKey is the agent's X25519 PUBLIC key (base64) — NOT a secret. The approving user's
-// client needs it to wrap the GrantDEK on approval.
+// AgentPublicKey/AgentKeySuiteId are the agent's encryption key publication (base64, NOT a secret).
+// The approving user's client seals the GrantDEK to it under exactly that suite.
 [PublicAPI]
 public sealed record GrantResponse(
     Guid Id,
@@ -40,6 +40,7 @@ public sealed record GrantResponse(
     string? AgentName,
     string? AgentIconKey,
     string? AgentPublicKey,
+    string? AgentKeySuiteId,
     uint? RecipientAgentKeyVersion,
     string? AgentSigningPublicKey,
     uint? AgentSigningKeyVersion,
@@ -183,17 +184,17 @@ internal sealed class GetGrantEndpoint(VaultDomainReadContext domainReadContext)
                 encryptedReason.ReasonKeyVersion, encryptedReason.MemberKeyGeneration,
                 new ReasonEnvelopeBinding(binding.WrapperSuiteId, binding.RecipientKeyVersion,
                     encryptedReason.RecipientAgentMessageKeyFingerprint, binding.RequestedMethods));
-            var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
+            var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
             grant = grant with
             {
                 EncryptedReason = new EncryptedReasonEnvelopeContract(
                     descriptor,
                     WebEncoders.Base64UrlEncode(encryptedReason.EncodedSuitePayload),
-                    new X25519WrappedKeyContract(
-                        new X25519WrapperDescriptorContract(descriptor.ProtocolVersion,
-                            binding.WrapperSuiteId, X25519WrapperPurposeContract.ReasonDek, scope,
+                    new WrappedKeyContract(
+                        new KeyWrapperDescriptorContract(descriptor.ProtocolVersion,
+                            binding.WrapperSuiteId, KeyWrapperPurposeContract.ReasonDek, scope,
                             descriptor.ResourceRevision, descriptor.KeyVersion, descriptor.MemberKeyGeneration,
-                            X25519RecipientKeyKindContract.VaultMessageX25519,
+                            RecipientKeyKindContract.VaultAgentMessage,
                             binding.RecipientKeyVersion, binding.RecipientKeyFingerprint,
                             WebEncoders.Base64UrlEncode(parentHash)),
                         WebEncoders.Base64UrlEncode(encryptedReason.AgentMessageWrappedReasonDek)),
@@ -232,6 +233,7 @@ internal static class GrantProjection
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.Name).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.IconKey).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.PublicKey).FirstOrDefault(),
+            ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.PublicKeySuiteId).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => (uint?)a.RecipientKeyVersion).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => a.SigningPublicKey).FirstOrDefault(),
             ctx.Agents.Where(a => a.Id == g.AgentId).Select(a => (uint?)1).FirstOrDefault(),
@@ -325,7 +327,7 @@ internal static class GrantProjection
             grants[index] = grants[index] with
             {
                 AgentSigningKeyFingerprint = WebEncoders.Base64UrlEncode(
-                    VaultKeyFingerprint.Compute(rawKey, VaultKeyKind.AgentEd25519)),
+                    VaultKeyFingerprint.Compute(rawKey, VaultKeyKind.AgentSigning)),
             };
         }
     }
@@ -391,17 +393,17 @@ internal static class GrantProjection
                 encryptedReason.ReasonKeyVersion, encryptedReason.MemberKeyGeneration,
                 new ReasonEnvelopeBinding(binding.WrapperSuiteId, binding.RecipientKeyVersion,
                     encryptedReason.RecipientAgentMessageKeyFingerprint, binding.RequestedMethods));
-            var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
+            var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
             grants[index] = grants[index] with
             {
                 EncryptedReason = new EncryptedReasonEnvelopeContract(
                     descriptor,
                     WebEncoders.Base64UrlEncode(encryptedReason.EncodedSuitePayload),
-                    new X25519WrappedKeyContract(
-                        new X25519WrapperDescriptorContract(descriptor.ProtocolVersion,
-                            binding.WrapperSuiteId, X25519WrapperPurposeContract.ReasonDek, scope,
+                    new WrappedKeyContract(
+                        new KeyWrapperDescriptorContract(descriptor.ProtocolVersion,
+                            binding.WrapperSuiteId, KeyWrapperPurposeContract.ReasonDek, scope,
                             descriptor.ResourceRevision, descriptor.KeyVersion, descriptor.MemberKeyGeneration,
-                            X25519RecipientKeyKindContract.VaultMessageX25519,
+                            RecipientKeyKindContract.VaultAgentMessage,
                             binding.RecipientKeyVersion, binding.RecipientKeyFingerprint,
                             WebEncoders.Base64UrlEncode(parentHash)),
                         WebEncoders.Base64UrlEncode(encryptedReason.AgentMessageWrappedReasonDek)),

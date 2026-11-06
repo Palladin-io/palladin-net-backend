@@ -1,6 +1,8 @@
+using Palladin.Core.Cryptography;
 using Palladin.Core.Events;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Contracts.Events;
+using Palladin.Module.Agents.Infrastructure.Crypto;
 using NodaTime;
 
 namespace Palladin.Module.Agents.Domain;
@@ -12,6 +14,10 @@ internal sealed class Agent : EventEntityBase
     public string PublicKey { get; private set; } = string.Empty;
     public string SigningPublicKey { get; private set; } = string.Empty;
     public uint RecipientKeyVersion { get; private set; }
+    public string EncryptionPublicKey { get; private set; } = string.Empty;
+    public string EncryptionKeySuiteId { get; private set; } = string.Empty;
+    public byte[]? PreviousEncryptionKeyFingerprint { get; private set; }
+    public byte[]? EncryptionKeyBindingSignature { get; private set; }
     public uint AccessEpoch { get; private set; }
     public string? Name { get; private set; }
     public string? NameKey { get; private set; }
@@ -57,6 +63,8 @@ internal sealed class Agent : EventEntityBase
             PublicKey = publicKey,
             SigningPublicKey = signingPublicKey,
             RecipientKeyVersion = 1,
+            EncryptionPublicKey = publicKey,
+            EncryptionKeySuiteId = AgentEncryptionKeys.EnrollmentSuite.Id,
             Status = AgentStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
@@ -134,6 +142,36 @@ internal sealed class Agent : EventEntityBase
             IconColor = iconColor;
         }
 
+        UpdatedAt = now;
+        EmitUpserted();
+    }
+
+    internal byte[] EncryptionKeyFingerprint() =>
+        AgentEncryptionKeys.Fingerprint(EncryptionKeySuiteId, Convert.FromBase64String(EncryptionPublicKey));
+
+    internal bool IsCurrentEncryptionKey(string suiteId, byte[] publicKey) =>
+        EncryptionKeySuiteId == suiteId
+        && Convert.FromBase64String(EncryptionPublicKey).AsSpan().SequenceEqual(publicKey);
+
+    // The binding signature is verified by the caller against SigningPublicKey before this transition.
+    internal void RotateEncryptionKey(
+        string suiteId,
+        byte[] publicKey,
+        byte[] previousFingerprint,
+        byte[] bindingSignature,
+        Instant now)
+    {
+        KeyWrapperSuites.ResolveForSeal(suiteId).ValidatePublicKey(publicKey);
+        if (IsCurrentEncryptionKey(suiteId, publicKey) || Status is AgentStatus.Deactivating or AgentStatus.Deactivated)
+        {
+            throw new InvalidOperationException("The Agent encryption key cannot rotate in its current state.");
+        }
+
+        EncryptionPublicKey = Convert.ToBase64String(publicKey);
+        EncryptionKeySuiteId = suiteId;
+        PreviousEncryptionKeyFingerprint = previousFingerprint.ToArray();
+        EncryptionKeyBindingSignature = bindingSignature.ToArray();
+        RecipientKeyVersion = checked(RecipientKeyVersion + 1);
         UpdatedAt = now;
         EmitUpserted();
     }
@@ -263,6 +301,8 @@ internal sealed class Agent : EventEntityBase
             Status,
             PublicKey,
             RecipientKeyVersion,
+            EncryptionPublicKey,
+            EncryptionKeySuiteId,
             SigningPublicKey,
             Name,
             Type,
@@ -280,6 +320,8 @@ internal sealed class Agent : EventEntityBase
             Status,
             PublicKey,
             RecipientKeyVersion,
+            EncryptionPublicKey,
+            EncryptionKeySuiteId,
             SigningPublicKey,
             Name,
             Type,
@@ -306,6 +348,8 @@ internal sealed class Agent : EventEntityBase
             Status,
             PublicKey,
             RecipientKeyVersion,
+            EncryptionPublicKey,
+            EncryptionKeySuiteId,
             SigningPublicKey,
             Name,
             Type,

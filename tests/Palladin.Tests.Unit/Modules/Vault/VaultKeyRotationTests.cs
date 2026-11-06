@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using NodaTime;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Features;
@@ -193,12 +194,12 @@ public sealed class VaultKeyRotationTests
             scope,
             memberId,
             VaultProtocol.CurrentVersion,
-            VaultProtocol.AlgorithmSuite,
+            KeyWrapperSuites.Current.Id,
             epoch.VaultKeyVersion,
             generation,
             new MemberRecipientKeyVersion(1),
             new byte[VaultProtocol.FingerprintBytes],
-            new byte[120]);
+            new byte[KeyWrapperSuites.Current.PackageBytes]);
 
         return Palladin.Module.Vault.Domain.Vault.Create(
             vaultId,
@@ -210,18 +211,19 @@ public sealed class VaultKeyRotationTests
             epoch,
             wrappedKey,
             CreateKeyMaterial(scope, generation, epoch),
-            CreatePublicKey(VaultPublicKeyKind.AgentMessageX25519, epoch.AgentMessageKeyVersion.Value),
-            CreatePublicKey(VaultPublicKeyKind.ManifestSigningEd25519, epoch.ManifestSigningKeyVersion.Value),
+            CreatePublicKey(VaultPublicKeyKind.AgentMessage, epoch.AgentMessageKeyVersion.Value),
+            CreatePublicKey(VaultPublicKeyKind.ManifestSigning, epoch.ManifestSigningKeyVersion.Value),
             Now);
     }
 
     private static ValidatedVaultPublicKey CreatePublicKey(VaultPublicKeyKind kind, uint version)
     {
-        var key = Enumerable.Repeat(kind == VaultPublicKeyKind.AgentMessageX25519 ? (byte)0x31 : (byte)0x41, 32).ToArray();
-        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessageX25519
-            ? VaultKeyKind.VaultMessageX25519
-            : VaultKeyKind.VaultSigningEd25519;
-        return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind));
+        var key = Enumerable.Repeat(kind == VaultPublicKeyKind.AgentMessage ? (byte)0x31 : (byte)0x41, 32).ToArray();
+        var fingerprintKind = kind == VaultPublicKeyKind.AgentMessage
+            ? VaultKeyKind.VaultAgentMessage
+            : VaultKeyKind.VaultSigning;
+        return new ValidatedVaultPublicKey(kind, version, key, VaultKeyFingerprint.Compute(key, fingerprintKind),
+            kind == VaultPublicKeyKind.AgentMessage ? "palladin-x25519-sealed-box-v1" : "palladin-ed25519-v1");
     }
 
     private static VaultKeyMaterialEnvelope[] CreateKeyMaterial(

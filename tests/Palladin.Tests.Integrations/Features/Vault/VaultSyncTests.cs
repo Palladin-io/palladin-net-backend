@@ -70,7 +70,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: provisioning.X25519PublicKey,
+            publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         var entryId = await apiFactory.Services.SeedSyncEntryAsync(
@@ -142,7 +142,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         var agent = await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: provisioning.X25519PublicKey,
+            publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         var principal = new ClaimsPrincipal(new ClaimsIdentity(
@@ -193,7 +193,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: provisioning.X25519PublicKey,
+            publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         var discoverableEntry = await apiFactory.Services.SeedSyncEntryAsync(
@@ -271,7 +271,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: provisioning.X25519PublicKey,
+            publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: provisioning.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         await apiFactory.Services.SeedSyncEntryAsync(organization.Id, vault.Id, user.Id, seed: 0);
@@ -549,7 +549,7 @@ public sealed class VaultSyncTests(ApiFactory apiFactory) : TestBase
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: fixture.X25519PublicKey,
+            publicKey: fixture.EncryptionPublicKey,
             signingPublicKey: fixture.RequestSigning.PublicKeyBase64);
         var agentClient = apiFactory.CreateSignedAgentClient(
             agentId,

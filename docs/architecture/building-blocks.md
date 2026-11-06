@@ -48,6 +48,13 @@ Catalog of reusable cross-cutting pieces. **Reuse these — never re-implement t
 
 The API attaches `RequireActiveOrganizationMembershipPreProcessor` (`src/Palladin.Api/Framework/`) to every endpoint by default. Safe HTTP methods remain readable during staged offboarding. Every unsafe method carrying the complete user-JWT claim set (`sub`, `org_id`, `authz_ver`) requires the current membership to be `Active`; anonymous, agent and system principals are outside this user-JWT boundary. Exceptions must call `Options(builder => builder.AllowNonActiveOrganizationMembership())` directly in the endpoint's `Configure()`—never through a class attribute, path string or constructor/DI reflection—and must be added to the exact allowlist in `ActiveOrganizationMembershipBoundaryArchitectureTests` after review. The current allowlist is limited to Identity account/exit flows, Notification read/preferences/push registration, and the read-only Vault member snapshot/delta and Search GlobalSearch POSTs.
 
+## `Palladin.Core.Cryptography`
+
+| Building block | Location | Purpose | How it must be used |
+|---|---|---|---|
+| `KeyWrapperSuites` / `KeyWrapperSuite` | `Palladin.Core.Cryptography/KeyWrapperSuites.cs` | Build-time registry mirroring `palladin-protocol` `contracts/key-wrapper/v1`: suite IDs, lifecycle (`active`, `read-only`, `retired`), exact public-key and package lengths and the (suite-bound) recipient fingerprint | Features never name a suite. Resolve the recipient's suite from its authenticated key directory, call `ResolveForSeal` for new envelopes and `ResolveForOpen` for stored ones, and validate lengths through the suite. `KeyWrapperSuiteNeutralityArchitectureTests` rejects concrete suite names outside crypto infrastructure |
+| `XWingKem` | `Palladin.Core.Cryptography/XWingKem.cs` | X-Wing (draft-connolly-cfrg-xwing-kem-10) encapsulation: BouncyCastle managed ML-KEM-768 + NSec X25519 + SHA3-256 combiner | Used only where the server itself encapsulates (recovery challenge v2) and by tests acting as clients. Deterministic overloads are internal test seams for the draft-10 KAT and protocol vectors |
+
 ## `Palladin.Core.Types`
 
 Shared enums and exceptions referenced across module boundaries (see `CLAUDE.MD` → "Shared Types").

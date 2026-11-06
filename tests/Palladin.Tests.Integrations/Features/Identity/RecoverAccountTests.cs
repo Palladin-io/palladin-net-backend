@@ -11,6 +11,8 @@ using Palladin.Tests.Integrations.Shared.Extensions;
 using Palladin.Tests.Integrations.Shared.Fakers;
 using Palladin.Tests.Integrations.Shared.Seeders;
 using FastEndpoints;
+using NSubstitute;
+using Palladin.Tests.Integrations.Shared.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Query;
@@ -427,6 +429,81 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task When_V2AccountRecovers_Then_XWingChallengeProvesKeyAndRecoveryNotifiesOwner()
+    {
+        // Given
+        var keys = XWingTestKeys.CreateKeyPair();
+        var (user, _, _) = await apiFactory.Services.SeedUserAsync(UserFaker.CreateOnboarded()
+            .RuleFor(x => x.SecurityVersion, (ushort)2)
+            .RuleFor(x => x.MinimumSecurityVersion, (ushort)2)
+            .RuleFor(x => x.KdfProfileId, "identity-argon2id-account-secret-v2")
+            .RuleFor(x => x.PublicKey, keys.PublicKey)
+            .RuleFor(x => x.MemberPublicKeySuiteId, "palladin-xwing-v1")
+            .RuleFor(x => x.MemberKeyVersion, (uint)2)
+            .RuleFor(x => x.LegacyEncryptedPrivateKey, RandomNumberGenerator.GetBytes(72))
+            .RuleFor(x => x.LegacyMemberKeyVersion, (uint)1)
+            .RuleFor(x => x.Salt, RandomNumberGenerator.GetBytes(16))
+            .RuleFor(x => x.RecoverySalt, RandomNumberGenerator.GetBytes(16))
+            .RuleFor(x => x.EncryptedPrivateKey, RandomNumberGenerator.GetBytes(64))
+            .RuleFor(x => x.EncryptedPrivateKeyByRecovery, RandomNumberGenerator.GetBytes(64)));
+        var client = apiFactory.CreateAuthenticatedClient(user);
+
+        // When
+        var (challengeResponse, challenge) = await client
+            .POSTAsync<IssueRecoveryChallengeEndpoint, IssueRecoveryChallengeResponse>();
+        var proof = XWingTestKeys.OpenRecoveryChallenge(challenge.SealedChallenge, keys, user.Id);
+        var response = await client.PutAsJsonAsync("api/account/recovery", RecoveryPayload(user, proof) with
+        {
+            SecurityVersion = 2,
+            KdfProfileId = "identity-argon2id-account-secret-v2",
+        });
+
+        // Then
+        challengeResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        challenge.Version.ShouldBe((ushort)2);
+        challenge.SealedChallenge.Length.ShouldBe(1168);
+        Should.Throw<CryptographicException>(() => XWingTestKeys.OpenRecoveryChallenge(
+            challenge.SealedChallenge, XWingTestKeys.CreateKeyPair() with { PublicKey = keys.PublicKey }, user.Id));
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<IdentityDbReadContext>()
+            .Users.SingleAsync(x => x.Id == user.Id, TestContext.Current.CancellationToken);
+        persisted.KdfProfileId.ShouldBe("identity-argon2id-account-secret-v2");
+        persisted.PublicKey.ShouldBe(keys.PublicKey);
+        persisted.MemberKeyVersion.ShouldBe(2u);
+        persisted.LegacyEncryptedPrivateKey.ShouldBeNull();
+        (await apiFactory.Services.GetRequiredService<MassTransit.Testing.ITestHarness>().Published
+                .Any<Palladin.Module.Identity.Contracts.Events.AccountRecoveryCompletedEvent>(
+                    x => x.Context.Message.UserId == user.Id && x.Context.Message.Email == user.Email,
+                    TestContext.Current.CancellationToken))
+            .ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task When_RecoveryCompletes_Then_SecurityEmailCarriesOnlyTimeAndClient()
+    {
+        // Given
+        var userId = Guid.NewGuid();
+        var occurredAt = apiFactory.FakeClock.GetCurrentInstant();
+        var context = apiFactory.MockConsumeContext(new Palladin.Module.Identity.Contracts.Events.AccountRecoveryCompletedEvent(
+            userId, Guid.NewGuid(), "Owner", "owner@example.com", "pl", "ios", occurredAt));
+
+        // When
+        await new Palladin.Module.Identity.Triggers.OnAccountRecoveryCompletedEmail().Consume(context);
+
+        // Then
+        await context.Received(1).Publish(
+            Arg.Is<Palladin.Module.Notification.Contracts.Commands.SendEmailCommand>(command =>
+                command.Email == "owner@example.com"
+                && command.Template == "account-recovered"
+                && command.Language == "pl"
+                && command.Model.Count == 2
+                && command.Model["client"] == "ios"
+                && command.IdempotencyKey!.Contains(userId.ToString("N"))),
+            Arg.Any<CancellationToken>());
+    }
+
     private async Task<(Palladin.Module.Identity.Domain.User User, HttpClient Client)> SeedRecoverableUserAsync()
     {
         var (user, _, _) = await apiFactory.Services.SeedUserAsync(UserFaker.CreateOnboarded()
@@ -506,12 +583,15 @@ public sealed class RecoverAccountTests(ApiFactory apiFactory) : TestBase
         {
             await scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>().Users
                 .Where(u => u.Id == userId)
-                .ExecuteUpdateAsync(u => u.SetProperty(x => x.PublicKey, keys.PublicKey), TestContext.Current.CancellationToken);
+                .ExecuteUpdateAsync(u => u
+                    .SetProperty(x => x.PublicKey, keys.PublicKey)
+                    .SetProperty(x => x.MemberPublicKeySuiteId, "palladin-x25519-sealed-box-v1"), TestContext.Current.CancellationToken);
         }
 
         var (response, challenge) = await client
             .POSTAsync<IssueRecoveryChallengeEndpoint, IssueRecoveryChallengeResponse>();
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        challenge.Version.ShouldBe((ushort)1);
         var package = X25519SealedBox.Open(challenge.SealedChallenge, keys);
         package.AsSpan(0, 8).ToArray().ShouldBe("PLDNRCV1"u8.ToArray());
         package.AsSpan(8, 16).ToArray().ShouldBe(userId.ToByteArray(bigEndian: true));

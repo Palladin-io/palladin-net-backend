@@ -16,5 +16,7 @@ internal sealed class LoginThrottleOptions
     public int LoginAccountPermitLimit { get; init; } = 10;
     public int TotpIpPermitLimit { get; init; } = 30;
     public int TotpAccountPermitLimit { get; init; } = 10;
+    public int SecretKeyTransferStartIpPermitLimit { get; init; } = 10;
+    public int SecretKeyTransferPollIpPermitLimit { get; init; } = 120;
     public int ConcurrencyRetryLimit { get; init; } = 64;
 }

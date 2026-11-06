@@ -19,9 +19,10 @@ internal static class IdentityAuthSeeder
         byte[]? authSalt = null,
         string? email = null,
         bool emailVerified = false,
-        ushort securityVersion = IdentityKdfProfiles.CurrentSecurityVersion,
+        ushort securityVersion = 1,
         bool isOnboarded = true,
-        Guid? userId = null)
+        Guid? userId = null,
+        bool withPasswordCredential = true)
     {
         await using var scope = serviceProvider.CreateAsyncScope();
         var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
@@ -53,22 +54,25 @@ internal static class IdentityAuthSeeder
             .RuleFor(x => x.PrivateKeyWrapRevision, isOnboarded ? 1u : 0u)
             .RuleFor(x => x.SecurityVersion, securityVersion)
             .RuleFor(x => x.MinimumSecurityVersion, securityVersion)
-            .RuleFor(x => x.KdfProfileId, IdentityKdfProfiles.CurrentProfileId)
-            .RuleFor(x => x.CredentialRevision, 1u)
+            .RuleFor(x => x.KdfProfileId, IdentityKdfProfiles.All.Single(x => x.SecurityVersion == securityVersion).Id)
+            .RuleFor(x => x.CredentialRevision, withPasswordCredential ? 1u : 0u)
             .Generate();
         await writeContext.Users.Where(x => x.Id == user.Id).ExecuteDeleteAsync();
         writeContext.Users.Add(user);
         writeContext.OrganizationMembers.Add(OrganizationMember.CreateOwner(
             organization.Id, user.Id, role, now));
 
-        var (serverHash, serverSalt) = hasher.Hash(authHash);
-        writeContext.PasswordCredentials.Add(
-            PasswordCredential.Create(
-                user.Id,
-                serverHash,
-                clientSalt,
-                serverSalt,
-                now));
+        if (withPasswordCredential)
+        {
+            var (serverHash, serverSalt) = hasher.Hash(authHash);
+            writeContext.PasswordCredentials.Add(
+                PasswordCredential.Create(
+                    user.Id,
+                    serverHash,
+                    clientSalt,
+                    serverSalt,
+                    now));
+        }
 
         await writeContext.SaveChangesAsync();
 

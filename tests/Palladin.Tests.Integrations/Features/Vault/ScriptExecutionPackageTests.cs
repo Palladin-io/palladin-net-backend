@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using NSec.Cryptography;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Infrastructure.AgentAuth;
 using Palladin.Module.Vault.Domain;
@@ -65,7 +66,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             organization.Id,
             status: AgentStatus.Active,
             id: identityAgent.Id,
-            publicKey: publicKey,
+            publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: signing.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(
             provisioning.Request, user.Id);
@@ -77,7 +78,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             script.Id,
             reference.Id,
             identityAgent.Id,
-            publicKey,
+            provisioning.EncryptionPublicKey,
             signing,
             provisioning.Request.Manifest.VaultAgentMessageKeyFingerprint);
     }
@@ -596,10 +597,10 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             setup.VaultId,
             setup.OrganizationId,
             setup.AgentId,
-            setup.PublicKey,
+            setup.EncryptionPublicKey,
             GrantEnvelopeTestData.AgentVaultKey(
                 setup.OrganizationId, setup.VaultId, grantId, setup.AgentId,
-                agentPublicKey: setup.PublicKey),
+                agentPublicKey: setup.EncryptionPublicKey),
             null,
             4,
             "uses",
@@ -638,10 +639,10 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             setup.VaultId,
             setup.OrganizationId,
             setup.AgentId,
-            setup.PublicKey,
+            setup.EncryptionPublicKey,
             GrantEnvelopeTestData.AgentVaultKey(
                 setup.OrganizationId, setup.VaultId, grantId, setup.AgentId,
-                agentPublicKey: setup.PublicKey),
+                agentPublicKey: setup.EncryptionPublicKey),
             null,
             4,
             "uses",
@@ -701,7 +702,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
                 setup.VaultId,
                 fullGrantId,
                 setup.AgentId,
-                agentPublicKey: setup.PublicKey),
+                agentPublicKey: setup.EncryptionPublicKey),
         };
 
         var response = await setup.UserClient.PostAsJsonAsync(
@@ -730,7 +731,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             setup.VaultId,
             setup.OrganizationId,
             setup.AgentId,
-            setup.PublicKey,
+            setup.EncryptionPublicKey,
             GrantEnvelopeTestData.AgentVaultKey(
                 setup.OrganizationId, setup.VaultId, grantId, setup.AgentId),
             null,
@@ -762,10 +763,10 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         await apiFactory.Services.SeedScriptExecutionGrantAsync(direct);
         var fullId = Guid.NewGuid();
         var full = FullGrant.CreateProactively(
-            fullId, setup.VaultId, setup.OrganizationId, setup.AgentId, setup.PublicKey,
+            fullId, setup.VaultId, setup.OrganizationId, setup.AgentId, setup.EncryptionPublicKey,
             GrantEnvelopeTestData.AgentVaultKey(
                 setup.OrganizationId, setup.VaultId, fullId, setup.AgentId,
-                agentPublicKey: setup.PublicKey),
+                agentPublicKey: setup.EncryptionPublicKey),
             null, 5, "uses", GrantMethods.Exec, Guid.NewGuid(),
             new GrantNames("agent", null, "vault", "actor"),
             SystemClock.Instance.GetCurrentInstant(), 1);
@@ -831,10 +832,10 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         await apiFactory.Services.SeedScriptExecutionGrantAsync(direct);
         var fullId = Guid.NewGuid();
         var full = FullGrant.CreateProactively(
-            fullId, setup.VaultId, setup.OrganizationId, setup.AgentId, setup.PublicKey,
+            fullId, setup.VaultId, setup.OrganizationId, setup.AgentId, setup.EncryptionPublicKey,
             GrantEnvelopeTestData.AgentVaultKey(
                 setup.OrganizationId, setup.VaultId, fullId, setup.AgentId,
-                agentPublicKey: setup.PublicKey),
+                agentPublicKey: setup.EncryptionPublicKey),
             null, 5, "uses", GrantMethods.Exec, Guid.NewGuid(),
             new GrantNames("agent", null, "vault", "actor"),
             SystemClock.Instance.GetCurrentInstant(), 1);
@@ -861,8 +862,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         ulong referenceRevision = 1)
     {
         var grantId = Guid.NewGuid();
-        var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519);
+        var fingerprint = AgentRecipientKey.Fingerprint(KeyWrapperSuites.Current.Id, setup.EncryptionPublicKey);
         var package = ScriptExecutionPackage.Create(
             setup.OrganizationId,
             setup.VaultId,
@@ -877,16 +877,17 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             fingerprint,
             1,
             VaultKeyFingerprint.Compute(
-                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519),
+                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigning),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
             Enumerable.Repeat((byte)0x5A, 64).ToArray(),
-            new byte[64]);
+            new byte[64],
+            KeyWrapperSuites.Current.Id);
         return ScriptExecutionGrant.CreateProactively(
             grantId,
             setup.VaultId,
             setup.OrganizationId,
             setup.AgentId,
-            setup.PublicKey,
+            setup.EncryptionPublicKey,
             setup.ScriptEntryId,
             [
                 ScriptExecutionScope.Create(
@@ -923,11 +924,11 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
             scriptRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             packageRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             1,
-            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(setup.PublicKey), VaultKeyKind.AgentX25519)),
+            WebEncoders.Base64UrlEncode(
+                AgentRecipientKey.Fingerprint(KeyWrapperSuites.Current.Id, setup.EncryptionPublicKey)),
             1,
             WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(
-                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigningEd25519)),
+                VaultTrustAnchorFaker.ManifestSigningPublicKey, VaultKeyKind.VaultSigning)),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0xA5, 32).ToArray()),
             WebEncoders.Base64UrlEncode(Enumerable.Repeat((byte)0x5A, 64).ToArray()),
             string.Empty,
@@ -941,7 +942,8 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
                     setup.ReferenceEntryId,
                     referenceRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     false),
-            }.OrderBy(scope => scope.EntryId.ToString("D"), StringComparer.Ordinal).ToArray());
+            }.OrderBy(scope => scope.EntryId.ToString("D"), StringComparer.Ordinal).ToArray(),
+            KeyWrapperSuites.Current.Id);
         return SignPackage(unsigned);
     }
 
@@ -969,7 +971,7 @@ public sealed class ScriptExecutionPackageTests(ApiFactory apiFactory) : TestBas
         Guid ScriptEntryId,
         Guid ReferenceEntryId,
         Guid AgentId,
-        string PublicKey,
+        string EncryptionPublicKey,
         AgentRequestSigning Signing,
         string AgentMessageKeyFingerprint);
 }

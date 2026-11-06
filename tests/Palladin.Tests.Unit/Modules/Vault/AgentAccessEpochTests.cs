@@ -18,6 +18,7 @@ public sealed class AgentAccessEpochTests
         agent.Apply(
             AgentStatus.Active,
             "public-key",
+            "palladin-x25519-sealed-box-v1",
             1,
             "signing-key",
             "Renamed",
@@ -45,6 +46,7 @@ public sealed class AgentAccessEpochTests
         agent.Apply(
             AgentStatus.Active,
             "public-key",
+            "palladin-x25519-sealed-box-v1",
             1,
             "signing-key",
             "Agent",
@@ -86,6 +88,7 @@ public sealed class AgentAccessEpochTests
             Guid.NewGuid(),
             status,
             "public-key",
+            "palladin-x25519-sealed-box-v1",
             1,
             "signing-key",
             "Agent",

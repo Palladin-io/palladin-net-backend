@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -19,7 +20,8 @@ internal sealed class VaultConfiguration : IEntityTypeConfiguration<Domain.Vault
             .IsRequired();
         builder.Property(x => x.ManifestSigningPublicKey).HasMaxLength(32).IsRequired();
         builder.Property(x => x.ManifestSigningKeyFingerprint).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.AgentMessagePublicKey).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.AgentMessagePublicKey).HasMaxLength(KeyWrapperSuites.MaximumPublicKeyBytes).IsRequired();
+        builder.Property(x => x.AgentMessageKeySuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.AgentMessageKeyFingerprint).HasMaxLength(32).IsRequired();
         builder.Property(x => x.MetadataRevision)
             .HasConversion(x => (decimal)x.Value, x => new Domain.MetadataRevision((ulong)x))

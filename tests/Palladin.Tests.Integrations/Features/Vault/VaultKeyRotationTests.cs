@@ -146,14 +146,15 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
             1,
             1,
             1,
-            VaultKeyFingerprint.Compute(Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519),
+            VaultKeyFingerprint.Compute(Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentEncryption),
             1,
             VaultKeyFingerprint.Compute(
                 VaultTrustAnchorFaker.ManifestSigningPublicKey,
-                VaultKeyKind.VaultSigningEd25519),
+                VaultKeyKind.VaultSigning),
             Enumerable.Repeat((byte)0xA5, 32).ToArray(),
             Enumerable.Repeat((byte)0x5A, 64).ToArray(),
-            new byte[64]);
+            new byte[64],
+            "palladin-x25519-sealed-box-v1");
         var scriptGrant = ScriptExecutionGrant.CreateProactively(
             scriptGrantId,
             vault.Id,
@@ -558,7 +559,7 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         var valid = VaultContractFaker.CreateAgentMessagePublicKey();
         var invalid = mismatch switch
         {
-            "kind" => valid with { KeyKind = VaultPublicKeyKindContract.ManifestSigningEd25519 },
+            "kind" => valid with { KeyKind = VaultPublicKeyKindContract.ManifestSigning },
             "version" => valid with { KeyVersion = 3 },
             "fingerprint" => valid with { Fingerprint = WebEncoders.Base64UrlEncode(new byte[32]) },
             _ => throw new ArgumentOutOfRangeException(nameof(mismatch)),
@@ -660,7 +661,8 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         context.Message.Returns(new UpsertMemberKeyDirectoryCommand(
             user.Id,
             2,
-            Enumerable.Repeat((byte)0x44, 32).ToArray(),
+            Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
+            Enumerable.Repeat((byte)0x44, Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes).ToArray(),
             apiFactory.FakeClock.GetCurrentInstant().PlusTicks(1)));
         context.CancellationToken.Returns(timeout.Token);
         await Should.ThrowAsync<OperationCanceledException>(() => consumer.Consume(context));
@@ -999,7 +1001,9 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         var recipient = source!.Items.Single();
         recipient.MemberId.ShouldBe(user.Id);
         recipient.RecipientKeyVersion.ShouldBe(1u);
-        WebEncoders.Base64UrlDecode(recipient.X25519PublicKey).ShouldBe(new byte[VaultProtocol.FingerprintBytes]);
+        recipient.KeySuiteId.ShouldBe(Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id);
+        WebEncoders.Base64UrlDecode(recipient.PublicKey)
+            .ShouldBe(new byte[Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes]);
         source.NextAfterId.ShouldBe(user.Id);
     }
 
@@ -1099,6 +1103,73 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
                 seed: seed));
     }
 
+    [Fact]
+    public async Task When_LegacyAgentMessageKeyIsMigrated_Then_OnlyThatKeyMovesToTheCurrentSuite()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        await using (var seedScope = apiFactory.Services.CreateAsyncScope())
+        {
+            await seedScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>().Vaults
+                .Where(x => x.Id == vault.Id)
+                .ExecuteUpdateAsync(x => x.SetProperty(v => v.AgentMessageKeySuiteId, LegacyWrapperSuite.Id),
+                    TestContext.Current.CancellationToken);
+        }
+        await SeedMemberDirectoryAsync(user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+
+        // When
+        var (startResponse, started) = await client.POSTAsync<
+            StartAgentMessageKeyMigrationEndpoint,
+            StartAgentMessageKeyMigrationRequest,
+            VaultKeyRotationResponse>(new StartAgentMessageKeyMigrationRequest { VaultId = vault.Id });
+        var (_, claim) = await client.POSTAsync<ClaimVaultKeyRotationEndpoint, ClaimVaultKeyRotationRequest, ClaimVaultKeyRotationResponse>(
+            new ClaimVaultKeyRotationRequest { VaultId = vault.Id, RotationId = started!.Id });
+        var (batchResponse, _) = await client.PUTAsync<
+            PrepareVaultKeyRotationBatchEndpoint,
+            PrepareVaultKeyRotationBatchRequest,
+            PrepareVaultKeyRotationBatchResponse>(new PrepareVaultKeyRotationBatchRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim!.Rotation.Id,
+                FencingToken = claim.FencingToken,
+                VaultPrivateKeys = [VaultContractFaker.CreatePrivateKeys(organization.Id, vault.Id, 2, agentMessageKeyVersion: 2)[0]],
+                VaultAgentMessagePublicKey = VaultContractFaker.CreateAgentMessagePublicKey(),
+            });
+        var (commitResponse, committed) = await client.POSTAsync<
+            CommitVaultKeyRotationEndpoint,
+            CommitVaultKeyRotationRequest,
+            VaultKeyRotationResponse>(new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim.Rotation.Id,
+                FencingToken = claim.FencingToken,
+            });
+        var current = await client.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/agent-message-key-migration",
+            new StartAgentMessageKeyMigrationRequest { VaultId = vault.Id });
+
+        // Then
+        startResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        started.Scope.ShouldBe([nameof(VaultKeyRotationScope.AgentMessage)]);
+        started.Cause.ShouldBe(nameof(VaultKeyRotationCause.ProtocolMigration));
+        started.TargetKeyEpoch.ShouldBe(new VaultKeyEpochContract(1, 1, 2, 1));
+        batchResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        commitResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        committed!.Status.ShouldBe(nameof(VaultKeyRotationStatus.Committed));
+        current.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await current.Content.ReadAsStringAsync()).ShouldContain("agent-message-key-current");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
+            .Vaults.SingleAsync(x => x.OrganizationId == organization.Id && x.Id == vault.Id);
+        persisted.CurrentKeyEpoch.ShouldBe(new VaultKeyEpoch(
+            new VaultKeyVersion(1), new VdkVersion(1), new AgentMessageKeyVersion(2), new ManifestSigningKeyVersion(1)));
+        persisted.MemberKeyGeneration.Value.ShouldBe(1U);
+        persisted.AgentMessageKeySuiteId.ShouldBe(Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id);
+        persisted.AgentMessagePublicKey.ShouldBe(VaultTrustAnchorFaker.RotatedAgentMessagePublicKey);
+    }
+
     private async Task<ClaimVaultKeyRotationResponse> StartAndClaimAsync(HttpClient client, Guid vaultId)
     {
         var (_, started) = await client.POSTAsync<StartVaultKeyRotationEndpoint, StartVaultKeyRotationRequest, VaultKeyRotationResponse>(
@@ -1116,8 +1187,9 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
         writeContext.MemberKeyDirectory.Add(MemberKeyDirectoryEntry.Create(
             userId,
             new MemberRecipientKeyVersion(1),
+            Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
             Enumerable.Range(0, VaultProtocol.FingerprintBytes).Select(x => (byte)x).ToArray(),
-            new byte[VaultProtocol.FingerprintBytes],
+            new byte[Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes],
             apiFactory.FakeClock.GetCurrentInstant()));
         await writeContext.SaveChangesAsync();
     }

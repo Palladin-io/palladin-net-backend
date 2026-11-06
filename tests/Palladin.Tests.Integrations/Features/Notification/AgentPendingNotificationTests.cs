@@ -35,7 +35,7 @@ public sealed class AgentPendingNotificationTests(ApiFactory apiFactory) : TestB
 
         var agentId = Guid.NewGuid();
         var command = await CaptureCommandAsync(new AgentUpsertedEvent(
-            agentId, organizationId, AgentStatus.Pending, "pk", 1, "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
+            agentId, organizationId, AgentStatus.Pending, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
 
         command.ShouldNotBeNull();
         command.Type.ShouldBe(NotificationType.AgentPending);
@@ -61,7 +61,7 @@ public sealed class AgentPendingNotificationTests(ApiFactory apiFactory) : TestB
     {
         // Given
         var command = await CaptureCommandAsync(new AgentUpsertedEvent(
-            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Active, "pk", 1, "signing-pk", "deploy-bot", "ci", null, null, 1, Now(), Now()));
+            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Active, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", null, null, 1, Now(), Now()));
 
         // Then
         command.ShouldBeNull();
@@ -81,7 +81,7 @@ public sealed class AgentPendingNotificationTests(ApiFactory apiFactory) : TestB
 
         // When
         var command = await CaptureCommandAsync(new AgentUpsertedEvent(
-            agentId, organization.Id, AgentStatus.Pending, "pk", 1, "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
+            agentId, organization.Id, AgentStatus.Pending, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
 
         // Then
         command.ShouldNotBeNull();
@@ -97,7 +97,7 @@ public sealed class AgentPendingNotificationTests(ApiFactory apiFactory) : TestB
         // Given
         // When
         var command = await CaptureCommandAsync(new AgentUpsertedEvent(
-            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "signing-pk", "deploy-bot", "ci", "smart_toy", "#FF4F4F", 0, null, Now()));
+            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", "smart_toy", "#FF4F4F", 0, null, Now()));
 
         // Then
         command.ShouldNotBeNull();
@@ -110,7 +110,7 @@ public sealed class AgentPendingNotificationTests(ApiFactory apiFactory) : TestB
     {
         // Given
         var command = await CaptureCommandAsync(new AgentUpsertedEvent(
-            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
+            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
 
         // Then
         command.ShouldNotBeNull();
@@ -124,7 +124,7 @@ public sealed class AgentPendingNotificationTests(ApiFactory apiFactory) : TestB
         // Given
         // When
         var command = await CaptureCommandAsync(new AgentUpsertedEvent(
-            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
+            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", null, null, 0, null, Now()));
 
         // Then
         command.ShouldNotBeNull();

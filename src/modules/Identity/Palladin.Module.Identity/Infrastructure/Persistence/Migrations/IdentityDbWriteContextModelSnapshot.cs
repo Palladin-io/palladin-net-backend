@@ -430,6 +430,61 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                     b.ToTable("Roles");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SecretKeyTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Challenge")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Flow")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("KemCiphertext")
+                        .HasMaxLength(1120)
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("PollTokenHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("RecipientPublicKey")
+                        .HasMaxLength(1216)
+                        .HasColumnType("bytea");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("SealedSecret")
+                        .HasMaxLength(48)
+                        .HasColumnType("bytea");
+
+                    b.Property<Guid?>("SenderUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SenderUserId");
+
+                    b.HasIndex("ExpiresAt", "Id");
+
+                    b.ToTable("SecretKeyTransfers");
+                });
+
             modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockAuthorization", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -778,8 +833,22 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<Guid?>("LastSecurityUpgradeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("LegacyEncryptedPrivateKey")
+                        .HasMaxLength(4096)
+                        .HasColumnType("bytea");
+
+                    b.Property<long?>("LegacyMemberKeyVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("MemberKeyVersion")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("MemberPublicKeySuiteId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<int>("MinimumSecurityVersion")
                         .HasColumnType("integer");
@@ -1149,6 +1218,14 @@ namespace Palladin.Module.Identity.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Palladin.Module.Identity.Domain.SecretKeyTransfer", b =>
+                {
+                    b.HasOne("Palladin.Module.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("SenderUserId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Palladin.Module.Identity.Domain.SharedUnlockAuthorization", b =>

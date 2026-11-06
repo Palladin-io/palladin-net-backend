@@ -38,6 +38,7 @@ internal sealed class Vault : EventEntityBase
     internal byte[] ManifestSigningPublicKey { get; private set; } = [];
     internal byte[] ManifestSigningKeyFingerprint { get; private set; } = [];
     internal byte[] AgentMessagePublicKey { get; private set; } = [];
+    internal string AgentMessageKeySuiteId { get; private set; } = string.Empty;
     internal byte[] AgentMessageKeyFingerprint { get; private set; } = [];
 
     public ICollection<VaultMember> VaultMembers { get; private set; } = [];
@@ -136,9 +137,9 @@ internal sealed class Vault : EventEntityBase
             memberKeyGeneration,
             currentKeyEpoch.VaultKeyVersion);
         ValidateKeyMaterial(scope, keyMaterial, memberKeyGeneration, currentKeyEpoch, expectedRevision: 1);
-        if (agentMessagePublicKey.Kind != VaultPublicKeyKind.AgentMessageX25519
+        if (agentMessagePublicKey.Kind != VaultPublicKeyKind.AgentMessage
             || agentMessagePublicKey.Version != currentKeyEpoch.AgentMessageKeyVersion.Value
-            || manifestSigningPublicKey.Kind != VaultPublicKeyKind.ManifestSigningEd25519
+            || manifestSigningPublicKey.Kind != VaultPublicKeyKind.ManifestSigning
             || manifestSigningPublicKey.Version != currentKeyEpoch.ManifestSigningKeyVersion.Value)
             throw new DomainException("Vault public-key versions must match the initial key epoch.");
 
@@ -167,6 +168,7 @@ internal sealed class Vault : EventEntityBase
             MemberVaultMetadataKeyVersion = metadata.Header.KeyVersion,
             MemberVaultMetadataEncodedSuitePayload = SuitePayload.Encode(metadata.Header.Nonce, metadata.Ciphertext),
             AgentMessagePublicKey = agentMessagePublicKey.PublicKey.ToArray(),
+            AgentMessageKeySuiteId = agentMessagePublicKey.SchemeId,
             AgentMessageKeyFingerprint = agentMessagePublicKey.Fingerprint.ToArray(),
             ManifestSigningPublicKey = manifestSigningPublicKey.PublicKey.ToArray(),
             ManifestSigningKeyFingerprint = manifestSigningPublicKey.Fingerprint.ToArray(),
@@ -223,6 +225,33 @@ internal sealed class Vault : EventEntityBase
         AdvanceMutationVersion();
         EmitSyncInvalidated(now);
         return added;
+    }
+
+    internal bool RewrapMemberKey(
+        Guid userId,
+        MemberWrappedVaultKey wrappedVaultKey,
+        MemberRecipientKeyVersion expectedRecipientKeyVersion,
+        Instant now)
+    {
+        ValidateMemberKey(Scope, userId, wrappedVaultKey, MemberKeyGeneration, CurrentVaultKeyVersion);
+        var current = VaultMemberKeyEnvelopes.SingleOrDefault(x =>
+                          x.MemberId == userId && x.MemberKeyGeneration == MemberKeyGeneration)
+                      ?? throw new DomainException("The Vault Member has no current wrapped Vault key.");
+        if (current.Matches(wrappedVaultKey))
+        {
+            return false;
+        }
+
+        if (current.RecipientKeyVersion != expectedRecipientKeyVersion
+            || wrappedVaultKey.RecipientKeyVersion.Value <= current.RecipientKeyVersion.Value)
+        {
+            throw new MemberKeyEnvelopeChangedException();
+        }
+
+        current.Replace(wrappedVaultKey);
+        AdvanceMutationVersion();
+        EmitSyncInvalidated(now);
+        return true;
     }
 
     internal void ReplaceMetadata(
@@ -443,7 +472,8 @@ internal sealed class Vault : EventEntityBase
 
         if (agentManifest is not null
             && ((agentMessagePublicKey is not null
-                 && !agentMessagePublicKey.PublicKey.AsSpan().SequenceEqual(agentManifest.VaultAgentMessagePublicKey))
+                 && (!agentMessagePublicKey.PublicKey.AsSpan().SequenceEqual(agentManifest.VaultAgentMessagePublicKey)
+                     || agentManifest.EffectiveVaultAgentMessageKeySuiteId != agentMessagePublicKey.SchemeId))
                 || (manifestSigningPublicKey is not null
                     && !manifestSigningPublicKey.PublicKey.AsSpan().SequenceEqual(agentManifest.VaultSigningPublicKey))))
         {
@@ -471,6 +501,7 @@ internal sealed class Vault : EventEntityBase
         if (agentMessagePublicKey is not null)
         {
             AgentMessagePublicKey = agentMessagePublicKey.PublicKey.ToArray();
+            AgentMessageKeySuiteId = agentMessagePublicKey.SchemeId;
             AgentMessageKeyFingerprint = agentMessagePublicKey.Fingerprint.ToArray();
         }
         if (manifestSigningPublicKey is not null)
@@ -644,6 +675,7 @@ internal sealed class Vault : EventEntityBase
             ManifestSigningPublicKey = manifest.VaultSigningPublicKey.ToArray();
             ManifestSigningKeyFingerprint = manifest.VaultSigningKeyFingerprint.ToArray();
             AgentMessagePublicKey = manifest.VaultAgentMessagePublicKey.ToArray();
+            AgentMessageKeySuiteId = manifest.EffectiveVaultAgentMessageKeySuiteId;
             AgentMessageKeyFingerprint = manifest.VaultAgentMessageKeyFingerprint.ToArray();
             return;
         }
@@ -651,6 +683,7 @@ internal sealed class Vault : EventEntityBase
         if (!ManifestSigningPublicKey.AsSpan().SequenceEqual(manifest.VaultSigningPublicKey)
             || !ManifestSigningKeyFingerprint!.AsSpan().SequenceEqual(manifest.VaultSigningKeyFingerprint)
             || !AgentMessagePublicKey!.AsSpan().SequenceEqual(manifest.VaultAgentMessagePublicKey)
+            || AgentMessageKeySuiteId != manifest.EffectiveVaultAgentMessageKeySuiteId
             || !AgentMessageKeyFingerprint!.AsSpan().SequenceEqual(manifest.VaultAgentMessageKeyFingerprint))
         {
             throw new DomainException("Vault Agent trust anchors cannot change outside an authenticated key rotation.");
@@ -775,5 +808,6 @@ internal sealed class Vault : EventEntityBase
         && left.VaultSigningPublicKey.AsSpan().SequenceEqual(right.VaultSigningPublicKey)
         && left.VaultSigningKeyFingerprint.AsSpan().SequenceEqual(right.VaultSigningKeyFingerprint)
         && left.VaultAgentMessagePublicKey.AsSpan().SequenceEqual(right.VaultAgentMessagePublicKey)
+        && left.EffectiveVaultAgentMessageKeySuiteId == right.EffectiveVaultAgentMessageKeySuiteId
         && left.VaultAgentMessageKeyFingerprint.AsSpan().SequenceEqual(right.VaultAgentMessageKeyFingerprint);
 }

@@ -32,7 +32,8 @@ internal sealed class ListAgentDiscoveryProvisioningValidator : Validator<ListAg
 public sealed record AgentDiscoveryProvisioningItem(
     Guid AgentId,
     string? AgentName,
-    string X25519PublicKey,
+    string PublicKey,
+    string KeySuiteId,
     string Ed25519PublicKey,
     uint RecipientKeyVersion,
     string Status,
@@ -89,7 +90,10 @@ internal sealed class ListAgentDiscoveryProvisioningEndpoint(VaultDomainReadCont
         var agentWindow = await activeAgentsQuery
             .OrderBy(x => x.Id)
             .Take(req.PageSize + 1)
-            .Select(x => new { x.Id, x.Name, x.PublicKey, x.SigningPublicKey, x.RecipientKeyVersion, x.AccessEpoch })
+            .Select(x => new
+            {
+                x.Id, x.Name, x.PublicKey, x.PublicKeySuiteId, x.SigningPublicKey, x.RecipientKeyVersion, x.AccessEpoch,
+            })
             .ToListAsync(ct);
         var hasMore = agentWindow.Count > req.PageSize;
         var activeAgents = agentWindow.Take(req.PageSize).ToArray();
@@ -112,6 +116,7 @@ internal sealed class ListAgentDiscoveryProvisioningEndpoint(VaultDomainReadCont
                 agent.Id,
                 agent.Name,
                 agent.PublicKey,
+                agent.PublicKeySuiteId,
                 agent.SigningPublicKey,
                 agent.RecipientKeyVersion,
                 isCurrent ? "current" : "pending",

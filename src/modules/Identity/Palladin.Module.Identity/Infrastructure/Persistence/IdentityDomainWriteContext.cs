@@ -22,6 +22,7 @@ internal sealed class IdentityDomainWriteContext(
     public IQueryable<SharedUnlockLink> SharedUnlockLinks => Track<SharedUnlockLink>();
     public IQueryable<SharedUnlockAuthorization> SharedUnlockAuthorizations => Track<SharedUnlockAuthorization>();
     public IQueryable<SharedUnlockOperation> SharedUnlockOperations => Track<SharedUnlockOperation>();
+    public IQueryable<SecretKeyTransfer> SecretKeyTransfers => Track<SecretKeyTransfer>();
     public IQueryable<RefreshToken> RefreshTokens => Track<RefreshToken>();
     public IQueryable<WaitlistEntry> WaitlistEntries => Track<WaitlistEntry>();
     public IQueryable<PasswordCredential> PasswordCredentials => Track<PasswordCredential>();

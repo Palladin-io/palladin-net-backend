@@ -116,7 +116,7 @@ public sealed class OnboardingTests(ApiFactory apiFactory) : TestBase
         // When
         await new OnAgentEnrolledOnboarding(endpoint).Consume(
             apiFactory.MockConsumeContext(
-                new AgentUpsertedEvent(Guid.NewGuid(), orgId, AgentStatus.Active, "pk", 1, "signing-pk", "Bot", "cli", null, null, 1, Now(), Now())));
+                new AgentUpsertedEvent(Guid.NewGuid(), orgId, AgentStatus.Active, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "Bot", "cli", null, null, 1, Now(), Now())));
 
         // Then
         var cmd = get().ShouldNotBeNull();
@@ -133,7 +133,7 @@ public sealed class OnboardingTests(ApiFactory apiFactory) : TestBase
         // When
         await new OnAgentEnrolledOnboarding(endpoint).Consume(
             apiFactory.MockConsumeContext(
-                new AgentUpsertedEvent(Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "signing-pk", "Bot", "cli", null, null, 0, null, Now())));
+                new AgentUpsertedEvent(Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Pending, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "Bot", "cli", null, null, 0, null, Now())));
 
         // Then
         get().ShouldBeNull();

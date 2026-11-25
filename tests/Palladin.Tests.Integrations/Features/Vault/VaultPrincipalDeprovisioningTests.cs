@@ -308,16 +308,11 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             rotation.Status.ShouldBe(VaultKeyRotationStatus.PendingClient);
             rotation.Scope.ShouldBe(VaultKeyRotationScope.Vdk);
             rotation.Reasons.ShouldHaveSingleItem().PrincipalId.ShouldBe(agentId);
+            (await pendingContext.Agents.SingleAsync(x => x.Id == agentId))
+                .Status.ShouldBe(Palladin.Core.Types.AgentStatus.Deactivating);
             rotationId = rotation.Id;
         }
 
-        await using (var scope = apiFactory.Services.CreateAsyncScope())
-        {
-            await scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>().Agents
-                .Where(x => x.Id == agentId)
-                .ExecuteUpdateAsync(update => update.SetProperty(
-                    x => x.Status, Palladin.Core.Types.AgentStatus.Deactivated));
-        }
         var client = apiFactory.CreateAuthenticatedClient(member, Permission.VaultManage);
         var (_, claim) = await client.POSTAsync<
             ClaimVaultKeyRotationEndpoint,

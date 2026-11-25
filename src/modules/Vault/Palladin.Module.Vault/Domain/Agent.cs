@@ -105,6 +105,23 @@ internal sealed class Agent
         return true;
     }
 
+    internal void BeginDeactivation(Instant requestedAt)
+    {
+        if (Status is AgentStatus.Deactivating or AgentStatus.Deactivated)
+        {
+            return;
+        }
+
+        Status = AgentStatus.Deactivating;
+        AccessEpochStartedAt = null;
+        if (requestedAt > UpdatedAt)
+        {
+            UpdatedAt = requestedAt;
+        }
+
+        AdvanceMutationVersion();
+    }
+
     internal void FenceAccessMutation() => AdvanceMutationVersion();
 
     private void AdvanceMutationVersion()

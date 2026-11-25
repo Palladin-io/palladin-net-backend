@@ -1,4 +1,5 @@
 using System.Net;
+using Palladin.Core.Security;
 using Palladin.Core.Types;
 using Palladin.Module.Agents.Domain;
 using Palladin.Module.Agents.Features;
@@ -102,6 +103,56 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
 
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task When_DeactivationIsRequested_Then_AgentLosesAccessBeforeRotationCompletes()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        await apiFactory.Services.SeedAgentsUserAsync(user.Id);
+        var (_, plaintext) = await apiFactory.Services.SeedApiKeyAsync(organization.Id);
+        var agent = await apiFactory.Services.SeedAgentAsync(
+            organization.Id,
+            AgentFaker.Create(organizationId: organization.Id).RuleFor(x => x.Status, AgentStatus.Active));
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var discovery = AgentDiscoveryProvisioningContractFaker.Create(organization.Id, vault.Id, agent.Id);
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organization.Id,
+            id: agent.Id,
+            publicKey: discovery.X25519PublicKey,
+            signingPublicKey: discovery.RequestSigning.PublicKeyBase64);
+        await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(discovery.Request, user.Id);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AgentsDbWriteContext>().Agents
+                .Where(x => x.Id == agent.Id)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(x => x.PublicKey, discovery.X25519PublicKey)
+                    .SetProperty(x => x.SigningPublicKey, discovery.RequestSigning.PublicKeyBase64),
+                    TestContext.Current.CancellationToken);
+        }
+
+        var agentClient = apiFactory.CreateSignedAgentClient(
+            agent.Id, plaintext, discovery.X25519PublicKey, discovery.RequestSigning);
+        var before = await agentClient.GetAsync("api/agent/me", TestContext.Current.CancellationToken);
+        before.StatusCode.ShouldBe(HttpStatusCode.OK);
+        agentClient.DefaultRequestHeaders.Add(AgentAuthenticationOptions.AgentTypeHeader, "changed-type");
+        var userClient = apiFactory.CreateAuthenticatedClient(user, Permission.AgentManage);
+
+        // When
+        var deactivation = await userClient.PostAsync(
+            $"api/agents/{agent.Id}/deactivate", null, TestContext.Current.CancellationToken);
+        var after = await agentClient.GetAsync("api/agent/me", TestContext.Current.CancellationToken);
+
+        // Then
+        deactivation.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        after.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var persisted = await verificationScope.ServiceProvider.GetRequiredService<AgentsDbReadContext>()
+            .Agents.SingleAsync(x => x.Id == agent.Id, TestContext.Current.CancellationToken);
+        persisted.Status.ShouldBe(AgentStatus.Deactivating);
+        persisted.Type.ShouldBe(agent.Type);
     }
 
     [Fact]

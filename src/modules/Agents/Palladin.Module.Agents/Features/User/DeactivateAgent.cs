@@ -26,7 +26,7 @@ internal sealed class DeactivateAgentEndpoint(
         Summary(summary =>
         {
             summary.Summary = "Deactivate an agent";
-            summary.Description = "Starts staged deactivation. New access is denied immediately and current Vault access is removed monotonically as each Vault rotation commits.";
+            summary.Description = "Denies every subsequent Agent request immediately and starts staged deactivation. Stored Vault access material is removed monotonically as each Vault rotation commits.";
         });
         Tags("Agents/Agents");
     }

@@ -26,7 +26,7 @@ public sealed class ApprovedBroadcastMetadataTests(ApiFactory apiFactory) : Test
     {
         // Given
         var @event = new AgentUpsertedEvent(
-            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Active, "pk", 1, "signing-pk", "deploy-bot", "ci", null, null, 1, Now(), Now());
+            Guid.NewGuid(), Guid.NewGuid(), AgentStatus.Active, "pk", 1, "pk", "palladin-x25519-sealed-box-v1", "signing-pk", "deploy-bot", "ci", null, null, 1, Now(), Now());
 
         // When
         var command = await CaptureAgentResolvedAsync(@event);
@@ -49,7 +49,7 @@ public sealed class ApprovedBroadcastMetadataTests(ApiFactory apiFactory) : Test
                 .RuleFor(x => x.EnrolledBy, approver.Id));
 
         var @event = new AgentUpsertedEvent(
-            agent.Id, organizationId, AgentStatus.Active, agent.PublicKey, 1, agent.SigningPublicKey, agent.Name, agent.Type, null, null, 1, Now(), Now());
+            agent.Id, organizationId, AgentStatus.Active, agent.PublicKey, 1, agent.PublicKey, "palladin-x25519-sealed-box-v1", agent.SigningPublicKey, agent.Name, agent.Type, null, null, 1, Now(), Now());
 
         // When
         var command = await CaptureAgentResolvedAsync(@event);

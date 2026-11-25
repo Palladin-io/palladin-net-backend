@@ -28,7 +28,7 @@ public sealed class SearchTriggerTests(ApiFactory apiFactory) : TestBase
         var agentId = Guid.NewGuid();
         var organizationId = Guid.NewGuid();
         await new OnAgentUpsertedSearch(endpoint).Consume(apiFactory.MockConsumeContext(
-            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pk", 1,
+            new AgentUpsertedEvent(agentId, organizationId, AgentStatus.Active, "pk", 1, "pk", "palladin-x25519-sealed-box-v1",
                 "signing-pk", "Bot", "cli", null, null, 1, Now(), Now())));
 
         var command = get().ShouldNotBeNull();

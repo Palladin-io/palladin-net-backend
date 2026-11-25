@@ -68,8 +68,13 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("PublicKey")
                         .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("PublicKeySuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<long>("RecipientKeyVersion")
                         .ValueGeneratedOnAdd()
@@ -212,7 +217,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("AgentWrappedVdk")
                         .IsRequired()
-                        .HasMaxLength(120)
+                        .HasMaxLength(1168)
                         .HasColumnType("bytea");
 
                     b.Property<byte[]>("AgentWrappedVdkDigest")
@@ -278,9 +283,13 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("bytea");
 
+                    b.Property<string>("VaultAgentMessageKeySuiteId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<byte[]>("VaultAgentMessagePublicKey")
                         .IsRequired()
-                        .HasMaxLength(32)
+                        .HasMaxLength(1216)
                         .HasColumnType("bytea");
 
                     b.Property<byte[]>("VaultSigningKeyFingerprint")
@@ -328,7 +337,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("EncodedSealedVaultKeyPackage")
                         .IsRequired()
-                        .HasMaxLength(120)
+                        .HasMaxLength(1168)
                         .HasColumnType("bytea");
 
                     b.Property<byte[]>("ProducerSignature")
@@ -435,8 +444,13 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("SealedPackage")
                         .IsRequired()
-                        .HasMaxLength(120)
+                        .HasMaxLength(1168)
                         .HasColumnType("bytea");
+
+                    b.Property<string>("WrapperSuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.HasKey("OrganizationId", "MemberId", "KeyVersion", "Purpose");
 
@@ -568,7 +582,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("AgentMessageWrappedReasonDek")
                         .IsRequired()
-                        .HasMaxLength(120)
+                        .HasMaxLength(1168)
                         .HasColumnType("bytea");
 
                     b.Property<byte[]>("AgentSignature")
@@ -950,8 +964,8 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("AgentPublicKey")
                         .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
 
                     b.Property<Instant>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1076,7 +1090,7 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("AgentWrappedGrantDek")
                         .IsRequired()
-                        .HasMaxLength(120)
+                        .HasMaxLength(1168)
                         .HasColumnType("bytea");
 
                     b.Property<string>("CryptoSuiteId")
@@ -1181,8 +1195,13 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("PublicKey")
                         .IsRequired()
-                        .HasMaxLength(32)
+                        .HasMaxLength(1216)
                         .HasColumnType("bytea");
+
+                    b.Property<string>("PublicKeySuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<Instant>("UpdatedAt")
                         .IsConcurrencyToken()
@@ -1238,9 +1257,14 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("bytea");
 
+                    b.Property<string>("MessageKeySuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<byte[]>("MessagePublicKey")
                         .IsRequired()
-                        .HasMaxLength(32)
+                        .HasMaxLength(1216)
                         .HasColumnType("bytea");
 
                     b.Property<byte[]>("PreviousSigningKeyFingerprint")
@@ -1352,6 +1376,11 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.Property<long>("VaultSigningKeyVersion")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("WrapperSuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasKey("OrganizationId", "VaultId", "GrantId");
 
                     b.ToTable("ScriptExecutionPackages");
@@ -1419,9 +1448,14 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("bytea");
 
+                    b.Property<string>("AgentMessageKeySuiteId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<byte[]>("AgentMessagePublicKey")
                         .IsRequired()
-                        .HasMaxLength(32)
+                        .HasMaxLength(1216)
                         .HasColumnType("bytea");
 
                     b.Property<Instant>("CreatedAt")

@@ -128,3 +128,10 @@ increase schema and retry complexity without reducing the invariant.
   organization-scoped rows because their caller-supplied fingerprints were not bound to the typed
   definition. All replicas running the old schema must be stopped before the migration is applied;
   retaining `organization_id` or dual reads/writes for a rolling deployment is not supported.
+
+## Agent encryption key (CVT-731)
+
+`Agent.PublicKey` is the Agent's stable identifier sent in `X-Agent-Key`; it never changes, even after the X25519 private key is deleted. The encryption key publication is separate: `EncryptionPublicKey`, `EncryptionKeySuiteId` and `RecipientKeyVersion` (enrollment and pairing start with the identity X25519 key under the read-only `palladin-x25519-sealed-box-v1` suite). `AgentUpsertedEvent` carries both; Vault's replica stores only the encryption publication.
+
+`POST api/agent/encryption-key` (Agent auth: API key + Ed25519 request signature) takes `{wrapperSuiteId, publicKey (b64url, exact suite length), keyBindingSignature (b64url 64 B)}`. The suite must be active. The signature is verified with the Agent's registered Ed25519 key over `ASCII("palladin.agent-encryption-key-rotation.v1") || 0x00 || u16be(2) || agentId[16] || previousFingerprint[32] || u16be(len) || nextSuiteId || nextFingerprint[32]` (key-wrapper v1 suite fingerprints, recipient kind 1; previous = the stored encryption key). A rotation increments `RecipientKeyVersion`, stores the previous fingerprint and the binding signature (served on `GET api/agents/{id}` as `previousKeyFingerprint`/`keyBindingSignature` with `publicKey` and `keySuiteId`) and publishes `AgentUpsertedEvent`. Re-posting the current key returns 200 without a write; `RecipientKeyVersion` is a concurrency token (409 on a race). The response `{wrapperSuiteId, keyVersion, keyFingerprint, previousKeyEnvelopeCount: null}` leaves the envelope count to Vault's `GET api/agent/encryption-key`.
+

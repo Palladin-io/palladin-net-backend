@@ -1,23 +1,24 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 
 namespace Palladin.Module.Vault.Infrastructure.Crypto;
 
-internal static class X25519WrapperContextCodec
+internal static class KeyWrapperContextCodec
 {
     private static readonly byte[] Magic = "PLDNX2W1"u8.ToArray();
     private static readonly byte[] HashDomain = "PLDNX2CTX"u8.ToArray();
 
-    internal static byte[] Encode(X25519WrapperContext context)
+    internal static byte[] Encode(KeyWrapperContext context)
     {
         Validate(context);
         using var stream = new MemoryStream(192);
         stream.Write(Magic);
         WriteUInt16(stream, VaultProtocol.CurrentVersion);
-        WriteAscii(stream, X25519SealedBoxContract.SuiteId);
+        WriteAscii(stream, context.SuiteId);
         WriteUInt16(stream, (ushort)context.Purpose);
         WriteScope(stream, context.Scope);
         WriteUInt64(stream, context.ResourceRevision);
@@ -32,7 +33,7 @@ internal static class X25519WrapperContextCodec
         return stream.ToArray();
     }
 
-    internal static byte[] ComputeContextHash(X25519WrapperContext context)
+    internal static byte[] ComputeContextHash(KeyWrapperContext context)
     {
         var encoded = Encode(context);
         var preimage = new byte[HashDomain.Length + encoded.Length];
@@ -44,34 +45,35 @@ internal static class X25519WrapperContextCodec
     internal static byte[] ComputeParentDescriptorHash(EnvelopeDescriptor descriptor) =>
         SHA256.HashData(EnvelopeDescriptorCodec.Encode(descriptor));
 
-    private static void Validate(X25519WrapperContext context)
+    private static void Validate(KeyWrapperContext context)
     {
+        _ = KeyWrapperSuites.ResolveForOpen(context.SuiteId);
         var vault = EnvelopeScopeFields.Organization | EnvelopeScopeFields.Vault;
         switch (context.Purpose)
         {
-            case X25519WrapperPurpose.MemberVaultKey:
+            case KeyWrapperPurpose.MemberVaultKey:
                 context.Scope.Validate(vault | EnvelopeScopeFields.Member);
-                if (context.RecipientKeyKind != VaultKeyKind.MemberX25519 || context.ParentDescriptorHash is not null)
+                if (context.RecipientKeyKind != VaultKeyKind.MemberEncryption || context.ParentDescriptorHash is not null)
                     throw new DomainException("Member Vault-key wrapper context is invalid.");
                 break;
-            case X25519WrapperPurpose.AgentDiscoveryVdk:
+            case KeyWrapperPurpose.AgentVaultDiscoveryKey:
                 context.Scope.Validate(vault | EnvelopeScopeFields.Agent);
-                if (context.RecipientKeyKind != VaultKeyKind.AgentX25519 || context.ParentDescriptorHash is not null)
+                if (context.RecipientKeyKind != VaultKeyKind.AgentEncryption || context.ParentDescriptorHash is not null)
                     throw new DomainException("Agent Discovery-key wrapper context is invalid.");
                 break;
-            case X25519WrapperPurpose.ReasonDek:
+            case KeyWrapperPurpose.ReasonDek:
                 ValidateParentBound(context, vault | EnvelopeScopeFields.Entry
                     | EnvelopeScopeFields.GrantOrRequest | EnvelopeScopeFields.Agent,
-                    VaultKeyKind.VaultMessageX25519);
+                    VaultKeyKind.VaultAgentMessage);
                 break;
-            case X25519WrapperPurpose.GrantDek:
+            case KeyWrapperPurpose.GrantDek:
                 ValidateParentBound(context, vault | EnvelopeScopeFields.Entry
                     | EnvelopeScopeFields.GrantOrRequest | EnvelopeScopeFields.Agent,
-                    VaultKeyKind.AgentX25519);
+                    VaultKeyKind.AgentEncryption);
                 break;
-            case X25519WrapperPurpose.AgentVaultKey:
+            case KeyWrapperPurpose.AgentVaultKey:
                 context.Scope.Validate(vault | EnvelopeScopeFields.GrantOrRequest | EnvelopeScopeFields.Agent);
-                if (context.RecipientKeyKind != VaultKeyKind.AgentX25519
+                if (context.RecipientKeyKind != VaultKeyKind.AgentEncryption
                     || context.MemberKeyGeneration is not null
                     || context.ParentDescriptorHash is not null)
                 {
@@ -79,23 +81,23 @@ internal static class X25519WrapperContextCodec
                 }
                 break;
             default:
-                throw new DomainException("X25519 wrapper purpose is not registered.");
+                throw new DomainException("Key-wrapper purpose is not registered.");
         }
 
         if (context.ResourceRevision == 0 || context.WrappedKeyVersion == 0
             || context.MemberKeyGeneration is 0 || context.RecipientKeyVersion == 0
             || context.RecipientFingerprint.Length != VaultProtocol.FingerprintBytes)
-            throw new DomainException("X25519 wrapper version or recipient is invalid.");
+            throw new DomainException("Key-wrapper version or recipient is invalid.");
     }
 
     private static void ValidateParentBound(
-        X25519WrapperContext context,
+        KeyWrapperContext context,
         EnvelopeScopeFields scope,
         VaultKeyKind keyKind)
     {
         context.Scope.Validate(scope);
         if (context.RecipientKeyKind != keyKind || context.ParentDescriptorHash?.Length != 32)
-            throw new DomainException("Parent-bound X25519 wrapper context is invalid.");
+            throw new DomainException("Parent-bound key-wrapper context is invalid.");
     }
 
     private static void WriteScope(Stream stream, EnvelopeScope scope)

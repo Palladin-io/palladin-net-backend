@@ -50,8 +50,8 @@ internal sealed class LoginValidator : Validator<LoginRequest>
     public LoginValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
-        RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.CurrentSecurityVersion);
-        RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.CurrentProfileId);
+        RuleFor(x => x).Must(x => IdentityKdfProfiles.IsRegistered(x.SecurityVersion, x.KdfProfileId))
+            .WithName("kdfProfileId");
         RuleFor(x => x.AuthCredential).Must(value => value is
         { Length: IdentityKdfProfiles.AuthCredentialBytes });
     }

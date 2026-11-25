@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
 using NSec.Cryptography;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types;
 using User = Palladin.Module.Identity.Domain.User;
 using Palladin.Module.Vault.Domain;
@@ -25,13 +26,13 @@ using Shouldly;
 namespace Palladin.Tests.Integrations.Shared;
 
 // One approver group key version held by the test client: a real Ed25519 signing key (signatures are
-// verified by the backend) and an X25519 message public key (the backend only checks its fingerprint).
+// verified by the backend) and a current-suite message public key (the backend only checks its fingerprint).
 internal sealed class ApproverGroupKey
 {
     private readonly Key _signingKey;
 
     internal ApproverGroupKey(uint keyVersion)
-        : this(keyVersion, RandomNumberGenerator.GetBytes(32), Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
+        : this(keyVersion, RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PublicKeyBytes), Key.Create(SignatureAlgorithm.Ed25519, new KeyCreationParameters
         {
             ExportPolicy = KeyExportPolicies.AllowPlaintextExport,
         }))
@@ -48,12 +49,13 @@ internal sealed class ApproverGroupKey
     internal uint KeyVersion { get; }
     internal byte[] MessagePublicKey { get; }
     internal byte[] SigningPublicKey => _signingKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
-    internal byte[] MessageKeyFingerprint =>
-        VaultKeyFingerprint.Compute(MessagePublicKey, VaultKeyKind.OrganizationApproverX25519);
+    internal byte[] MessageKeyFingerprint => RecipientKeyFingerprint.Compute(
+        KeyWrapperSuites.Current.Id, VaultKeyKind.OrganizationApproverMessage, MessagePublicKey);
     internal byte[] SigningKeyFingerprint =>
-        VaultKeyFingerprint.Compute(SigningPublicKey, VaultKeyKind.OrganizationApproverEd25519);
+        VaultKeyFingerprint.Compute(SigningPublicKey, VaultKeyKind.OrganizationApproverSigning);
 
-    internal ApproverGroupKey WithNewMessageKey() => new(KeyVersion, RandomNumberGenerator.GetBytes(32), _signingKey);
+    internal ApproverGroupKey WithNewMessageKey() =>
+        new(KeyVersion, RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PublicKeyBytes), _signingKey);
 
     internal byte[] Sign(byte[] input) => SignatureAlgorithm.Ed25519.Sign(_signingKey, input);
 }
@@ -66,12 +68,15 @@ internal sealed record ScenarioAgent(
     AgentRequestSigning Signing,
     string X25519PublicKey,
     uint KeyVersion,
-    uint AccessEpoch);
+    uint AccessEpoch)
+{
+    internal string EncryptionPublicKey { get; init; } = string.Empty;
+}
 
 internal sealed class AgentSubmissionScenario
 {
-    internal const string ManifestSchema = "palladin.organization-approver-manifest.v1";
-    internal const string SubmissionSchema = "palladin.agent-entry-submission.v1";
+    internal const string ManifestSchema = "palladin.organization-approver-manifest.v2";
+    internal const string SubmissionSchema = "palladin.agent-entry-submission.v2";
 
     private readonly ApiFactory _apiFactory;
     private readonly List<OrganizationApproverManifestContract> _manifests = [];
@@ -113,15 +118,19 @@ internal sealed class AgentSubmissionScenario
             OrganizationId,
             AgentFaker.Create(organizationId: OrganizationId, publicKey: x25519, signingPublicKey: signing.PublicKeyBase64)
                 .RuleFor(x => x.Status, status));
+        var encryptionPublicKey = VaultAgentFaker.GenerateEncryptionPublicKey();
         await _apiFactory.Services.SeedVaultAgentAsync(
-            OrganizationId, status, id: agent.Id, publicKey: x25519, signingPublicKey: signing.PublicKeyBase64);
+            OrganizationId, status, id: agent.Id, publicKey: encryptionPublicKey, signingPublicKey: signing.PublicKeyBase64);
         return new ScenarioAgent(
             agent.Id,
             _apiFactory.CreateSignedAgentClient(agent.Id, apiKey, x25519, signing),
             signing,
             x25519,
             1,
-            1);
+            1)
+        {
+            EncryptionPublicKey = encryptionPublicKey,
+        };
     }
 
     internal async Task<IssueApproverKeyChallengeResponse> ChallengeAsync(ScenarioMember member)
@@ -239,14 +248,16 @@ internal sealed class AgentSubmissionScenario
             "1",
             agent.AccessEpoch.ToString(),
             agent.KeyVersion,
-            Encode(VaultKeyFingerprint.Compute(Convert.FromBase64String(agent.X25519PublicKey), VaultKeyKind.AgentX25519)),
+            Encode(AgentRecipientKey.Fingerprint(KeyWrapperSuites.Current.Id, agent.EncryptionPublicKey)),
             CurrentKey!.KeyVersion,
             Encode(CurrentKey.MessageKeyFingerprint),
             CurrentManifest!.ManifestRevision,
             Encode(Bytes(payloadSeed, 24 + 96 + 16)),
-            Encode(Bytes(payloadSeed + 1, 120)),
-            Encode(Bytes(payloadSeed + 2, 120)),
-            string.Empty));
+            Encode(Bytes(payloadSeed + 1, KeyWrapperSuites.Current.PackageBytes)),
+            Encode(Bytes(payloadSeed + 2, KeyWrapperSuites.Current.PackageBytes)),
+            string.Empty,
+            KeyWrapperSuites.Current.Id,
+            KeyWrapperSuites.Current.Id));
 
     internal AgentEntrySubmissionContract UpdateSubmission(ScenarioAgent agent, Guid entryId, ulong expectedRevision) =>
         NewSubmission(agent,
@@ -261,8 +272,8 @@ internal sealed class AgentSubmissionScenario
             ApproverKeyVersion = CurrentKey!.KeyVersion,
             ApproverMessageKeyFingerprint = Encode(CurrentKey.MessageKeyFingerprint),
             ApproverManifestRevision = CurrentManifest!.ManifestRevision,
-            EncodedAgentWrappedDek = Encode(RandomNumberGenerator.GetBytes(120)),
-            EncodedApproverWrappedDek = Encode(RandomNumberGenerator.GetBytes(120)),
+            EncodedAgentWrappedDek = Encode(RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PackageBytes)),
+            EncodedApproverWrappedDek = Encode(RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PackageBytes)),
         });
 
     internal static AgentEntrySubmissionContract Sign(ScenarioAgent agent, AgentEntrySubmissionContract unsigned) =>
@@ -324,7 +335,7 @@ internal sealed class AgentSubmissionScenario
         AgentId = agent.Id,
         Methods = GrantMethods.Inject,
         GrantEntry = GrantEnvelopeTestData.Contract(
-            OrganizationId, VaultId, grantId, entryId, agent.X25519PublicKey,
+            OrganizationId, VaultId, grantId, entryId, agent.EncryptionPublicKey,
             entryRevision: entryRevision, agentId: agent.Id, methods: GrantMethods.Inject),
     };
 
@@ -390,7 +401,7 @@ internal sealed class AgentSubmissionScenario
 
     private static async Task<ScenarioMember> RegisterApproverAsync(ApiFactory apiFactory, User user, Guid organizationId)
     {
-        var publicKey = RandomNumberGenerator.GetBytes(32);
+        var publicKey = RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PublicKeyBytes);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(user.Id, publicKey);
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
@@ -407,13 +418,21 @@ internal sealed class AgentSubmissionScenario
         ApproverGroupKey key,
         ulong manifestRevision,
         IssueApproverKeyChallengeResponse challenge,
+        ApproverGroupKey? previous) =>
+        SignManifest(OrganizationId, key, manifestRevision, challenge, previous);
+
+    internal static OrganizationApproverManifestContract SignManifest(
+        Guid organizationId,
+        ApproverGroupKey key,
+        ulong manifestRevision,
+        IssueApproverKeyChallengeResponse challenge,
         ApproverGroupKey? previous)
     {
         var unsigned = new OrganizationApproverManifestContract(
             ManifestSchema,
             1,
             2,
-            OrganizationId.ToString("D"),
+            organizationId.ToString("D"),
             key.KeyVersion,
             manifestRevision.ToString(),
             challenge.ApproverSetRevision,
@@ -424,7 +443,8 @@ internal sealed class AgentSubmissionScenario
             Encode(key.SigningKeyFingerprint),
             challenge.IssuedAt,
             string.Empty,
-            previous is null ? null : Encode(previous.SigningKeyFingerprint));
+            previous is null ? null : Encode(previous.SigningKeyFingerprint),
+            MessageKeySuiteId: KeyWrapperSuites.Current.Id);
         var members = ManifestMembers(unsigned);
         var signature = Encode(key.Sign(SignatureInput("PLDNSUB1SIG:APPROVER-MANIFEST:", members)));
         var continuity = previous is null
@@ -434,18 +454,22 @@ internal sealed class AgentSubmissionScenario
     }
 
     private List<ApproverKeyWrapContract> Wraps(IEnumerable<ApproverContract> approvers, uint keyVersion, string approverSetRevision) =>
+        Wraps(OrganizationId, approvers, keyVersion, approverSetRevision);
+
+    internal static List<ApproverKeyWrapContract> Wraps(
+        Guid organizationId, IEnumerable<ApproverContract> approvers, uint keyVersion, string approverSetRevision) =>
         approvers.SelectMany(approver => new ushort[] { 8, 9 }.Select(purpose => new ApproverKeyWrapContract(
             new ApproverKeyWrapDescriptorContract(
                 purpose,
                 33,
-                OrganizationId.ToString("D"),
+                organizationId.ToString("D"),
                 approver.MemberId,
                 approverSetRevision,
                 keyVersion,
                 5,
                 approver.MemberKeyVersion,
                 approver.MemberKeyFingerprint),
-            Encode(RandomNumberGenerator.GetBytes(120)))))
+            Encode(RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PackageBytes)))))
             .ToList();
 
     private static SortedDictionary<string, object> ManifestMembers(OrganizationApproverManifestContract manifest)
@@ -471,6 +495,11 @@ internal sealed class AgentSubmissionScenario
             members["previousSigningKeyFingerprint"] = manifest.PreviousSigningKeyFingerprint;
         }
 
+        if (manifest.MessageKeySuiteId is not null)
+        {
+            members["messageKeySuiteId"] = manifest.MessageKeySuiteId;
+        }
+
         return members;
     }
 
@@ -481,7 +510,7 @@ internal sealed class AgentSubmissionScenario
         if (submission.Target.VaultId is not null) target["vaultId"] = submission.Target.VaultId;
         if (submission.Target.EntryId is not null) target["entryId"] = submission.Target.EntryId;
         if (submission.Target.ExpectedEntryRevision is not null) target["expectedEntryRevision"] = submission.Target.ExpectedEntryRevision;
-        return new SortedDictionary<string, object>(StringComparer.Ordinal)
+        var members = new SortedDictionary<string, object>(StringComparer.Ordinal)
         {
             ["schema"] = submission.Schema,
             ["contractVersion"] = submission.ContractVersion,
@@ -503,6 +532,13 @@ internal sealed class AgentSubmissionScenario
             ["encodedAgentWrappedDek"] = submission.EncodedAgentWrappedDek,
             ["encodedApproverWrappedDek"] = submission.EncodedApproverWrappedDek,
         };
+        if (submission.AgentWrappedDekSuiteId is not null)
+        {
+            members["agentWrappedDekSuiteId"] = submission.AgentWrappedDekSuiteId;
+            members["approverWrappedDekSuiteId"] = submission.ApproverWrappedDekSuiteId!;
+        }
+
+        return members;
     }
 
     private static byte[] Bytes(int seed, int count) =>

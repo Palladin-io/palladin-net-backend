@@ -53,7 +53,8 @@ internal sealed class OnAgentUpserted(
                 msg.AgentId,
                 msg.OrganizationId,
                 msg.Status,
-                msg.PublicKey,
+                msg.EncryptionPublicKey,
+                msg.EncryptionKeySuiteId,
                 msg.RecipientKeyVersion,
                 msg.SigningPublicKey,
                 msg.Name,
@@ -74,7 +75,8 @@ internal sealed class OnAgentUpserted(
 
         existing.Apply(
             msg.Status,
-            msg.PublicKey,
+            msg.EncryptionPublicKey,
+            msg.EncryptionKeySuiteId,
             msg.RecipientKeyVersion,
             msg.SigningPublicKey,
             msg.Name,

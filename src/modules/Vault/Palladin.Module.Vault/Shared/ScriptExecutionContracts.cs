@@ -27,7 +27,8 @@ public sealed record ScriptExecutionPackageContract(
     string ManifestDigest,
     string EncodedPackageCiphertext,
     string ProducerSignature,
-    IReadOnlyList<ScriptExecutionScopeContract> Scopes);
+    IReadOnlyList<ScriptExecutionScopeContract> Scopes,
+    string? WrapperSuiteId = null);
 
 internal sealed class ScriptExecutionPackageContractValidator
     : AbstractValidator<ScriptExecutionPackageContract>

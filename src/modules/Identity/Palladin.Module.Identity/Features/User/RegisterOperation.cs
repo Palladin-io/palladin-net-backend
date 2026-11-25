@@ -55,7 +55,7 @@ internal sealed class RegisterOperation(
 
         var user = Domain.User.RegisterWithPassword(
             userId, email, req.DisplayName, req.PreferredLanguage, orgId, adminRole.Permissions,
-            req.KdfSalt, req.RecoverySalt, req.PublicKey, req.EncryptedPrivateKey, req.EncryptedPrivateKeyByRecovery,
+            req.KdfSalt, req.RecoverySalt, req.PublicKeySuiteId, req.PublicKey, req.EncryptedPrivateKey, req.EncryptedPrivateKeyByRecovery,
             req.DeviceWrapperMetadata,
             transportContext.Platform ?? "unknown", now);
         domainWriteContext.Add(user);

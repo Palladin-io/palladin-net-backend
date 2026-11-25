@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using NodaTime;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.Events;
@@ -109,7 +110,8 @@ public sealed class WaitlistDeveloperBenefitTests
             Permission.VaultManage,
             new byte[16],
             new byte[16],
-            new byte[32],
+            KeyWrapperSuites.Current.Id,
+            new byte[KeyWrapperSuites.Current.PublicKeyBytes],
             new byte[32],
             new byte[32],
             null,

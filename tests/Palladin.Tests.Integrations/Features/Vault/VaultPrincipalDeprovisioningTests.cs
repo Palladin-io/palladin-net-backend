@@ -285,7 +285,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agentId,
-            publicKey: fixture.X25519PublicKey,
+            publicKey: fixture.EncryptionPublicKey,
             signingPublicKey: fixture.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(fixture.Request, member.Id);
         var requestId = Guid.NewGuid();
@@ -434,8 +434,9 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         writeContext.MemberKeyDirectory.Add(MemberKeyDirectoryEntry.Create(
             userId,
             new MemberRecipientKeyVersion(1),
+            Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
             Enumerable.Range(0, VaultProtocol.FingerprintBytes).Select(x => (byte)x).ToArray(),
-            new byte[VaultProtocol.FingerprintBytes],
+            new byte[Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes],
             apiFactory.FakeClock.GetCurrentInstant()));
         await writeContext.SaveChangesAsync();
     }

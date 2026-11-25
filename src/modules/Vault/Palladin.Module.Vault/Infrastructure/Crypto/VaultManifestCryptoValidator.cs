@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
@@ -33,27 +34,28 @@ internal static class VaultManifestCryptoValidator
         var manifestSignature = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(envelope.ManifestSignature);
         var recipientFingerprint = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(envelope.RecipientAgentKeyFingerprint);
         var wrapperContext = VaultEnvelopeContractMapper.ToWrapperContext(envelope.WrappedVdk.Descriptor);
-        if (wrapperContext.Purpose != X25519WrapperPurpose.AgentDiscoveryVdk
+        if (wrapperContext.Purpose != KeyWrapperPurpose.AgentVaultDiscoveryKey
             || wrapperContext.Scope != new EnvelopeScope(envelope.OrganizationId, envelope.VaultId,
                 AgentId: envelope.AgentId)
             || wrapperContext.ResourceRevision != envelope.VdkVersion
             || wrapperContext.WrappedKeyVersion != envelope.VdkVersion
-            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentX25519
+            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentEncryption
             || wrapperContext.RecipientKeyVersion != envelope.RecipientAgentKeyVersion
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint,
                 recipientFingerprint)
             || wrapperContext.ParentDescriptorHash is not null)
             throw new DomainException("Agent Discovery wrapper descriptor is invalid.");
-        _ = X25519WrapperContextCodec.Encode(wrapperContext);
-        WrappedKeyPackageContract.ValidatePackage(envelope.WrappedVdk.Descriptor.WrapperSuiteId, wrappedVdk);
-        var agentX25519Key = DecodeAgentPublicKey(agent.PublicKey, VaultKeyKind.AgentX25519);
-        var agentEd25519Key = DecodeAgentPublicKey(agent.SigningPublicKey, VaultKeyKind.AgentEd25519);
+        _ = KeyWrapperContextCodec.Encode(wrapperContext);
+        KeyWrapperSuites.ResolveForOpen(envelope.WrappedVdk.Descriptor.WrapperSuiteId).ValidatePackage(wrappedVdk);
+        var vaultMessageKeySuiteId = manifest.VaultAgentMessageKeySuiteId ?? LegacyWrapperSuite.Id;
+        var agentEd25519Key = DecodeAgentPublicKey(agent.SigningPublicKey, VaultKeyKind.AgentSigning);
         var vaultSigningKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultSigningPublicKey);
         var vaultMessageKey = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(manifest.VaultAgentMessagePublicKey);
-        var agentX25519Fingerprint = VaultKeyFingerprint.Compute(agentX25519Key, VaultKeyKind.AgentX25519);
-        var agentEd25519Fingerprint = VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentEd25519);
-        var vaultSigningFingerprint = VaultKeyFingerprint.Compute(vaultSigningKey, VaultKeyKind.VaultSigningEd25519);
-        var vaultMessageFingerprint = VaultKeyFingerprint.Compute(vaultMessageKey, VaultKeyKind.VaultMessageX25519);
+        var agentX25519Fingerprint = AgentRecipientKey.Fingerprint(agent);
+        var agentEd25519Fingerprint = VaultKeyFingerprint.Compute(agentEd25519Key, VaultKeyKind.AgentSigning);
+        var vaultSigningFingerprint = VaultKeyFingerprint.Compute(vaultSigningKey, VaultKeyKind.VaultSigning);
+        var vaultMessageFingerprint = RecipientKeyFingerprint.Compute(
+            vaultMessageKeySuiteId, VaultKeyKind.VaultAgentMessage, vaultMessageKey);
         var wrappedVdkDigest = ComputeWrappedVdkDigest(envelope.ProtocolVersion, wrappedVdk);
 
         ValidateBindings(
@@ -99,7 +101,21 @@ internal static class VaultManifestCryptoValidator
                 revision,
                 manifest.IssuedAt,
                 manifest.MinimumAgentRuntimeProtocol,
-                manifestSignature));
+                manifestSignature,
+                envelope.WrappedVdk.Descriptor.WrapperSuiteId,
+                manifest.VaultAgentMessageKeySuiteId));
+    }
+
+    // New provisioning writes seal only to active suites and publish the successor manifest with its message-key suite.
+    internal static ValidatedAgentDiscoveryProvisioning ValidateNew(
+        AgentVaultDiscoveryEnvelopeContract envelope,
+        VaultManifestContract manifest,
+        Agent agent)
+    {
+        _ = KeyWrapperSuites.ResolveForSeal(envelope.WrappedVdk.Descriptor.WrapperSuiteId);
+        _ = KeyWrapperSuites.ResolveForSeal(manifest.VaultAgentMessageKeySuiteId
+                                            ?? throw new DomainException("New Vault manifests must name the message-key suite."));
+        return Validate(envelope, manifest, agent);
     }
 
     internal static ValidatedAgentDiscoveryProvisioning ValidateCurrent(
@@ -123,6 +139,7 @@ internal static class VaultManifestCryptoValidator
             || !CryptographicOperations.FixedTimeEquals(
                 validatedManifest.VaultAgentMessagePublicKey,
                 vault.AgentMessagePublicKey)
+            || validatedManifest.EffectiveVaultAgentMessageKeySuiteId != vault.AgentMessageKeySuiteId
             || !CryptographicOperations.FixedTimeEquals(
                 validatedManifest.VaultAgentMessageKeyFingerprint,
                 vault.AgentMessageKeyFingerprint))
@@ -156,6 +173,11 @@ internal static class VaultManifestCryptoValidator
         writer.WriteNumber("protocolVersion", manifest.ProtocolVersion);
         writer.WriteString("signatureSuiteId", manifest.SignatureSuiteId);
         writer.WriteString("vaultAgentMessageKeyFingerprint", manifest.VaultAgentMessageKeyFingerprint);
+        if (manifest.VaultAgentMessageKeySuiteId is not null)
+        {
+            writer.WriteString("vaultAgentMessageKeySuiteId", manifest.VaultAgentMessageKeySuiteId);
+        }
+
         writer.WriteString("vaultAgentMessagePublicKey", manifest.VaultAgentMessagePublicKey);
         writer.WriteString("vaultId", manifest.VaultId);
         writer.WriteString("vaultSigningKeyFingerprint", manifest.VaultSigningKeyFingerprint);
@@ -191,6 +213,11 @@ internal static class VaultManifestCryptoValidator
         writer.WriteString("signature", manifest.Signature);
         writer.WriteString("signatureSuiteId", manifest.SignatureSuiteId);
         writer.WriteString("vaultAgentMessageKeyFingerprint", manifest.VaultAgentMessageKeyFingerprint);
+        if (manifest.VaultAgentMessageKeySuiteId is not null)
+        {
+            writer.WriteString("vaultAgentMessageKeySuiteId", manifest.VaultAgentMessageKeySuiteId);
+        }
+
         writer.WriteString("vaultAgentMessagePublicKey", manifest.VaultAgentMessagePublicKey);
         writer.WriteString("vaultId", manifest.VaultId);
         writer.WriteString("vaultSigningKeyFingerprint", manifest.VaultSigningKeyFingerprint);
@@ -216,7 +243,7 @@ internal static class VaultManifestCryptoValidator
     {
         if (envelope.ProtocolVersion != VaultProtocol.CurrentVersion
             || !string.Equals(envelope.WrappedVdk.Descriptor.WrapperSuiteId,
-                X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
+                agent.PublicKeySuiteId, StringComparison.Ordinal)
             || manifest.ProtocolVersion != envelope.ProtocolVersion
             || !string.Equals(manifest.CryptoSuiteId, CryptoSuiteId.XChaCha20Poly1305V1, StringComparison.Ordinal)
             || !string.Equals(manifest.WrapperSuiteId, envelope.WrappedVdk.Descriptor.WrapperSuiteId,

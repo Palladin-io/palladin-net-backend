@@ -38,7 +38,9 @@ public sealed record AgentEntrySubmissionContract(
     [property: JsonRequired] string EncodedPayload,
     [property: JsonRequired] string EncodedAgentWrappedDek,
     [property: JsonRequired] string EncodedApproverWrappedDek,
-    [property: JsonRequired] string AgentSignature);
+    [property: JsonRequired] string AgentSignature,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AgentWrappedDekSuiteId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApproverWrappedDekSuiteId = null);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -59,7 +61,8 @@ public sealed record OrganizationApproverManifestContract(
     [property: JsonRequired] string IssuedAt,
     [property: JsonRequired] string Signature,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PreviousSigningKeyFingerprint = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContinuitySignature = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ContinuitySignature = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? MessageKeySuiteId = null);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -73,7 +76,8 @@ public sealed record ApproverKeyWrapDescriptorContract(
     [property: JsonRequired] uint WrappedKeyVersion,
     [property: JsonRequired] ushort RecipientKeyKind,
     [property: JsonRequired] uint RecipientKeyVersion,
-    [property: JsonRequired] string RecipientFingerprint);
+    [property: JsonRequired] string RecipientFingerprint,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? WrapperSuiteId = null);
 
 [PublicAPI]
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -87,7 +91,8 @@ public sealed record ApproverContract(
     uint MemberKeyVersion,
     string MemberKeyFingerprint,
     string MemberPublicKey,
-    bool HasWrap);
+    bool HasWrap,
+    string MemberKeySuiteId);
 
 [PublicAPI]
 public sealed record SubmissionErrorResponse(string Code);

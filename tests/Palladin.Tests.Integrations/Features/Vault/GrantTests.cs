@@ -593,6 +593,7 @@ public sealed class GrantTests(ApiFactory apiFactory) : TestBase
         lockedAgent.Apply(
             lockedAgent.Status,
             Convert.ToBase64String(Enumerable.Repeat((byte)0x42, 32).ToArray()),
+            "palladin-x25519-sealed-box-v1",
             checked(lockedAgent.RecipientKeyVersion + 1),
             lockedAgent.SigningPublicKey,
             lockedAgent.Name,

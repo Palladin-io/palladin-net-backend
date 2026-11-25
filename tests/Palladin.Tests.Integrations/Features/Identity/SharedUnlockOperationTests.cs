@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Json;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +80,23 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
             result.RootElement.GetProperty("session").GetProperty("sessionId").GetGuid().ShouldNotBe(Guid.Empty);
             response.Headers.Contains("Set-Cookie").ShouldBeTrue();
         }
+    }
+
+    [Fact]
+    public async Task When_SourceMemberKeyUsesCurrentSuite_Then_SharedUnlockIssuesReceiverSession()
+    {
+        // Given
+        var source = await SeedSourceAsync(KeyWrapperSuites.Current.Id);
+        using var receiver = Key.Create(SignatureAlgorithm.Ed25519);
+        var operation = await OfferAsync(source, receiver);
+        (await ConsumeAsync(operation, receiver)).Response.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // When
+        var (response, result) = await CommitAsync(operation, receiver);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        result.Session.RefreshToken.ShouldNotBeNullOrEmpty();
     }
 
     [Theory]
@@ -919,14 +937,19 @@ public sealed class SharedUnlockOperationTests(ApiFactory apiFactory) : TestBase
     private static byte[] NewWebGeneration => Enumerable.Range(80, 32).Select(i => (byte)i).ToArray();
     private sealed record Source(User User, string RawToken, SharedUnlockAuthorization Authorization, SharedUnlockLink Link);
 
-    private async Task<Source> SeedSourceAsync()
+    private const string LegacyMemberSuite = "palladin-x25519-sealed-box-v1";
+
+    private async Task<Source> SeedSourceAsync(string memberSuiteId = LegacyMemberSuite)
     {
         apiFactory.GuidProvider.Generate().Returns(_ => Guid.NewGuid());
         var (seeded, _) = await apiFactory.Services.SeedPasswordUserAsync(SourceGeneration, emailVerified: true);
         await using var scope = apiFactory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
         var user = await db.Users.SingleAsync(u => u.Id == seeded.Id, Ct);
-        db.Entry(user).Property(u => u.PublicKey).CurrentValue = SourceGeneration;
+        db.Entry(user).Property(u => u.PublicKey).CurrentValue = memberSuiteId == LegacyMemberSuite
+            ? SourceGeneration
+            : Enumerable.Range(0, KeyWrapperSuites.Current.PublicKeyBytes).Select(i => (byte)i).ToArray();
+        db.Entry(user).Property(u => u.MemberPublicKeySuiteId).CurrentValue = memberSuiteId;
         db.Entry(user).Property(u => u.MemberKeyVersion).CurrentValue = 1;
         user.TryAdvanceSharedUnlockSequence().ShouldBeTrue();
         var factor = TotpCredential.StartEnrollment(user.Id, "synthetic-factor", Now - Duration.FromMinutes(5));

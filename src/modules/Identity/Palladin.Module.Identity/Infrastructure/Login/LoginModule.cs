@@ -50,5 +50,7 @@ internal static class LoginModule
         && options.LoginAccountPermitLimit > 0
         && options.TotpIpPermitLimit > 0
         && options.TotpAccountPermitLimit > 0
+        && options.SecretKeyTransferStartIpPermitLimit > 0
+        && options.SecretKeyTransferPollIpPermitLimit > 0
         && options.ConcurrencyRetryLimit > 0;
 }

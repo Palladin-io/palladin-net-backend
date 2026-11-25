@@ -165,7 +165,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         var vault = await domainWriteContext.Vaults
             .Where(v => v.OrganizationId == agent.OrganizationId && v.Id == req.VaultId)
             .Select(v => new { v.OrganizationId, AgentMessageKeyVersion = v.CurrentAgentMessageKeyVersion.Value,
-                v.AgentMessageKeyFingerprint })
+                v.AgentMessageKeyFingerprint, v.AgentMessageKeySuiteId })
             .FirstOrDefaultAsync(ct);
         if (entry is null || vault is null || vault.OrganizationId != agent.OrganizationId)
         {
@@ -248,7 +248,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         // stays for history/audit.
         await RequestNewGrantAsync(req, agentId.Value, accessEpoch.Value, agent.OrganizationId,
             agent.PublicKey, agent.Name ?? GrantNames.UnknownAgent, agent.SigningPublicKey, vault.AgentMessageKeyVersion,
-            vault.AgentMessageKeyFingerprint!, now, ct);
+            vault.AgentMessageKeyFingerprint!, vault.AgentMessageKeySuiteId, now, ct);
     }
 
     private async Task DeliverActiveAsync(
@@ -380,6 +380,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         string agentSigningPublicKey,
         uint agentMessageKeyVersion,
         byte[] agentMessageKeyFingerprint,
+        string agentMessageKeySuiteId,
         Instant now,
         CancellationToken ct)
     {
@@ -406,7 +407,7 @@ internal sealed class GetOrRequestCredentialEndpoint(
         try
         {
             encryptedReason = EncryptedReasonValidator.ToDomain(
-                req.EncryptedReason, agentSigningPublicKey, agentMessageKeyFingerprint);
+                req.EncryptedReason, agentSigningPublicKey, agentMessageKeyFingerprint, agentMessageKeySuiteId);
         }
         catch (Exception ex) when (ex is FormatException or Palladin.Core.Types.Exceptions.DomainException or CryptographicException)
         {

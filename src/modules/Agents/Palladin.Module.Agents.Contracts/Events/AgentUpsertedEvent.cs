@@ -5,6 +5,8 @@ using NodaTime;
 
 namespace Palladin.Module.Agents.Contracts.Events;
 
+// PublicKey is the Agent's stable identifier (X-Agent-Key). EncryptionPublicKey/EncryptionKeySuiteId and
+// RecipientKeyVersion are the authenticated recipient key publication for every Agent-addressed wrapper.
 [PublicAPI]
 public sealed record AgentUpsertedEvent(
     Guid AgentId,
@@ -12,6 +14,8 @@ public sealed record AgentUpsertedEvent(
     AgentStatus Status,
     string PublicKey,
     uint RecipientKeyVersion,
+    string EncryptionPublicKey,
+    string EncryptionKeySuiteId,
     string SigningPublicKey,
     string? Name,
     string? Type,

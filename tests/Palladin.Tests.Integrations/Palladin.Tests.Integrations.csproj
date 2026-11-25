@@ -26,6 +26,7 @@
         <Content Include="..\Fixtures\SharedUnlock\operation-request-v1.json" Link="Fixtures\SharedUnlock\operation-request-v1.json" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\Fixtures\AgentSubmission\fixture-v1.json" Link="Fixtures\AgentSubmission\fixture-v1.json" CopyToOutputDirectory="PreserveNewest" />
         <Content Include="..\Fixtures\AgentSubmission\contract-v1.json" Link="Fixtures\AgentSubmission\contract-v1.json" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="..\Fixtures\KeyWrapper\v1\recipient-key-publication.json" Link="Fixtures\KeyWrapper\v1\recipient-key-publication.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>

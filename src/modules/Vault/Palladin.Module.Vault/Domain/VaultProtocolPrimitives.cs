@@ -21,8 +21,6 @@ internal static class VaultProtocol
     internal const int FingerprintBytes = 32;
     internal const int MaximumMetadataCiphertextBytes = 16_384;
     internal const int MaximumSealedVaultKeyBytes = 256;
-    internal const int MaximumSealedVdkBytes = 512;
-    internal const int MaximumSealedVdkBase64UrlLength = 683;
     internal const int MaximumMemberIndexCiphertextBytes = 32_768;
     internal const int MaximumMemberSecretCiphertextBytes = 262_144;
     internal const int MaximumAgentDiscoveryCiphertextBytes = 16_384;

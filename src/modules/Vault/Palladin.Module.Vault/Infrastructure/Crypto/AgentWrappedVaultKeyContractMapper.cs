@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Globalization;
 using Microsoft.AspNetCore.WebUtilities;
 using Palladin.Core.Types.Exceptions;
@@ -18,14 +19,15 @@ internal static class AgentWrappedVaultKeyContractMapper
         uint vaultKeyVersion,
         uint recipientAgentKeyVersion,
         byte[] recipientAgentKeyFingerprint,
+        string recipientAgentKeySuiteId,
         uint expectedSigningKeyVersion,
         byte[] expectedSigningKeyFingerprint,
         byte[] expectedSigningPublicKey)
     {
         var descriptor = contract.WrappedVaultKey.Descriptor;
         if (descriptor.ProtocolVersion != VaultProtocol.CurrentVersion
-            || !string.Equals(descriptor.WrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
-            || descriptor.Purpose != X25519WrapperPurposeContract.AgentVaultKey
+            || !string.Equals(descriptor.WrapperSuiteId, recipientAgentKeySuiteId, StringComparison.Ordinal)
+            || descriptor.Purpose != KeyWrapperPurposeContract.AgentVaultKey
             || descriptor.Scope.OrganizationId != organizationId
             || descriptor.Scope.VaultId != vaultId
             || descriptor.Scope.EntryId is not null
@@ -35,13 +37,15 @@ internal static class AgentWrappedVaultKeyContractMapper
             || descriptor.ResourceRevision != agentAccessEpoch.ToString(CultureInfo.InvariantCulture)
             || descriptor.WrappedKeyVersion != vaultKeyVersion
             || descriptor.MemberKeyGeneration is not null
-            || descriptor.RecipientKeyKind != X25519RecipientKeyKindContract.AgentX25519
+            || descriptor.RecipientKeyKind != RecipientKeyKindContract.AgentEncryption
             || descriptor.RecipientKeyVersion != recipientAgentKeyVersion
             || descriptor.ParentDescriptorHash is not null)
         {
             throw new DomainException("Agent Vault-key wrapper descriptor is invalid or stale.");
         }
 
+        var package = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.EncodedSealedVaultKeyPackage);
+        KeyWrapperSuites.ResolveForSeal(descriptor.WrapperSuiteId).ValidatePackage(package);
         var fingerprint = WebEncoders.Base64UrlDecode(descriptor.RecipientFingerprint);
         if (!fingerprint.AsSpan().SequenceEqual(recipientAgentKeyFingerprint))
         {
@@ -65,18 +69,18 @@ internal static class AgentWrappedVaultKeyContractMapper
             descriptor.WrappedKeyVersion,
             descriptor.RecipientKeyVersion,
             fingerprint,
-            WebEncoders.Base64UrlDecode(contract.EncodedSealedVaultKeyPackage),
+            package,
             contract.VaultSigningKeyVersion,
             VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.VaultSigningKeyFingerprint),
             VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(contract.ProducerSignature));
     }
 
     internal static AgentWrappedVaultKeyContract ToContract(AgentWrappedVaultKey value) => new(
-        new X25519WrappedKeyContract(
-            new X25519WrapperDescriptorContract(
+        new WrappedKeyContract(
+            new KeyWrapperDescriptorContract(
                 value.ProtocolVersion,
                 value.WrapperSuiteId,
-                X25519WrapperPurposeContract.AgentVaultKey,
+                KeyWrapperPurposeContract.AgentVaultKey,
                 new EnvelopeScopeContract(
                     value.OrganizationId,
                     value.VaultId,
@@ -85,7 +89,7 @@ internal static class AgentWrappedVaultKeyContractMapper
                 value.AgentAccessEpoch.ToString(CultureInfo.InvariantCulture),
                 value.VaultKeyVersion.Value,
                 null,
-                X25519RecipientKeyKindContract.AgentX25519,
+                RecipientKeyKindContract.AgentEncryption,
                 value.RecipientAgentKeyVersion.Value,
                 WebEncoders.Base64UrlEncode(value.RecipientAgentKeyFingerprint),
                 null),

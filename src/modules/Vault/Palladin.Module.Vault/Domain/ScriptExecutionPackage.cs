@@ -20,6 +20,7 @@ internal sealed class ScriptExecutionPackage
     internal byte[] ManifestDigest { get; private set; } = [];
     internal byte[] EncodedPackageCiphertext { get; private set; } = [];
     internal byte[] ProducerSignature { get; private set; } = [];
+    internal string WrapperSuiteId { get; private set; } = string.Empty;
 
     private ScriptExecutionPackage() { }
 
@@ -39,7 +40,8 @@ internal sealed class ScriptExecutionPackage
         byte[] vaultSigningKeyFingerprint,
         byte[] manifestDigest,
         byte[] encodedPackageCiphertext,
-        byte[] producerSignature)
+        byte[] producerSignature,
+        string wrapperSuiteId)
     {
         if (organizationId == Guid.Empty || vaultId == Guid.Empty || grantId == Guid.Empty
             || agentId == Guid.Empty || agentAccessEpoch == 0 || scriptEntryId == Guid.Empty
@@ -73,6 +75,7 @@ internal sealed class ScriptExecutionPackage
             ManifestDigest = manifestDigest.ToArray(),
             EncodedPackageCiphertext = encodedPackageCiphertext.ToArray(),
             ProducerSignature = producerSignature.ToArray(),
+            WrapperSuiteId = wrapperSuiteId,
         };
     }
 
@@ -97,5 +100,6 @@ internal sealed class ScriptExecutionPackage
         ManifestDigest = replacement.ManifestDigest.ToArray();
         EncodedPackageCiphertext = replacement.EncodedPackageCiphertext.ToArray();
         ProducerSignature = replacement.ProducerSignature.ToArray();
+        WrapperSuiteId = replacement.WrapperSuiteId;
     }
 }

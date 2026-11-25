@@ -78,45 +78,64 @@ internal sealed class StartVaultKeyRotationEndpoint(
             return;
         }
 
+        var active = await StartOrGetActiveAsync(
+            domainWriteContext,
+            guidProvider.Generate(),
+            vault,
+            VaultKeyRotationCause.ManualSecurityRotation,
+            VaultKeyRotationScope.VaultKey
+            | VaultKeyRotationScope.Vdk
+            | VaultKeyRotationScope.AgentMessage
+            | VaultKeyRotationScope.ManifestSigning,
+            userId,
+            clock.GetCurrentInstant(),
+            ct);
+        await Send.OkAsync(VaultKeyRotationResponses.Map(active), ct);
+    }
+
+    // At most one uncommitted rotation exists per Vault; a concurrent or earlier one is returned unchanged.
+    internal static async Task<VaultKeyRotation> StartOrGetActiveAsync(
+        VaultDomainWriteContext domainWriteContext,
+        Guid rotationId,
+        Domain.Vault vault,
+        VaultKeyRotationCause cause,
+        VaultKeyRotationScope scope,
+        Guid userId,
+        Instant now,
+        CancellationToken ct)
+    {
         var active = await domainWriteContext.VaultKeyRotations
             .SingleOrDefaultAsync(
-                x => x.OrganizationId == organizationId
-                     && x.VaultId == req.VaultId
+                x => x.OrganizationId == vault.OrganizationId
+                     && x.VaultId == vault.Id
                      && x.Status != VaultKeyRotationStatus.Committed,
                 ct);
-        if (active is null)
+        if (active is not null)
         {
-            active = VaultKeyRotation.Create(
-                guidProvider.Generate(),
-                vault,
-                VaultKeyRotationCause.ManualSecurityRotation,
-                VaultKeyRotationScope.VaultKey
-                | VaultKeyRotationScope.Vdk
-                | VaultKeyRotationScope.AgentMessage
-                | VaultKeyRotationScope.ManifestSigning,
-                userId,
-                clock.GetCurrentInstant());
-            domainWriteContext.Add(active);
-            try
-            {
-                await domainWriteContext.CommitAsync(ct);
-            }
-            catch (DbUpdateException ex) when (ex.InnerException is PostgresException
-                   {
-                       SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
-                       ConstraintName: "IX_VaultKeyRotations_OrganizationId_VaultId",
-                   })
-            {
-                // The filtered unique index is the authoritative active-rotation invariant.
-                domainWriteContext.Clear();
-                active = await domainWriteContext.VaultKeyRotations.SingleAsync(
-                    x => x.OrganizationId == organizationId
-                         && x.VaultId == req.VaultId
-                         && x.Status != VaultKeyRotationStatus.Committed,
-                    ct);
-            }
+            return active;
         }
-        await Send.OkAsync(VaultKeyRotationResponses.Map(active), ct);
+
+        active = VaultKeyRotation.Create(rotationId, vault, cause, scope, userId, now);
+        domainWriteContext.Add(active);
+        try
+        {
+            await domainWriteContext.CommitAsync(ct);
+            return active;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+               {
+                   SqlState: Palladin.Core.Persistence.PostgresErrorCodes.UniqueViolation,
+                   ConstraintName: "IX_VaultKeyRotations_OrganizationId_VaultId",
+               })
+        {
+            // The filtered unique index is the authoritative active-rotation invariant.
+            domainWriteContext.Clear();
+            return await domainWriteContext.VaultKeyRotations.SingleAsync(
+                x => x.OrganizationId == vault.OrganizationId
+                     && x.VaultId == vault.Id
+                     && x.Status != VaultKeyRotationStatus.Committed,
+                ct);
+        }
     }
 }
 

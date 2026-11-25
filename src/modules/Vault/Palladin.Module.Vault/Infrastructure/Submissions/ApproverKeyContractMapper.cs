@@ -18,6 +18,7 @@ internal static class ApproverKeyContractMapper
         JsonSerializer.Deserialize<AgentEntrySubmissionContract>(document, JsonSerializerOptions.Web)
         ?? throw new InvalidOperationException("Stored Agent submission is empty.");
 
+    // A legacy wrap is served in its original v1 shape, where an absent suite means the frozen suite.
     internal static ApproverKeyWrapContract ToContract(ApproverKeyWrap wrap) => new(
         new ApproverKeyWrapDescriptorContract(
             wrap.Purpose,
@@ -28,7 +29,8 @@ internal static class ApproverKeyContractMapper
             wrap.KeyVersion,
             MemberRecipientKeyKind,
             wrap.RecipientKeyVersion.Value,
-            AgentSubmissionCrypto.Encode(wrap.RecipientFingerprint)),
+            AgentSubmissionCrypto.Encode(wrap.RecipientFingerprint),
+            wrap.WrapperSuiteId == LegacyWrapperSuite.Id ? null : wrap.WrapperSuiteId),
         AgentSubmissionCrypto.Encode(wrap.SealedPackage));
 
     internal static ApproverContract ToContract(CurrentApprover approver, bool hasWrap) => new(
@@ -36,7 +38,8 @@ internal static class ApproverKeyContractMapper
         approver.KeyVersion,
         AgentSubmissionCrypto.Encode(approver.Fingerprint),
         AgentSubmissionCrypto.Encode(approver.PublicKey),
-        hasWrap);
+        hasWrap,
+        approver.KeySuiteId);
 
     // Every recipient must receive exactly one message-key wrap and one signing-seed wrap, each bound to the
     // authenticated organization, the recipient's current Member key and the committed key/set revision.
@@ -47,6 +50,12 @@ internal static class ApproverKeyContractMapper
         ulong approverSetRevision,
         IReadOnlyCollection<CurrentApprover> recipients)
     {
+        // recipient-key-publication: sealing to a recipient whose published suite is not active is never accepted.
+        if (recipients.Any(x => !Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(x.KeySuiteId).CanSeal))
+        {
+            throw new AgentSubmissionConflictException("key-migration-pending");
+        }
+
         if (wraps is null || recipients.Count == 0 || wraps.Count != recipients.Count * 2)
         {
             throw new AgentSubmissionInputException("invalid-wraps");
@@ -66,6 +75,7 @@ internal static class ApproverKeyContractMapper
                 || descriptor.RecipientKeyKind != MemberRecipientKeyKind
                 || !byMember.TryGetValue(memberId, out var recipient)
                 || descriptor.RecipientKeyVersion != recipient.KeyVersion
+                || (descriptor.WrapperSuiteId is not null && descriptor.WrapperSuiteId != recipient.KeySuiteId)
                 || !AgentSubmissionCrypto.DecodeBinary(descriptor.RecipientFingerprint, 32, "invalid-wraps")
                     .AsSpan().SequenceEqual(recipient.Fingerprint))
             {
@@ -80,8 +90,11 @@ internal static class ApproverKeyContractMapper
                 approverSetRevision,
                 new MemberRecipientKeyVersion(recipient.KeyVersion),
                 recipient.Fingerprint,
+                recipient.KeySuiteId,
                 AgentSubmissionCrypto.DecodeBinary(
-                    wrap.EncodedSealedKeyPackage, ApproverKeyWrap.SealedPackageBytes, "invalid-wraps")));
+                    wrap.EncodedSealedKeyPackage,
+                    Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(recipient.KeySuiteId).PackageBytes,
+                    "invalid-wraps")));
         }
 
         if (result.Select(x => (x.MemberId, x.Purpose)).Distinct().Count() != result.Count)

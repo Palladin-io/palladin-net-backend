@@ -83,8 +83,8 @@ internal static class GranularGrantCreation
         GrantEntryScope scope;
         try
         {
-            scope = ToScope(req, organizationId, agent.PublicKey, vault.MemberKeyGeneration.Value,
-                agent.RecipientKeyVersion, entry.CurrentRevision.Value);
+            scope = ToScope(req, organizationId, agent, vault.MemberKeyGeneration.Value,
+                entry.CurrentRevision.Value);
         }
         catch (StaleGrantEnvelopeException)
         {
@@ -133,9 +133,8 @@ internal static class GranularGrantCreation
     private static GrantEntryScope ToScope(
         CreateGranularGrantRequest req,
         Guid organizationId,
-        string agentPublicKey,
+        Agent agent,
         uint memberKeyGeneration,
-        uint recipientAgentKeyVersion,
         ulong currentEntryRevision)
     {
         var contract = req.GrantEntry;
@@ -144,7 +143,7 @@ internal static class GranularGrantCreation
             || contract.ExpiresAt != req.ExpiresAt || contract.RemainingUses != req.QueryLimit
             || contract.GrantEnvelopeRevision != "1" || contract.GrantKeyVersion != 1
             || contract.MemberKeyGeneration != memberKeyGeneration
-            || contract.RecipientAgentKeyVersion != recipientAgentKeyVersion)
+            || contract.RecipientAgentKeyVersion != agent.RecipientKeyVersion)
         {
             throw new DomainException("Grant envelope scope or lifecycle is invalid.");
         }
@@ -153,13 +152,7 @@ internal static class GranularGrantCreation
             throw new StaleGrantEnvelopeException();
         }
 
-        var scope = GrantEnvelopeContractMapper.ToDomain(contract, req.Methods, req.AgentId);
-        var fingerprint = VaultKeyFingerprint.Compute(
-            Convert.FromBase64String(agentPublicKey), VaultKeyKind.AgentX25519);
-        if (!scope.Envelope!.AgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))
-        {
-            throw new DomainException("Grant envelope Agent key fingerprint is invalid.");
-        }
+        var scope = GrantEnvelopeContractMapper.ToDomain(contract, req.Methods, agent);
         scope.SetFieldSelectionMode(req.FieldSelectionMode);
         return scope;
     }

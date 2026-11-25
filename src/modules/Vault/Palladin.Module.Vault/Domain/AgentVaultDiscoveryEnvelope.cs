@@ -21,7 +21,14 @@ internal sealed record ValidatedVaultManifest(
     ManifestRevision ManifestRevision,
     Instant IssuedAt,
     ushort MinimumAgentRuntimeProtocol,
-    byte[] Signature);
+    byte[] Signature,
+    string WrapperSuiteId,
+    string? VaultAgentMessageKeySuiteId)
+{
+    // A manifest without the signed field predates key-wrapper v1 and names an X25519 message key.
+    internal string EffectiveVaultAgentMessageKeySuiteId =>
+        VaultAgentMessageKeySuiteId ?? Infrastructure.Crypto.LegacyWrapperSuite.Id;
+}
 
 internal sealed record ValidatedAgentDiscoveryProvisioning(
     VaultScope Scope,
@@ -56,6 +63,7 @@ internal sealed class AgentVaultDiscoveryEnvelope
     internal byte[] VaultSigningKeyFingerprint { get; private set; } = [];
     internal ManifestSigningKeyVersion ManifestSigningKeyVersion { get; private set; }
     internal byte[] VaultAgentMessagePublicKey { get; private set; } = [];
+    internal string? VaultAgentMessageKeySuiteId { get; private set; }
     internal byte[] VaultAgentMessageKeyFingerprint { get; private set; } = [];
     internal AgentMessageKeyVersion AgentMessageKeyVersion { get; private set; }
     internal byte[] AgentWrappedVdkDigest { get; private set; } = [];
@@ -143,7 +151,7 @@ internal sealed class AgentVaultDiscoveryEnvelope
 
         ProtocolVersion = provisioning.ProtocolVersion;
         CryptoSuiteId = Domain.CryptoSuiteId.XChaCha20Poly1305V1;
-        WrapperSuiteId = Infrastructure.Crypto.X25519SealedBoxContract.SuiteId;
+        WrapperSuiteId = provisioning.Manifest.WrapperSuiteId;
         VdkVersion = provisioning.VdkVersion;
         RecipientAgentKeyVersion = provisioning.RecipientAgentKeyVersion;
         RecipientAgentKeyFingerprint = provisioning.RecipientAgentKeyFingerprint.ToArray();
@@ -156,6 +164,7 @@ internal sealed class AgentVaultDiscoveryEnvelope
         VaultSigningKeyFingerprint = provisioning.Manifest.VaultSigningKeyFingerprint.ToArray();
         ManifestSigningKeyVersion = provisioning.Manifest.ManifestSigningKeyVersion;
         VaultAgentMessagePublicKey = provisioning.Manifest.VaultAgentMessagePublicKey.ToArray();
+        VaultAgentMessageKeySuiteId = provisioning.Manifest.VaultAgentMessageKeySuiteId;
         VaultAgentMessageKeyFingerprint = provisioning.Manifest.VaultAgentMessageKeyFingerprint.ToArray();
         AgentMessageKeyVersion = provisioning.Manifest.AgentMessageKeyVersion;
         AgentWrappedVdkDigest = provisioning.Manifest.AgentWrappedVdkDigest.ToArray();
@@ -170,7 +179,8 @@ internal sealed class AgentVaultDiscoveryEnvelope
     private bool HasSameContent(ValidatedAgentDiscoveryProvisioning candidate) =>
         ProtocolVersion == candidate.ProtocolVersion
         && CryptoSuiteId == Domain.CryptoSuiteId.XChaCha20Poly1305V1
-        && WrapperSuiteId == Infrastructure.Crypto.X25519SealedBoxContract.SuiteId
+        && WrapperSuiteId == candidate.Manifest.WrapperSuiteId
+        && VaultAgentMessageKeySuiteId == candidate.Manifest.VaultAgentMessageKeySuiteId
         && VdkVersion == candidate.VdkVersion
         && RecipientAgentKeyVersion == candidate.RecipientAgentKeyVersion
         && RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(candidate.RecipientAgentKeyFingerprint)
@@ -195,7 +205,8 @@ internal sealed class AgentVaultDiscoveryEnvelope
             || provisioning.ProtocolVersion != VaultProtocol.CurrentVersion
             || provisioning.AlgorithmSuite != VaultProtocol.AlgorithmSuite
             || provisioning.RecipientAgentKeyFingerprint.Length != VaultProtocol.FingerprintBytes
-            || provisioning.AgentWrappedVdk.Length != Infrastructure.Crypto.X25519SealedBoxContract.EncodedPackageBytes
+            || provisioning.AgentWrappedVdk.Length
+                != Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(provisioning.Manifest.WrapperSuiteId).PackageBytes
             || provisioning.ManifestSignature.Length != 64
             || provisioning.Manifest.Scope != provisioning.Scope
             || provisioning.Manifest.AgentId != provisioning.AgentId

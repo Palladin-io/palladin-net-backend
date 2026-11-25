@@ -46,7 +46,8 @@ public sealed class UnverifiedAccountDiscardedConsumersTests(ApiFactory apiFacto
         // When
         await ConsumeAsync<VaultTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
         await ConsumeAsync<UpsertMemberKeyDirectoryConsumer, UpsertMemberKeyDirectoryCommand>(
-            new UpsertMemberKeyDirectoryCommand(userId, 1, Enumerable.Repeat((byte)9, 32).ToArray(), Now()));
+            new UpsertMemberKeyDirectoryCommand(userId, 1, Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
+                Enumerable.Repeat((byte)9, Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes).ToArray(), Now()));
         await ConsumeAsync<AgentsTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
         await ConsumeAsync<NotificationTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
 
@@ -77,7 +78,8 @@ public sealed class UnverifiedAccountDiscardedConsumersTests(ApiFactory apiFacto
         await apiFactory.Services.SeedVaultAsync(organization.Id, owner.Id);
         await ConsumeAsync<VaultTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(owner.Id, organization.Id));
         await ConsumeAsync<UpsertMemberKeyDirectoryConsumer, UpsertMemberKeyDirectoryCommand>(
-            new UpsertMemberKeyDirectoryCommand(owner.Id, 1, Enumerable.Repeat((byte)7, 32).ToArray(), Now()));
+            new UpsertMemberKeyDirectoryCommand(owner.Id, 1, Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
+                Enumerable.Repeat((byte)7, Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes).ToArray(), Now()));
 
         // When
         await ConsumeAsync<VaultTriggers.OnUnverifiedAccountDiscarded, UnverifiedAccountDiscardedEvent>(
@@ -106,7 +108,8 @@ public sealed class UnverifiedAccountDiscardedConsumersTests(ApiFactory apiFacto
     {
         await ConsumeAsync<VaultTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
         await ConsumeAsync<UpsertMemberKeyDirectoryConsumer, UpsertMemberKeyDirectoryCommand>(
-            new UpsertMemberKeyDirectoryCommand(userId, 1, Enumerable.Repeat((byte)9, 32).ToArray(), Now()));
+            new UpsertMemberKeyDirectoryCommand(userId, 1, Palladin.Core.Cryptography.KeyWrapperSuites.Current.Id,
+                Enumerable.Repeat((byte)9, Palladin.Core.Cryptography.KeyWrapperSuites.Current.PublicKeyBytes).ToArray(), Now()));
         await ConsumeAsync<AgentsTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
         await ConsumeAsync<NotificationTriggers.OnUserUpserted, UserUpsertedEvent>(Upserted(userId, organizationId));
     }

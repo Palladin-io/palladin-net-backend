@@ -43,6 +43,18 @@ internal sealed class LoginRateLimiter(
         CancellationToken ct) =>
         AcquireAsync(LoginRateLimitPartition.TotpAccount, normalizedEmail, now, ct);
 
+    public Task<LoginRateLimitLease> AcquireSecretKeyTransferStartAsync(
+        string ipAddress,
+        Instant now,
+        CancellationToken ct) =>
+        AcquireAsync(LoginRateLimitPartition.SecretKeyTransferStartIp, ipAddress, now, ct);
+
+    public Task<LoginRateLimitLease> AcquireSecretKeyTransferPollAsync(
+        string ipAddress,
+        Instant now,
+        CancellationToken ct) =>
+        AcquireAsync(LoginRateLimitPartition.SecretKeyTransferPollIp, ipAddress, now, ct);
+
     private async Task<LoginRateLimitLease> AcquireAsync(
         LoginRateLimitPartition partition,
         string value,
@@ -111,6 +123,8 @@ internal sealed class LoginRateLimiter(
             LoginRateLimitPartition.LoginAccount => throttleOptions.LoginAccountPermitLimit,
             LoginRateLimitPartition.TotpIp => throttleOptions.TotpIpPermitLimit,
             LoginRateLimitPartition.TotpAccount => throttleOptions.TotpAccountPermitLimit,
+            LoginRateLimitPartition.SecretKeyTransferStartIp => throttleOptions.SecretKeyTransferStartIpPermitLimit,
+            LoginRateLimitPartition.SecretKeyTransferPollIp => throttleOptions.SecretKeyTransferPollIpPermitLimit,
             _ => throw new ArgumentOutOfRangeException(nameof(partition), partition, null),
         };
 }
@@ -121,6 +135,8 @@ internal enum LoginRateLimitPartition
     LoginAccount = 2,
     TotpIp = 3,
     TotpAccount = 4,
+    SecretKeyTransferStartIp = 5,
+    SecretKeyTransferPollIp = 6,
 }
 
 internal readonly record struct LoginRateLimitLease(bool IsAcquired, int RetryAfterSeconds)

@@ -47,15 +47,15 @@ internal static class GrantDeliveryContractMapper
                 value.EnvelopeExpiresAt is null ? null : checked((uint)(value.EnvelopeExpiresAt.Value
                     - NodaTime.Instant.FromUnixTimeSeconds(value.EnvelopeExpiresAt.Value.ToUnixTimeSeconds())).TotalNanoseconds),
                 value.EnvelopeRemainingUses is null ? null : checked((uint)value.EnvelopeRemainingUses)));
-        var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
+        var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(domainDescriptor);
         return new GrantEntryEnvelopeContract(
             descriptor,
             WebEncoders.Base64UrlEncode(value.EncodedSuitePayload),
-            new X25519WrappedKeyContract(
-                new X25519WrapperDescriptorContract(value.ProtocolVersion, value.WrapperSuiteId,
-                    X25519WrapperPurposeContract.GrantDek,
+            new WrappedKeyContract(
+                new KeyWrapperDescriptorContract(value.ProtocolVersion, value.WrapperSuiteId,
+                    KeyWrapperPurposeContract.GrantDek,
                     descriptor.Scope, descriptor.ResourceRevision, value.GrantKeyVersion,
-                    value.MemberKeyGeneration, X25519RecipientKeyKindContract.AgentX25519,
+                    value.MemberKeyGeneration, RecipientKeyKindContract.AgentEncryption,
                     value.RecipientAgentKeyVersion, WebEncoders.Base64UrlEncode(value.AgentKeyFingerprint),
                     WebEncoders.Base64UrlEncode(parentHash)),
                 WebEncoders.Base64UrlEncode(value.AgentWrappedGrantDek)),

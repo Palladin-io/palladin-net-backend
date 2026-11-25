@@ -66,8 +66,7 @@ internal sealed class AuthorizeSharedUnlockOperation(IdentityDomainWriteContext 
             return SendConflictAsync(ct);
         }
 
-        if (!user.IsOnboarded || user.SecurityVersion != IdentityKdfProfiles.CurrentSecurityVersion
-            || user.KdfProfileId != IdentityKdfProfiles.CurrentProfileId || user.PasswordCredential is null)
+        if (!user.IsOnboarded || !IdentityKdfProfiles.IsRegistered(user.SecurityVersion, user.KdfProfileId) || user.PasswordCredential is null)
         {
             return IdentityOperationResult<AuthorizeSharedUnlockResponse>.Status(401);
         }

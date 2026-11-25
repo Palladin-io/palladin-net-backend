@@ -24,8 +24,8 @@ internal static class UserFaker
         string? email = null) =>
         (PrivateCtorFaker<User>)(Create(id, organizationId, email)
             .RuleFor(x => x.IsOnboarded, true)
-            .RuleFor(x => x.SecurityVersion, IdentityKdfProfiles.CurrentSecurityVersion)
-            .RuleFor(x => x.MinimumSecurityVersion, IdentityKdfProfiles.CurrentSecurityVersion)
-            .RuleFor(x => x.KdfProfileId, IdentityKdfProfiles.CurrentProfileId)
+            .RuleFor(x => x.SecurityVersion, IdentityKdfProfiles.PasswordV1.SecurityVersion)
+            .RuleFor(x => x.MinimumSecurityVersion, IdentityKdfProfiles.PasswordV1.SecurityVersion)
+            .RuleFor(x => x.KdfProfileId, IdentityKdfProfiles.PasswordV1.Id)
             .RuleFor(x => x.PrivateKeyWrapRevision, 1u));
 }

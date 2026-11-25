@@ -47,48 +47,22 @@ internal sealed class XChaCha20Poly1305VaultEnvelopeSuite : IVaultEnvelopeSuite
     }
 }
 
-internal static class WrappedKeyPackageContract
-{
-    internal static void ValidatePackage(string wrapperSuiteId, ReadOnlySpan<byte> package)
-    {
-        if (string.Equals(wrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal))
-        {
-            X25519SealedBoxContract.ValidatePackage(package);
-            return;
-        }
-
-        throw new DomainException("The wrapped-key suite is not supported by Vault protocol 2.");
-    }
-}
-
-internal static class X25519SealedBoxContract
-{
-    internal const string SuiteId = "palladin-x25519-sealed-box-v1";
-    internal const int EncodedPackageBytes = 120;
-
-    internal static void ValidatePackage(ReadOnlySpan<byte> package)
-    {
-        if (package.Length != EncodedPackageBytes)
-        {
-            throw new DomainException("The X25519 sealed-box package must contain exactly 120 bytes.");
-        }
-    }
-}
-
-internal enum X25519WrapperPurpose : ushort
+internal enum KeyWrapperPurpose : ushort
 {
     MemberVaultKey = 1,
-    AgentDiscoveryVdk = 2,
+    AgentVaultDiscoveryKey = 2,
     ReasonDek = 3,
     GrantDek = 4,
     AgentVaultKey = 5,
+    ScriptExecutionDek = 6,
     SubmissionDek = 7,
     ApproverMessagePrivateKey = 8,
     ApproverSigningPrivateKey = 9,
 }
 
-internal sealed record X25519WrapperContext(
-    X25519WrapperPurpose Purpose,
+internal sealed record KeyWrapperContext(
+    string SuiteId,
+    KeyWrapperPurpose Purpose,
     EnvelopeScope Scope,
     ulong ResourceRevision,
     uint WrappedKeyVersion,

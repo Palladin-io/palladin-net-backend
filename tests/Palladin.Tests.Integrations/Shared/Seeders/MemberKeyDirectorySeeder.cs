@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using Palladin.Core.Cryptography;
 using Palladin.Module.Identity.Infrastructure.Persistence;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -14,14 +15,17 @@ internal static class MemberKeyDirectorySeeder
         this IServiceProvider serviceProvider,
         Guid userId,
         byte[] rawPublicKey,
-        uint keyVersion = 1)
+        uint keyVersion = 1,
+        string? suiteId = null)
     {
+        suiteId ??= KeyWrapperSuites.Current.Id;
         await using var scope = serviceProvider.CreateAsyncScope();
         var identityContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
         await identityContext.Users
             .Where(x => x.Id == userId)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.PublicKey, rawPublicKey)
+                .SetProperty(x => x.MemberPublicKeySuiteId, suiteId)
                 .SetProperty(x => x.MemberKeyVersion, (uint?)keyVersion));
 
         var context = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
@@ -29,7 +33,8 @@ internal static class MemberKeyDirectorySeeder
         context.MemberKeyDirectory.Add(MemberKeyDirectoryEntry.Create(
             userId,
             new MemberRecipientKeyVersion(keyVersion),
-            MemberKeyFingerprint.Compute(rawPublicKey),
+            suiteId,
+            RecipientKeyFingerprint.Compute(suiteId, VaultKeyKind.MemberEncryption, rawPublicKey),
             rawPublicKey,
             SystemClock.Instance.GetCurrentInstant()));
         await context.SaveChangesAsync();

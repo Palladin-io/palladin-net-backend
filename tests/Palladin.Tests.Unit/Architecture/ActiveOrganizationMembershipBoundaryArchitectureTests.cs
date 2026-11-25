@@ -11,6 +11,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "BrowserGetSharedUnlockSessionStateEndpoint",
         "ChangePasswordEndpoint",
         "ConfirmTotpEndpoint",
+        "DeleteLegacyMemberKeyEndpoint",
         "DisableTotpEndpoint",
         "DiscardBrowserSessionEndpoint",
         "DisconnectSharedUnlockLinkEndpoint",
@@ -34,6 +35,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "SwitchOrganizationEndpoint",
         "UpdateNotificationPreferencesEndpoint",
         "UpdateUserConsentEndpoint",
+        "UpgradeAccountSecurityEndpoint",
     ];
 
     [Fact]

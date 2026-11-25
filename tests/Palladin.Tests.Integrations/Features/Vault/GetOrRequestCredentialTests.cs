@@ -376,7 +376,7 @@ public sealed class GetOrRequestCredentialTests(ApiFactory apiFactory) : TestBas
                     signingPublicKey: signing.PublicKeyBase64)
                 .RuleFor(x => x.Status, AgentStatus.Active));
         await apiFactory.Services.SeedVaultAgentAsync(
-            organization.Id, status: AgentStatus.Active, id: agent.Id, publicKey: publicKey,
+            organization.Id, status: AgentStatus.Active, id: agent.Id, publicKey: provisioning.EncryptionPublicKey,
             signingPublicKey: signing.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(provisioning.Request, user.Id);
         return new Setup(

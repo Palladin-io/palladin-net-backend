@@ -72,9 +72,9 @@ internal sealed class CreateDefaultVaultEndpoint(
                 .Concat(req.VaultPrivateKeys.Select(VaultEnvelopeContractMapper.ToDomain))
                 .ToArray();
             var agentMessagePublicKey = VaultEnvelopeContractMapper.ToDomain(req.VaultAgentMessagePublicKey,
-                VaultPublicKeyKindContract.AgentMessageX25519, req.CurrentKeyEpoch.AgentMessageKeyVersion);
+                VaultPublicKeyKindContract.AgentMessage, req.CurrentKeyEpoch.AgentMessageKeyVersion);
             var manifestSigningPublicKey = VaultEnvelopeContractMapper.ToDomain(req.VaultManifestSigningPublicKey,
-                VaultPublicKeyKindContract.ManifestSigningEd25519, req.CurrentKeyEpoch.ManifestSigningKeyVersion);
+                VaultPublicKeyKindContract.ManifestSigning, req.CurrentKeyEpoch.ManifestSigningKeyVersion);
             var memberKeyDirectory = await domainWriteContext.MemberKeyDirectory
                 .SingleOrDefaultAsync(x => x.UserId == userId, ct);
             CreateVaultEndpoint.ValidateCreatorKeyDirectory(memberKeyDirectory, creatorVaultKey);

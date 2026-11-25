@@ -146,7 +146,7 @@ function toWireMemberVaultKey(vector) {
           resourceRevision: String(envelope.vkVersion),
           wrappedKeyVersion: envelope.vkVersion,
           memberKeyGeneration: envelope.memberKeyGeneration,
-          recipientKeyKind: 'memberX25519',
+          recipientKeyKind: 'memberEncryption',
           recipientKeyVersion: envelope.recipientMemberKeyVersion,
           recipientFingerprint: envelope.recipientMemberKeyFingerprint,
           parentDescriptorHash: null,

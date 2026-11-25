@@ -135,6 +135,7 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                 candidate.Name,
                 candidate.RecipientKeyVersion,
                 candidate.PublicKey,
+                candidate.PublicKeySuiteId,
             })
             .SingleOrDefaultAsync(ct);
         if (agent is null)
@@ -280,9 +281,9 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                 return new ScriptPackageDeliveryResult.Denied(ScriptPackageDenialReasons.MaterialUnavailable);
             }
 
-            var fingerprint = VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
-            if (!package.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))
+            var fingerprint = AgentRecipientKey.Fingerprint(agent.PublicKeySuiteId, agent.PublicKey);
+            if (!package.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint)
+                || package.WrapperSuiteId != agent.PublicKeySuiteId)
             {
                 return new ScriptPackageDeliveryResult.Denied(ScriptPackageDenialReasons.MaterialUnavailable);
             }
@@ -316,8 +317,7 @@ internal sealed class ScriptExecutionPackageDeliveryService(
                     && value.GrantId == selected.Id
                     && value.AgentId == agentId
                     && value.AgentAccessEpoch == agentAccessEpoch, ct);
-            var fingerprint = VaultKeyFingerprint.Compute(
-                Convert.FromBase64String(agent.PublicKey), VaultKeyKind.AgentX25519);
+            var fingerprint = AgentRecipientKey.Fingerprint(agent.PublicKeySuiteId, agent.PublicKey);
             if (wrapped is null
                 || wrapped.RecipientAgentKeyVersion.Value != agent.RecipientKeyVersion
                 || !wrapped.RecipientAgentKeyFingerprint.AsSpan().SequenceEqual(fingerprint))

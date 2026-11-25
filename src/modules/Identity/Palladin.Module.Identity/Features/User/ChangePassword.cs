@@ -37,8 +37,8 @@ internal sealed class ChangePasswordValidator : Validator<ChangePasswordRequest>
 {
     public ChangePasswordValidator()
     {
-        RuleFor(x => x.SecurityVersion).Equal(IdentityKdfProfiles.CurrentSecurityVersion);
-        RuleFor(x => x.KdfProfileId).Equal(IdentityKdfProfiles.CurrentProfileId);
+        RuleFor(x => x).Must(x => IdentityKdfProfiles.IsRegistered(x.SecurityVersion, x.KdfProfileId))
+            .WithName("kdfProfileId");
         RuleFor(x => x.BaseCredentialRevision).GreaterThan(0u);
         RuleFor(x => x.BasePrivateKeyWrapRevision).GreaterThan(0u);
         RuleFor(x => x.NewKdfSalt).Must(b => b is { Length: IdentityKdfProfiles.KdfSaltBytes });

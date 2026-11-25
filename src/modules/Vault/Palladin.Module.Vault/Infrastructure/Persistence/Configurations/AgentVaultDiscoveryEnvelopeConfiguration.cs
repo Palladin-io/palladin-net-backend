@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -17,13 +18,14 @@ internal sealed class AgentVaultDiscoveryEnvelopeConfiguration
         builder.Property(x => x.CryptoSuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.RecipientAgentKeyFingerprint).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.AgentWrappedVdk).HasMaxLength(X25519SealedBoxContract.EncodedPackageBytes).IsRequired();
+        builder.Property(x => x.AgentWrappedVdk).HasMaxLength(KeyWrapperSuites.MaximumPackageBytes).IsRequired();
         builder.Property(x => x.ManifestSignature).HasMaxLength(64).IsRequired();
         builder.Property(x => x.AgentX25519Fingerprint).HasMaxLength(32).IsRequired();
         builder.Property(x => x.AgentEd25519Fingerprint).HasMaxLength(32).IsRequired();
         builder.Property(x => x.VaultSigningPublicKey).HasMaxLength(32).IsRequired();
         builder.Property(x => x.VaultSigningKeyFingerprint).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.VaultAgentMessagePublicKey).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.VaultAgentMessagePublicKey).HasMaxLength(KeyWrapperSuites.MaximumPublicKeyBytes).IsRequired();
+        builder.Property(x => x.VaultAgentMessageKeySuiteId).HasMaxLength(64);
         builder.Property(x => x.VaultAgentMessageKeyFingerprint).HasMaxLength(32).IsRequired();
         builder.Property(x => x.AgentWrappedVdkDigest).HasMaxLength(32).IsRequired();
         builder.Property(x => x.IssuedAt).IsRequired();

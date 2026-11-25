@@ -1,35 +1,30 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
 
 namespace Palladin.Module.Vault.Infrastructure.Crypto;
 
-internal static class MemberKeyFingerprint
-{
-    internal static byte[] Compute(byte[] rawPublicKey)
-    {
-        if (rawPublicKey.Length != 32)
-        {
-            throw new DomainException("Member X25519 public keys must use exactly 32 raw RFC 7748 bytes.");
-        }
-
-        return VaultKeyFingerprint.Compute(rawPublicKey, VaultKeyKind.MemberX25519);
-    }
-}
-
 internal enum VaultKeyKind : ushort
 {
-    AgentX25519 = 1,
-    AgentEd25519 = 2,
-    VaultSigningEd25519 = 3,
-    VaultMessageX25519 = 4,
-    MemberX25519 = 5,
-    OrganizationApproverX25519 = 6,
-    OrganizationApproverEd25519 = 7,
+    AgentEncryption = 1,
+    AgentSigning = 2,
+    VaultSigning = 3,
+    VaultAgentMessage = 4,
+    MemberEncryption = 5,
+    OrganizationApproverMessage = 6,
+    OrganizationApproverSigning = 7,
 }
 
+internal static class RecipientKeyFingerprint
+{
+    internal static byte[] Compute(string suiteId, VaultKeyKind keyKind, byte[] rawPublicKey) =>
+        KeyWrapperSuites.ResolveForOpen(suiteId).Fingerprint((ushort)keyKind, rawPublicKey);
+}
+
+// Frozen vault-v2 fingerprint for 32-byte keys whose scheme is fixed by signed manifests and immutable contracts.
 internal static class VaultKeyFingerprint
 {
     private static readonly byte[] DomainPrefix = Encoding.ASCII.GetBytes("PLDNV2FP");

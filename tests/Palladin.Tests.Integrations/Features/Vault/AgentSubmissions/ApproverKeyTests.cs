@@ -4,6 +4,7 @@ using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Security;
 using Palladin.Module.Vault.Features;
 using Palladin.Module.Vault.Infrastructure.Persistence;
@@ -229,7 +230,7 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
         var rekeyed = await scenario.AddApproverMemberAsync();
         await scenario.BootstrapAsync();
-        await apiFactory.Services.SeedMemberKeyDirectoryAsync(rekeyed.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2);
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(rekeyed.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PublicKeyBytes), 2);
 
         // When
         var (_, view) = await rekeyed.Client
@@ -357,6 +358,27 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_AnApproverStillHasALegacyMemberKey_Then_WrapsAreRejectedAsKeyMigrationPending()
+    {
+        // Given
+        var scenario = await AgentSubmissionScenario.CreateAsync(apiFactory);
+        var legacy = await scenario.AddApproverMemberAsync();
+        await apiFactory.Services.SeedMemberKeyDirectoryAsync(
+            legacy.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 1,
+            "palladin-x25519-sealed-box-v1");
+
+        // When
+        var response = await scenario.BootstrapRequestAsync(scenario.Owner);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("key-migration-pending");
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>().OrganizationApproverKeySets
+            .AnyAsync(x => x.OrganizationId == scenario.OrganizationId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task When_RotationOmitsContinuity_Then_ItIsRejected()
     {
         // Given
@@ -381,7 +403,7 @@ public sealed class ApproverKeyTests(ApiFactory apiFactory) : TestBase
         var pending = scenario.NewSubmission(agent);
         var submissionId = await scenario.SubmitAsync(agent, pending);
         await apiFactory.Services.SeedMemberKeyDirectoryAsync(
-            scenario.Owner.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(32), 2);
+            scenario.Owner.User.Id, System.Security.Cryptography.RandomNumberGenerator.GetBytes(KeyWrapperSuites.Current.PublicKeyBytes), 2);
         var (_, unavailable) = await scenario.Owner.Client
             .GETAsync<GetApproverKeysEndpoint, EmptyRequest, GetApproverKeysResponse>(new EmptyRequest());
 

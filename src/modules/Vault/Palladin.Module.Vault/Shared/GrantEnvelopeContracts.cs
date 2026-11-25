@@ -29,7 +29,7 @@ public sealed record GrantEnvelopeBindingContract(
 public sealed record EncryptedReasonEnvelopeContract(
     EnvelopeDescriptorContract<ReasonEnvelopeBindingContract> Descriptor,
     string EncodedSuitePayload,
-    X25519WrappedKeyContract WrappedReasonDek,
+    WrappedKeyContract WrappedReasonDek,
     string AgentSignature)
 {
     [JsonIgnore] public Guid OrganizationId => Descriptor.Scope.OrganizationId;
@@ -78,7 +78,7 @@ internal sealed class EncryptedReasonEnvelopeContractValidator : AbstractValidat
 public sealed record GrantEntryEnvelopeContract(
     EnvelopeDescriptorContract<GrantEnvelopeBindingContract> Descriptor,
     string EncodedSuitePayload,
-    X25519WrappedKeyContract WrappedGrantDek,
+    WrappedKeyContract WrappedGrantDek,
     string[] FieldIds)
 {
     [JsonIgnore] public Guid OrganizationId => Descriptor.Scope.OrganizationId;
@@ -159,7 +159,7 @@ internal sealed class GrantEnvelopeBindingContractValidator : AbstractValidator<
     }
 }
 
-internal sealed class X25519WrappedKeyContractValidator : AbstractValidator<X25519WrappedKeyContract>
+internal sealed class X25519WrappedKeyContractValidator : AbstractValidator<WrappedKeyContract>
 {
     internal X25519WrappedKeyContractValidator()
     {
@@ -176,7 +176,7 @@ internal sealed class AgentWrappedVaultKeyContractValidator : AbstractValidator<
         RuleFor(x => x.WrappedVaultKey).NotNull()
             .SetValidator(new X25519WrappedKeyContractValidator()!);
         RuleFor(x => x.WrappedVaultKey.Descriptor.Purpose)
-            .Equal(X25519WrapperPurposeContract.AgentVaultKey)
+            .Equal(KeyWrapperPurposeContract.AgentVaultKey)
             .When(x => x.WrappedVaultKey?.Descriptor is not null);
         RuleFor(x => x.WrappedVaultKey.Descriptor.Scope.GrantOrRequestId)
             .NotEmpty()
@@ -191,7 +191,7 @@ internal sealed class AgentWrappedVaultKeyContractValidator : AbstractValidator<
 }
 
 internal sealed class X25519WrapperDescriptorContractValidator
-    : AbstractValidator<X25519WrapperDescriptorContract>
+    : AbstractValidator<KeyWrapperDescriptorContract>
 {
     internal X25519WrapperDescriptorContractValidator()
     {

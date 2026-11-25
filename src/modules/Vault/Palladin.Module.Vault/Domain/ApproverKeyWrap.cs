@@ -2,13 +2,12 @@ using Palladin.Core.Types.Exceptions;
 
 namespace Palladin.Module.Vault.Domain;
 
-// One approver private key (X25519 message key or Ed25519 signing seed) sealed client-side to one
-// approver's current Member X25519 key. The backend stores and serves ciphertext only.
+// One approver private key (message key or Ed25519 signing seed) sealed client-side to one approver's
+// current Member key under that key's suite. The backend stores and serves ciphertext only.
 internal sealed class ApproverKeyWrap
 {
     internal const ushort MessagePrivateKeyPurpose = 8;
     internal const ushort SigningPrivateKeyPurpose = 9;
-    internal const int SealedPackageBytes = 120;
 
     public Guid OrganizationId { get; private set; }
     public Guid MemberId { get; private set; }
@@ -18,6 +17,7 @@ internal sealed class ApproverKeyWrap
     public MemberRecipientKeyVersion RecipientKeyVersion { get; private set; }
     public byte[] RecipientFingerprint { get; private set; } = [];
     public byte[] SealedPackage { get; private set; } = [];
+    public string WrapperSuiteId { get; private set; } = string.Empty;
 
     private ApproverKeyWrap() { }
 
@@ -29,13 +29,14 @@ internal sealed class ApproverKeyWrap
         ulong approverSetRevision,
         MemberRecipientKeyVersion recipientKeyVersion,
         byte[] recipientFingerprint,
+        string wrapperSuiteId,
         byte[] sealedPackage)
     {
         if (organizationId == Guid.Empty || memberId == Guid.Empty
             || purpose is not (MessagePrivateKeyPurpose or SigningPrivateKeyPurpose)
             || keyVersion == 0 || approverSetRevision == 0
             || recipientFingerprint.Length != VaultProtocol.FingerprintBytes
-            || sealedPackage.Length != SealedPackageBytes)
+            || sealedPackage.Length != Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(wrapperSuiteId).PackageBytes)
         {
             throw new DomainException("Approver key wrap structure is invalid.");
         }
@@ -50,6 +51,7 @@ internal sealed class ApproverKeyWrap
             RecipientKeyVersion = recipientKeyVersion,
             RecipientFingerprint = recipientFingerprint.ToArray(),
             SealedPackage = sealedPackage.ToArray(),
+            WrapperSuiteId = wrapperSuiteId,
         };
     }
 

@@ -84,6 +84,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.PublicAsset
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Module.PublicAssetCatalog.Contracts", "src\modules\OpenHost\PublicAssetCatalog\Palladin.Module.PublicAssetCatalog.Contracts\Palladin.Module.PublicAssetCatalog.Contracts.csproj", "{FA2300CE-E89B-4C09-AA78-2710879805D5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Palladin.Core.Cryptography", "src\core\Palladin.Core.Cryptography\Palladin.Core.Cryptography.csproj", "{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -538,6 +540,18 @@ Global
 		{FA2300CE-E89B-4C09-AA78-2710879805D5}.Release|x64.Build.0 = Release|Any CPU
 		{FA2300CE-E89B-4C09-AA78-2710879805D5}.Release|x86.ActiveCfg = Release|Any CPU
 		{FA2300CE-E89B-4C09-AA78-2710879805D5}.Release|x86.Build.0 = Release|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Debug|x64.Build.0 = Debug|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Debug|x86.Build.0 = Debug|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Release|x64.ActiveCfg = Release|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Release|x64.Build.0 = Release|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Release|x86.ActiveCfg = Release|Any CPU
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -583,5 +597,6 @@ Global
 		{D267741A-7EB4-4A69-8E09-31FF97DFE5B2} = {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 		{4F96DF72-5421-4AA9-83E5-626608C28A9B} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
 		{FA2300CE-E89B-4C09-AA78-2710879805D5} = {6C2C74DA-01E0-4D46-BAE3-65D6B9A85A7F}
+		{4E7206AB-24CD-4C18-8F54-66F9B2022C7C} = {8D626EA8-CB54-BC41-363A-217881BEBA6E}
 	EndGlobalSection
 EndGlobal

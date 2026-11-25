@@ -15,6 +15,10 @@ internal sealed record AgentSummaryProjection(
     string? IconColor,
     AgentStatus Status,
     string PublicKey,
+    string EncryptionPublicKey,
+    string EncryptionKeySuiteId,
+    byte[]? PreviousEncryptionKeyFingerprint,
+    byte[]? EncryptionKeyBindingSignature,
     uint RecipientKeyVersion,
     uint AccessEpoch,
     NodaTime.Instant CreatedAt,
@@ -40,6 +44,10 @@ internal static class AgentSummaryMapper
             x.IconColor,
             x.Status,
             x.PublicKey,
+            x.EncryptionPublicKey,
+            x.EncryptionKeySuiteId,
+            x.PreviousEncryptionKeyFingerprint,
+            x.EncryptionKeyBindingSignature,
             x.RecipientKeyVersion,
             x.AccessEpoch,
             x.CreatedAt,
@@ -71,9 +79,9 @@ internal static class AgentSummaryMapper
             .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
     }
 
-    // includeFullPublicKey: only the agent-detail endpoint returns the full X25519 public key (base64),
-    // which the client needs to seal a DEK when proactively granting access. The list omits it (null).
-    // The public key is not a secret, but keeping it off the list payload limits incidental exposure.
+    // The prefix/suffix hint is the stable X-Agent-Key identifier. Only the agent-detail endpoint returns the full
+    // encryption key publication (key, suite, and the Ed25519-signed rotation binding) that clients verify before
+    // sealing to it; the list keeps only the suite.
     public static AgentSummary ToSummary(
         this AgentSummaryProjection p,
         IReadOnlyDictionary<Guid, string> userNames,
@@ -88,7 +96,14 @@ internal static class AgentSummaryMapper
             p.Status,
             AgentPublicKey.Prefix(p.PublicKey),
             AgentPublicKey.Suffix(p.PublicKey),
-            includeFullPublicKey ? p.PublicKey : null,
+            includeFullPublicKey ? p.EncryptionPublicKey : null,
+            p.EncryptionKeySuiteId,
+            includeFullPublicKey && p.PreviousEncryptionKeyFingerprint is { } previous
+                ? Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(previous)
+                : null,
+            includeFullPublicKey && p.EncryptionKeyBindingSignature is { } signature
+                ? Microsoft.AspNetCore.WebUtilities.WebEncoders.Base64UrlEncode(signature)
+                : null,
             p.RecipientKeyVersion,
             p.AccessEpoch,
             p.CreatedAt,

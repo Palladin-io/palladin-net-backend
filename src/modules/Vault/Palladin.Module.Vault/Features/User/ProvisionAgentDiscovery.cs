@@ -1,9 +1,11 @@
+using System.Buffers.Text;
 using FastEndpoints;
 using FluentValidation;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Security;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Crypto;
@@ -35,7 +37,7 @@ internal sealed class ProvisionAgentDiscoveryValidator : Validator<ProvisionAgen
             RuleFor(x => x.Envelope.RecipientAgentKeyFingerprint).NotEmpty().Length(43);
             RuleFor(x => x.Envelope.AgentWrappedVdk)
                 .NotEmpty()
-                .MaximumLength(VaultProtocol.MaximumSealedVdkBase64UrlLength);
+                .MaximumLength(Base64Url.GetEncodedLength(KeyWrapperSuites.MaximumPackageBytes));
             RuleFor(x => x.Envelope.ManifestRevision).NotEmpty().MaximumLength(20);
             RuleFor(x => x.Envelope.ManifestSignature).NotEmpty().Length(86);
         });
@@ -45,7 +47,9 @@ internal sealed class ProvisionAgentDiscoveryValidator : Validator<ProvisionAgen
             RuleFor(x => x.Manifest.AgentEd25519Fingerprint).NotEmpty().Length(43);
             RuleFor(x => x.Manifest.VaultSigningPublicKey).NotEmpty().Length(43);
             RuleFor(x => x.Manifest.VaultSigningKeyFingerprint).NotEmpty().Length(43);
-            RuleFor(x => x.Manifest.VaultAgentMessagePublicKey).NotEmpty().Length(43);
+            RuleFor(x => x.Manifest.VaultAgentMessagePublicKey)
+                .NotEmpty()
+                .MaximumLength(Base64Url.GetEncodedLength(KeyWrapperSuites.MaximumPublicKeyBytes));
             RuleFor(x => x.Manifest.VaultAgentMessageKeyFingerprint).NotEmpty().Length(43);
             RuleFor(x => x.Manifest.AgentWrappedVdkDigest).NotEmpty().Length(43);
             RuleFor(x => x.Manifest.ManifestRevision).NotEmpty().MaximumLength(20);
@@ -108,7 +112,7 @@ internal sealed class ProvisionAgentDiscoveryEndpoint(
             return;
         }
 
-        var provisioning = VaultManifestCryptoValidator.Validate(req.Envelope, req.Manifest, agent);
+        var provisioning = VaultManifestCryptoValidator.ValidateNew(req.Envelope, req.Manifest, agent);
         vault.ProvisionAgentDiscovery(agent, provisioning, userId, clock.GetCurrentInstant());
         agent.FenceAccessMutation();
         await domainWriteContext.CommitAsync(ct);

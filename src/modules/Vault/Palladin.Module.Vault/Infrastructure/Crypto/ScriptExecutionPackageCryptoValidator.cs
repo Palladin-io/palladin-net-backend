@@ -81,6 +81,11 @@ internal static class ScriptExecutionPackageCryptoValidator
         writer.WriteString("vaultId", package.VaultId.ToString("D"));
         writer.WriteString("vaultSigningKeyFingerprint", package.VaultSigningKeyFingerprint);
         writer.WriteNumber("vaultSigningKeyVersion", package.VaultSigningKeyVersion);
+        if (package.WrapperSuiteId is not null)
+        {
+            writer.WriteString("wrapperSuiteId", package.WrapperSuiteId);
+        }
+
         writer.WriteEndObject();
         writer.Flush();
         return output.WrittenSpan.ToArray();

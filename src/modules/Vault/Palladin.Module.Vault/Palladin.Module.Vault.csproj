@@ -23,6 +23,7 @@
         <ProjectReference Include="..\..\..\core\Palladin.Core.Json\Palladin.Core.Json.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.MassTransit\Palladin.Core.MassTransit.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.Persistence\Palladin.Core.Persistence.csproj" />
+        <ProjectReference Include="..\..\..\core\Palladin.Core.Cryptography\Palladin.Core.Cryptography.csproj" />
         <ProjectReference Include="..\..\..\core\Palladin.Core.Types\Palladin.Core.Types.csproj" />
         <ProjectReference Include="..\..\Agents\Palladin.Module.Agents\Palladin.Module.Agents.csproj" />
         <ProjectReference Include="..\..\Agents\Palladin.Module.Agents.Contracts\Palladin.Module.Agents.Contracts.csproj" />

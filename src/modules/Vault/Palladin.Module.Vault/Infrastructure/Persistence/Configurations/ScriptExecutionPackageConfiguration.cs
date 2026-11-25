@@ -24,5 +24,6 @@ internal sealed class ScriptExecutionPackageConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ManifestDigest).HasMaxLength(32);
         builder.Property(x => x.EncodedPackageCiphertext).HasMaxLength(2_097_152);
         builder.Property(x => x.ProducerSignature).HasMaxLength(64);
+        builder.Property(x => x.WrapperSuiteId).HasMaxLength(64).IsRequired();
     }
 }

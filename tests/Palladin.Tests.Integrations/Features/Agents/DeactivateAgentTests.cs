@@ -34,7 +34,7 @@ public sealed class DeactivateAgentTests(ApiFactory apiFactory) : TestBase
         await apiFactory.Services.SeedVaultAgentAsync(
             organization.Id,
             id: agent.Id,
-            publicKey: discovery.X25519PublicKey,
+            publicKey: discovery.EncryptionPublicKey,
             signingPublicKey: discovery.RequestSigning.PublicKeyBase64);
         await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(discovery.Request, user.Id);
         var client = apiFactory.CreateAuthenticatedClient(user, Permission.AgentManage);

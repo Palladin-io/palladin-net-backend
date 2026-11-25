@@ -72,7 +72,7 @@ public sealed class SubmissionBoundaryTests(ApiFactory apiFactory) : TestBase
                     GrantEnvelopes =
                     [
                         GrantEnvelopeTestData.Contract(scenario.OrganizationId, scenario.VaultId, grantId, entryId,
-                            agent.X25519PublicKey, entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
+                            agent.EncryptionPublicKey, entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
                             agentId: agent.Id, methods: GrantMethods.Inject),
                     ],
                 },
@@ -127,7 +127,7 @@ public sealed class SubmissionBoundaryTests(ApiFactory apiFactory) : TestBase
                     GrantEnvelopes =
                     [
                         GrantEnvelopeTestData.Contract(scenario.OrganizationId, scenario.VaultId, grantId, entryId,
-                            agent.X25519PublicKey, entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
+                            agent.EncryptionPublicKey, entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
                             agentId: agent.Id, methods: GrantMethods.Inject),
                     ],
                 },
@@ -255,7 +255,7 @@ public sealed class SubmissionBoundaryTests(ApiFactory apiFactory) : TestBase
                     GrantEnvelopes =
                     [
                         GrantEnvelopeTestData.Contract(scenario.OrganizationId, scenario.VaultId, grantId, entryId,
-                            agent.X25519PublicKey, entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
+                            agent.EncryptionPublicKey, entryRevision: 2, envelopeRevision: 2, grantKeyVersion: 2,
                             agentId: agent.Id, methods: GrantMethods.Inject),
                     ],
                 },

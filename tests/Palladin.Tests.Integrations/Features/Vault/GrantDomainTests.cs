@@ -18,7 +18,7 @@ public sealed class GrantDomainTests
     public void GrantEnvelope_WithNullNestedStructure_FailsValidationWithoutThrowing()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
         var malformed = contract with
         {
             Descriptor = contract.Descriptor with { Scope = null!, Binding = null! },
@@ -35,31 +35,31 @@ public sealed class GrantDomainTests
     public void GrantEnvelopeMapper_WithNullNestedStructure_FailsAsDomainValidation()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
         var malformed = contract with
         {
             WrappedGrantDek = contract.WrappedGrantDek with { Descriptor = null! },
         };
 
         Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-            malformed, GrantMethods.Get, contract.AgentId));
+            malformed, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
     public void GrantEntryScope_WithDifferentConcreteAgent_FailsClosed()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
 
         Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-            contract, GrantMethods.Get, Guid.NewGuid()));
+            contract, GrantMethods.Get, GrantEnvelopeTestData.Recipient(Guid.NewGuid())));
     }
 
     [Fact]
     public void GrantEntryScope_WithWrapperRecipientFingerprintDifferentFromParent_FailsClosed()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
         var changed = contract with
         {
             WrappedGrantDek = contract.WrappedGrantDek with
@@ -73,14 +73,14 @@ public sealed class GrantDomainTests
         };
 
         Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-            changed, GrantMethods.Get, contract.AgentId));
+            changed, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
     public void GrantEntryScope_WithNegativeRemainingUses_FailsAsDomainValidation()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
         var changed = contract with
         {
             Descriptor = contract.Descriptor with
@@ -90,14 +90,14 @@ public sealed class GrantDomainTests
         };
 
         Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-            changed, GrantMethods.Get, contract.AgentId));
+            changed, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
     public void GrantEntryScope_WithBothExpiryPolicies_FailsClosed()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
         var changed = contract with
         {
             Descriptor = contract.Descriptor with
@@ -112,7 +112,7 @@ public sealed class GrantDomainTests
 
         new GrantEntryEnvelopeContractValidator().Validate(changed).IsValid.ShouldBeFalse();
         Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-            changed, GrantMethods.Get, contract.AgentId));
+            changed, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
@@ -130,19 +130,19 @@ public sealed class GrantDomainTests
         foreach (var item in cases)
         {
             var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-                Guid.NewGuid(), Convert.ToBase64String(new byte[32]), item.ExpiresAt,
+                Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey, item.ExpiresAt,
                 item.RemainingUses, agentId: agentId);
 
             new GrantEntryEnvelopeContractValidator().Validate(contract).IsValid.ShouldBe(item.IsValid);
             if (item.IsValid)
             {
                 Should.NotThrow(() => GrantEnvelopeContractMapper.ToDomain(
-                    contract, GrantMethods.Get, agentId));
+                    contract, GrantMethods.Get, GrantEnvelopeTestData.Recipient(agentId)));
             }
             else
             {
                 Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-                    contract, GrantMethods.Get, agentId));
+                    contract, GrantMethods.Get, GrantEnvelopeTestData.Recipient(agentId)));
             }
         }
     }
@@ -151,7 +151,7 @@ public sealed class GrantDomainTests
     public void GrantEntryScope_WithDifferentWrapperMemberKeyGeneration_FailsClosed()
     {
         var contract = GrantEnvelopeTestData.Contract(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
-            Guid.NewGuid(), Convert.ToBase64String(new byte[32]));
+            Guid.NewGuid(), GrantEnvelopeTestData.DefaultAgentPublicKey);
         var changed = contract with
         {
             WrappedGrantDek = contract.WrappedGrantDek with
@@ -161,7 +161,7 @@ public sealed class GrantDomainTests
         };
 
         Should.Throw<DomainException>(() => GrantEnvelopeContractMapper.ToDomain(
-            changed, GrantMethods.Get, contract.AgentId));
+            changed, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public sealed class GrantDomainTests
                 vaultId,
                 grantId,
                 entryId,
-                Convert.ToBase64String(new byte[32]),
+                GrantEnvelopeTestData.DefaultAgentPublicKey,
                 fieldIds: [fieldId]));
     }
 
@@ -212,7 +212,7 @@ public sealed class GrantDomainTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
-            Convert.ToBase64String(new byte[32]));
+            GrantEnvelopeTestData.DefaultAgentPublicKey);
         var contract = valid with
         {
             Descriptor = valid.Descriptor with
@@ -224,7 +224,7 @@ public sealed class GrantDomainTests
 
         Should.Throw<DomainException>(() =>
             Palladin.Module.Vault.Infrastructure.Crypto.GrantEnvelopeContractMapper.ToDomain(
-                contract, GrantMethods.Get, contract.AgentId));
+                contract, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
@@ -238,12 +238,12 @@ public sealed class GrantDomainTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
-            Convert.ToBase64String(new byte[32]),
+            GrantEnvelopeTestData.DefaultAgentPublicKey,
             fieldIds: fields);
 
         Should.Throw<DomainException>(() =>
             Palladin.Module.Vault.Infrastructure.Crypto.GrantEnvelopeContractMapper.ToDomain(
-                contract, GrantMethods.Get, contract.AgentId));
+                contract, GrantMethods.Get, GrantEnvelopeTestData.Recipient(contract.AgentId)));
     }
 
     [Fact]
@@ -422,7 +422,7 @@ public sealed class GrantDomainTests
         var referenceEntryId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            3, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+            3, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64], "palladin-x25519-sealed-box-v1");
         var scopes = new[]
         {
             ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 3, true),
@@ -451,7 +451,7 @@ public sealed class GrantDomainTests
         var scriptEntryId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64], "palladin-x25519-sealed-box-v1");
         var grant = ScriptExecutionGrant.CreateProactively(
             grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
             [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)],
@@ -481,7 +481,7 @@ public sealed class GrantDomainTests
         var secondReferenceId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64], "palladin-x25519-sealed-box-v1");
         var grant = ScriptExecutionGrant.CreateProactively(
             grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
             [
@@ -493,7 +493,7 @@ public sealed class GrantDomainTests
         var replacement = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
             2, 2, 1, 1, new byte[32], 1, new byte[32],
-            Enumerable.Repeat((byte)1, 32).ToArray(), new byte[48], new byte[64]);
+            Enumerable.Repeat((byte)1, 32).ToArray(), new byte[48], new byte[64], "palladin-x25519-sealed-box-v1");
 
         grant.RefreshPackage(replacement,
         [
@@ -521,7 +521,7 @@ public sealed class GrantDomainTests
         var scriptEntryId = Guid.NewGuid();
         var package = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64], "palladin-x25519-sealed-box-v1");
         var grant = ScriptExecutionGrant.CreateProactively(
             grantId, vaultId, organizationId, agentId, "pk", scriptEntryId,
             [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)],
@@ -529,7 +529,7 @@ public sealed class GrantDomainTests
             new GrantNames("agent", "script", "vault", "actor"), Now, 1);
         var replay = ScriptExecutionPackage.Create(
             organizationId, vaultId, grantId, agentId, 1, scriptEntryId,
-            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64]);
+            1, 1, 1, 1, new byte[32], 1, new byte[32], new byte[32], new byte[32], new byte[64], "palladin-x25519-sealed-box-v1");
 
         Should.Throw<DomainException>(() => grant.RefreshPackage(replay,
             [ScriptExecutionScope.Create(organizationId, vaultId, grantId, scriptEntryId, 1, true)]));

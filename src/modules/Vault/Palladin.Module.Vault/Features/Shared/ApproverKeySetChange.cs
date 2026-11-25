@@ -55,6 +55,11 @@ internal static class ApproverKeySetChange
         }
 
         var manifest = AgentSubmissionCrypto.ParseManifest(req.Manifest);
+        if (!Palladin.Core.Cryptography.KeyWrapperSuites.ResolveForOpen(manifest.MessageKeySuiteId).CanSeal)
+        {
+            throw new SubmissionRejection(StatusCodes.Status409Conflict, "key-migration-pending");
+        }
+
         if (manifest.OrganizationId != organizationId
             || req.Manifest.IssuedAt != AgentSubmissionCrypto.FormatIssuedAt(challenge.IssuedAt)
             || manifest.ApproverSetRevision != challenge.ApproverSetRevision

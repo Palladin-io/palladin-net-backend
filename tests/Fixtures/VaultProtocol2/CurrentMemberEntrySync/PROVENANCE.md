@@ -6,3 +6,10 @@
 - Fixture source: `contracts/vault-v2/fixtures/current-member-entry-sync-v2/`
 
 The vendored files are byte-for-byte copies from the pinned `origin/main` commit. Update this pin and the conformance tests together; do not edit individual vectors locally.
+
+## Backend wire migration (CVT-690, 2026-11-04)
+
+The backend copy no longer matches the frozen upstream bytes: `recipientKeyKind` `memberX25519` was renamed to
+the algorithm-neutral `memberEncryption` (key-wrapper v1 registry name) in the vectors, negative cases and
+`build-fixtures.mjs`, and `fixtures/manifest.json` hashes were recomputed for those files. The upstream
+`palladin-protocol` vault-v2 directory stays historical and unchanged.

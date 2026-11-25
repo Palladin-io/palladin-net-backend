@@ -12,7 +12,8 @@ internal sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
     {
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.PublicKey).HasMaxLength(512);
+        builder.Property(x => x.PublicKey).HasMaxLength(2048);
+        builder.Property(x => x.PublicKeySuiteId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.SigningPublicKey).HasMaxLength(512);
         builder.Property(x => x.RecipientKeyVersion).HasDefaultValue(1u);
         builder.Property(x => x.Name).HasMaxLength(200);

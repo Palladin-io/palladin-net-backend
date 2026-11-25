@@ -49,48 +49,50 @@ public sealed record MemberSecretEnvelopeBindingContract(EntryOperation Operatio
 public sealed record VaultKeyEnvelopeBindingContract(uint WrappingVaultKeyVersion);
 
 [PublicAPI]
-public enum X25519WrapperPurposeContract : ushort
+public enum KeyWrapperPurposeContract : ushort
 {
     MemberVaultKey = 1,
-    AgentDiscoveryVdk = 2,
+    AgentVaultDiscoveryKey = 2,
     ReasonDek = 3,
     GrantDek = 4,
     AgentVaultKey = 5,
+    ScriptExecutionDek = 6,
     SubmissionDek = 7,
     ApproverMessagePrivateKey = 8,
     ApproverSigningPrivateKey = 9,
 }
 
 [PublicAPI]
-public enum X25519RecipientKeyKindContract : ushort
+public enum RecipientKeyKindContract : ushort
 {
-    AgentX25519 = 1,
-    VaultMessageX25519 = 4,
-    MemberX25519 = 5,
+    AgentEncryption = 1,
+    VaultAgentMessage = 4,
+    MemberEncryption = 5,
+    OrganizationApproverMessage = 6,
 }
 
 [PublicAPI]
-public sealed record X25519WrapperDescriptorContract(
+public sealed record KeyWrapperDescriptorContract(
     ushort ProtocolVersion,
     string WrapperSuiteId,
-    X25519WrapperPurposeContract Purpose,
+    KeyWrapperPurposeContract Purpose,
     EnvelopeScopeContract Scope,
     string ResourceRevision,
     uint WrappedKeyVersion,
     uint? MemberKeyGeneration,
-    X25519RecipientKeyKindContract RecipientKeyKind,
+    RecipientKeyKindContract RecipientKeyKind,
     uint RecipientKeyVersion,
     string RecipientFingerprint,
     string? ParentDescriptorHash);
 
 [PublicAPI]
-public sealed record X25519WrappedKeyContract(
-    X25519WrapperDescriptorContract Descriptor,
+public sealed record WrappedKeyContract(
+    KeyWrapperDescriptorContract Descriptor,
     string EncodedSealedKeyPackage);
 
 [PublicAPI]
 public sealed record AgentWrappedVaultKeyContract(
-    X25519WrappedKeyContract WrappedVaultKey,
+    WrappedKeyContract WrappedVaultKey,
     uint VaultSigningKeyVersion,
     string VaultSigningKeyFingerprint,
     string ProducerSignature)
@@ -118,7 +120,7 @@ public sealed record MemberVaultMetadataEnvelopeContract(
 
 [PublicAPI]
 public sealed record MemberVaultKeyEnvelopeContract(
-    X25519WrappedKeyContract WrappedVaultKey)
+    WrappedKeyContract WrappedVaultKey)
 {
     [JsonIgnore] public Guid OrganizationId => WrappedVaultKey.Descriptor.Scope.OrganizationId;
     [JsonIgnore] public Guid VaultId => WrappedVaultKey.Descriptor.Scope.VaultId;
@@ -141,8 +143,8 @@ public sealed record VaultKeyEpochContract(
 [PublicAPI]
 public enum VaultPublicKeyKindContract : ushort
 {
-    AgentMessageX25519 = 1,
-    ManifestSigningEd25519 = 2,
+    AgentMessage = 1,
+    ManifestSigning = 2,
 }
 
 [PublicAPI]

@@ -22,6 +22,9 @@ public sealed record IdentityKdfStateResponse(
     string? DeviceWrapperMetadata);
 
 [PublicAPI]
+public sealed record LegacyMemberKeyResponse(uint MemberKeyVersion, string EncryptedPrivateKey);
+
+[PublicAPI]
 public sealed record GetAccountResponse(
     Guid UserId,
     string Email,
@@ -34,7 +37,11 @@ public sealed record GetAccountResponse(
     string? EncryptedPrivateKey,
     string? RecoverySalt,
     string? EncryptedPrivateKeyByRecovery,
+    ushort SecurityVersion,
     uint? MemberKeyVersion,
+    string? MemberPublicKeySuiteId,
+    string? MemberPublicKey,
+    LegacyMemberKeyResponse? LegacyMemberKey,
     IdentityKdfStateResponse? Kdf,
     OnboardingStepsResponse OnboardingSteps);
 
@@ -90,7 +97,14 @@ internal sealed class GetAccountEndpoint(IdentityDomainReadContext domainReadCon
                 u.EncryptedPrivateKeyByRecovery != null
                     ? WebEncoders.Base64UrlEncode(u.EncryptedPrivateKeyByRecovery)
                     : null,
+                u.SecurityVersion,
                 u.MemberKeyVersion,
+                u.MemberPublicKeySuiteId,
+                u.PublicKey != null ? WebEncoders.Base64UrlEncode(u.PublicKey) : null,
+                u.LegacyMemberKeyVersion == null || u.LegacyEncryptedPrivateKey == null
+                    ? null
+                    : new LegacyMemberKeyResponse(
+                        u.LegacyMemberKeyVersion.Value, WebEncoders.Base64UrlEncode(u.LegacyEncryptedPrivateKey)),
                 u.KdfProfileId == null || u.Salt == null
                     ? null
                     : new IdentityKdfStateResponse(

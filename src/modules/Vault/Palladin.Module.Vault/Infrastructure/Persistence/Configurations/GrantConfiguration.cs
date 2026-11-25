@@ -21,7 +21,7 @@ internal sealed class GrantConfiguration : IEntityTypeConfiguration<Grant>
 
         builder.Ignore(x => x.Type);
 
-        builder.Property(x => x.AgentPublicKey).HasMaxLength(512);
+        builder.Property(x => x.AgentPublicKey).HasMaxLength(2048);
         builder.Property(x => x.AgentAccessEpoch).IsRequired();
         builder.Property(x => x.ExpirySource).HasMaxLength(16);
         builder.Property(x => x.LastAccessIp).HasMaxLength(45);

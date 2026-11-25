@@ -2,29 +2,28 @@
 
 Palladin .NET Backend incorporates third-party software. Each component remains subject to its own license; no third-party author or project endorses Palladin.
 
-This inventory was generated from the restored dependency graph on 2026-07-31. The machine-readable CycloneDX 1.7 bill of materials is [sbom.cdx.json](sbom.cdx.json). Package hashes, authors, copyright statements, dependency relationships, package URLs, and upstream references are recorded there.
+This inventory was generated from the restored dependency graph on 2026-11-04. The machine-readable CycloneDX 1.7 bill of materials is [sbom.cdx.json](sbom.cdx.json). Package hashes, authors, copyright statements, dependency relationships, package URLs, and upstream references are recorded there.
 
 The following package-file licenses were resolved manually where NuGet metadata did not expose a machine-readable expression:
 
 - Hangfire.AspNetCore, Hangfire.Core, and Hangfire.NetCore 1.8.24: LGPL-3.0-or-later, selected from the upstream dual-license terms.
 - Hangfire.PostgreSql 1.21.1: LGPL-3.0-or-later.
 - Otp.NET 1.4.0: MIT.
-- SixLabors.ImageSharp 3.1.11: Six Labors Split License, Version 1.0.
+- SixLabors.ImageSharp 4.1.3: Six Labors Split License, Version 1.0.
 
 The table is an attribution aid, not a substitute for the complete license terms distributed by each upstream package. Before redistributing binaries, preserve all license and notice files included in the relevant NuGet packages and container base images.
 
 | Component | Version | License | Package or source |
 |---|---:|---|---|
-| AWSSDK.Core | 4.0.100.6 | Apache-2.0 | `pkg:nuget/AWSSDK.Core@4.0.100.6` |
-| AWSSDK.Core | 4.0.3.12 | Apache-2.0 | `pkg:nuget/AWSSDK.Core@4.0.3.12` |
-| AWSSDK.Core | 4.0.9.7 | Apache-2.0 | `pkg:nuget/AWSSDK.Core@4.0.9.7` |
-| AWSSDK.S3 | 4.0.18.6 | Apache-2.0 | `pkg:nuget/AWSSDK.S3@4.0.18.6` |
+| AWSSDK.Core | 4.0.102.1 | Apache-2.0 | `pkg:nuget/AWSSDK.Core@4.0.102.1` |
+| AWSSDK.S3 | 4.0.102.4 | Apache-2.0 | `pkg:nuget/AWSSDK.S3@4.0.102.4` |
 | AWSSDK.SQS | 4.0.3.8 | Apache-2.0 | `pkg:nuget/AWSSDK.SQS@4.0.3.8` |
-| AWSSDK.SimpleEmailV2 | 4.0.14.9 | Apache-2.0 | `pkg:nuget/AWSSDK.SimpleEmailV2@4.0.14.9` |
-| AWSSDK.SimpleSystemsManagement | 4.0.102.1 | Apache-2.0 | `pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.102.1` |
+| AWSSDK.SimpleEmailV2 | 4.0.103.1 | Apache-2.0 | `pkg:nuget/AWSSDK.SimpleEmailV2@4.0.103.1` |
+| AWSSDK.SimpleSystemsManagement | 4.0.103.6 | Apache-2.0 | `pkg:nuget/AWSSDK.SimpleSystemsManagement@4.0.103.6` |
 | AspNetCore.HealthChecks.NpgSql | 9.0.0 | Apache-2.0 | `pkg:nuget/AspNetCore.HealthChecks.NpgSql@9.0.0` |
 | Azure.AI.OpenAI | 2.9.0-beta.1 | MIT | `pkg:nuget/Azure.AI.OpenAI@2.9.0-beta.1` |
 | Azure.Core | 1.51.1 | MIT | `pkg:nuget/Azure.Core@1.51.1` |
+| BouncyCastle.Cryptography | 2.6.2 | MIT | `pkg:nuget/BouncyCastle.Cryptography@2.6.2` |
 | Dapper | 2.0.123 | Apache-2.0 | `pkg:nuget/Dapper@2.0.123` |
 | Dapper.AOT | 1.0.48 | Apache-2.0 | `pkg:nuget/Dapper.AOT@1.0.48` |
 | FastEndpoints | 7.2.0 | MIT | `pkg:nuget/FastEndpoints@7.2.0` |
@@ -34,17 +33,21 @@ The table is an attribution aid, not a substitute for the complete license terms
 | FastEndpoints.Messaging | 7.2.0 | MIT | `pkg:nuget/FastEndpoints.Messaging@7.2.0` |
 | FastEndpoints.Messaging.Core | 7.2.0 | MIT | `pkg:nuget/FastEndpoints.Messaging.Core@7.2.0` |
 | FastEndpoints.Swagger | 7.2.0 | MIT | `pkg:nuget/FastEndpoints.Swagger@7.2.0` |
-| FirebaseAdmin | 3.5.0 | Apache-2.0 | `pkg:nuget/FirebaseAdmin@3.5.0` |
+| FirebaseAdmin | 3.6.0 | Apache-2.0 | `pkg:nuget/FirebaseAdmin@3.6.0` |
 | FluentValidation | 12.1.1 | Apache-2.0 | `pkg:nuget/FluentValidation@12.1.1` |
 | Fluid.Core | 2.31.0 | MIT | `pkg:nuget/Fluid.Core@2.31.0` |
 | Google.Api.Gax | 4.13.1 | BSD-3-Clause | `pkg:nuget/Google.Api.Gax@4.13.1` |
 | Google.Api.Gax.Rest | 4.13.1 | BSD-3-Clause | `pkg:nuget/Google.Api.Gax.Rest@4.13.1` |
-| Google.Apis | 1.69.0 | Apache-2.0 | `pkg:nuget/Google.Apis@1.69.0` |
 | Google.Apis | 1.73.0 | Apache-2.0 | `pkg:nuget/Google.Apis@1.73.0` |
-| Google.Apis.Auth | 1.69.0 | Apache-2.0 | `pkg:nuget/Google.Apis.Auth@1.69.0` |
+| Google.Apis | 1.75.0 | Apache-2.0 | `pkg:nuget/Google.Apis@1.75.0` |
 | Google.Apis.Auth | 1.73.0 | Apache-2.0 | `pkg:nuget/Google.Apis.Auth@1.73.0` |
-| Google.Apis.Core | 1.69.0 | Apache-2.0 | `pkg:nuget/Google.Apis.Core@1.69.0` |
+| Google.Apis.Auth | 1.75.0 | Apache-2.0 | `pkg:nuget/Google.Apis.Auth@1.75.0` |
 | Google.Apis.Core | 1.73.0 | Apache-2.0 | `pkg:nuget/Google.Apis.Core@1.73.0` |
+| Google.Apis.Core | 1.75.0 | Apache-2.0 | `pkg:nuget/Google.Apis.Core@1.75.0` |
+| Google.Protobuf | 3.30.1 | BSD-3-Clause | `pkg:nuget/Google.Protobuf@3.30.1` |
+| Grpc.Core.Api | 2.70.0 | Apache-2.0 | `pkg:nuget/Grpc.Core.Api@2.70.0` |
+| Grpc.Net.Client | 2.70.0 | Apache-2.0 | `pkg:nuget/Grpc.Net.Client@2.70.0` |
+| Grpc.Net.Common | 2.70.0 | Apache-2.0 | `pkg:nuget/Grpc.Net.Common@2.70.0` |
 | Hangfire.AspNetCore | 1.8.24 | LGPL-3.0-or-later | `pkg:nuget/Hangfire.AspNetCore@1.8.24` |
 | Hangfire.Core | 1.8.24 | LGPL-3.0-or-later | `pkg:nuget/Hangfire.Core@1.8.24` |
 | Hangfire.NetCore | 1.8.24 | LGPL-3.0-or-later | `pkg:nuget/Hangfire.NetCore@1.8.24` |
@@ -183,7 +186,6 @@ The table is an attribution aid, not a substitute for the complete license terms
 | NSwag.Generation | 14.6.3 | MIT | `pkg:nuget/NSwag.Generation@14.6.3` |
 | NSwag.Generation.AspNetCore | 14.6.3 | MIT | `pkg:nuget/NSwag.Generation.AspNetCore@14.6.3` |
 | Namotion.Reflection | 3.4.3 | MIT | `pkg:nuget/Namotion.Reflection@3.4.3` |
-| Newtonsoft.Json | 13.0.3 | MIT | `pkg:nuget/Newtonsoft.Json@13.0.3` |
 | Newtonsoft.Json | 13.0.4 | MIT | `pkg:nuget/Newtonsoft.Json@13.0.4` |
 | NodaTime | 3.0.0 | Apache-2.0 | `pkg:nuget/NodaTime@3.0.0` |
 | NodaTime | 3.2.2 | Apache-2.0 | `pkg:nuget/NodaTime@3.2.2` |
@@ -224,7 +226,8 @@ The table is an attribution aid, not a substitute for the complete license terms
 | Serilog.Sinks.Console | 6.1.1 | Apache-2.0 | `pkg:nuget/Serilog.Sinks.Console@6.1.1` |
 | Serilog.Sinks.Debug | 3.0.0 | Apache-2.0 | `pkg:nuget/Serilog.Sinks.Debug@3.0.0` |
 | Serilog.Sinks.File | 7.0.0 | Apache-2.0 | `pkg:nuget/Serilog.Sinks.File@7.0.0` |
-| SixLabors.ImageSharp | 3.1.11 | Six Labors Split License, Version 1.0 | `pkg:nuget/SixLabors.ImageSharp@3.1.11` |
+| Serilog.Sinks.OpenTelemetry | 4.2.0 | Apache-2.0 | `pkg:nuget/Serilog.Sinks.OpenTelemetry@4.2.0` |
+| SixLabors.ImageSharp | 4.1.3 | Six Labors Split License, Version 1.0 | `pkg:nuget/SixLabors.ImageSharp@4.1.3` |
 | System.ClientModel | 1.10.0 | MIT | `pkg:nuget/System.ClientModel@1.10.0` |
 | System.CodeDom | 7.0.0 | MIT | `pkg:nuget/System.CodeDom@7.0.0` |
 | System.Composition | 9.0.0 | MIT | `pkg:nuget/System.Composition@9.0.0` |
@@ -233,6 +236,7 @@ The table is an attribution aid, not a substitute for the complete license terms
 | System.Composition.Hosting | 9.0.0 | MIT | `pkg:nuget/System.Composition.Hosting@9.0.0` |
 | System.Composition.Runtime | 9.0.0 | MIT | `pkg:nuget/System.Composition.Runtime@9.0.0` |
 | System.Composition.TypedParts | 9.0.0 | MIT | `pkg:nuget/System.Composition.TypedParts@9.0.0` |
+| System.IO.Hashing | 8.0.0 | MIT | `pkg:nuget/System.IO.Hashing@8.0.0` |
 | System.IdentityModel.Tokens.Jwt | 8.14.0 | MIT | `pkg:nuget/System.IdentityModel.Tokens.Jwt@8.14.0` |
 | System.Management | 7.0.2 | MIT | `pkg:nuget/System.Management@7.0.2` |
 | System.Memory.Data | 10.0.3 | MIT | `pkg:nuget/System.Memory.Data@10.0.3` |

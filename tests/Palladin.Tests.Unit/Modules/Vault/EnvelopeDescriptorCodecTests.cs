@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Text.Json;
 using Palladin.Core.Types;
 using Palladin.Core.Types.Exceptions;
@@ -10,33 +11,57 @@ namespace Palladin.Tests.Unit.Modules.Vault;
 
 public sealed class EnvelopeDescriptorCodecTests
 {
-    [Theory]
-    [InlineData(VaultPublicKeyKindContract.AgentMessageX25519, "palladin-x25519-v1", 4)]
-    [InlineData(VaultPublicKeyKindContract.ManifestSigningEd25519, "palladin-ed25519-v1", 3)]
-    public void VaultPublicKey_ValidatesDomainSeparatedFingerprintAndVersion(
-        VaultPublicKeyKindContract kind, string scheme, int fingerprintKind)
+    [Fact]
+    public void VaultPublicKey_AgentMessageKeyUsesItsActiveSuiteFingerprint()
     {
-        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
-        var contract = new VaultPublicKeyContract(2, scheme, kind, 7,
+        var key = Enumerable.Range(0, KeyWrapperSuites.Current.PublicKeyBytes).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, KeyWrapperSuites.Current.Id, VaultPublicKeyKindContract.AgentMessage, 7,
             WebEncoders.Base64UrlEncode(key),
-            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, (VaultKeyKind)fingerprintKind)));
+            WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+                KeyWrapperSuites.Current.Id, VaultKeyKind.VaultAgentMessage, key)));
 
-        var result = VaultEnvelopeContractMapper.ToDomain(contract, kind, 7);
+        var result = VaultEnvelopeContractMapper.ToDomain(contract, VaultPublicKeyKindContract.AgentMessage, 7);
 
         result.PublicKey.ShouldBe(key);
-        result.Version.ShouldBe(7u);
+        result.SchemeId.ShouldBe(KeyWrapperSuites.Current.Id);
+    }
+
+    [Fact]
+    public void VaultPublicKey_NewAgentMessageKeyOnReadOnlySuite_FailsClosed()
+    {
+        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, LegacyWrapperSuite.Id, VaultPublicKeyKindContract.AgentMessage, 7,
+            WebEncoders.Base64UrlEncode(key),
+            WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+                LegacyWrapperSuite.Id, VaultKeyKind.VaultAgentMessage, key)));
+
+        Should.Throw<DomainException>(() =>
+            VaultEnvelopeContractMapper.ToDomain(contract, VaultPublicKeyKindContract.AgentMessage, 7));
+    }
+
+    [Fact]
+    public void VaultPublicKey_ManifestSigningKeyKeepsEd25519Scheme()
+    {
+        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, "palladin-ed25519-v1", VaultPublicKeyKindContract.ManifestSigning, 7,
+            WebEncoders.Base64UrlEncode(key),
+            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigning)));
+
+        VaultEnvelopeContractMapper.ToDomain(contract, VaultPublicKeyKindContract.ManifestSigning, 7)
+            .Version.ShouldBe(7u);
     }
 
     [Fact]
     public void VaultPublicKey_WithFingerprintFromDifferentKeyKind_FailsClosed()
     {
-        var key = Enumerable.Range(0, 32).Select(x => (byte)x).ToArray();
-        var contract = new VaultPublicKeyContract(2, "palladin-x25519-v1",
-            VaultPublicKeyKindContract.AgentMessageX25519, 1, WebEncoders.Base64UrlEncode(key),
-            WebEncoders.Base64UrlEncode(VaultKeyFingerprint.Compute(key, VaultKeyKind.VaultSigningEd25519)));
+        var key = Enumerable.Range(0, KeyWrapperSuites.Current.PublicKeyBytes).Select(x => (byte)x).ToArray();
+        var contract = new VaultPublicKeyContract(2, KeyWrapperSuites.Current.Id,
+            VaultPublicKeyKindContract.AgentMessage, 1, WebEncoders.Base64UrlEncode(key),
+            WebEncoders.Base64UrlEncode(RecipientKeyFingerprint.Compute(
+                KeyWrapperSuites.Current.Id, VaultKeyKind.MemberEncryption, key)));
 
         var action = () => VaultEnvelopeContractMapper.ToDomain(
-            contract, VaultPublicKeyKindContract.AgentMessageX25519, 1);
+            contract, VaultPublicKeyKindContract.AgentMessage, 1);
 
         action.ShouldThrow<DomainException>().Message.ShouldContain("fingerprint");
     }
@@ -59,7 +84,7 @@ public sealed class EnvelopeDescriptorCodecTests
             9,
             new GrantEnvelopeBinding(
                 6,
-                X25519SealedBoxContract.SuiteId,
+                LegacyWrapperSuite.Id,
                 4,
                 Enumerable.Repeat((byte)0x5a, 32).ToArray(),
                 3,
@@ -77,6 +102,23 @@ public sealed class EnvelopeDescriptorCodecTests
             "000000045a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a00030000" +
             "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5" +
             "01000000006553f100075bcd150100000005");
+    }
+
+    [Fact]
+    public void GrantDescriptor_WithCurrentWrapperSuite_EncodesItsSuiteId()
+    {
+        var encoded = EnvelopeDescriptorCodec.Encode(GrantDescriptorWithSuite(KeyWrapperSuites.Current.Id));
+
+        Convert.ToHexStringLower(encoded).ShouldContain(
+            Convert.ToHexStringLower(System.Text.Encoding.ASCII.GetBytes(KeyWrapperSuites.Current.Id)));
+    }
+
+    [Fact]
+    public void GrantDescriptor_WithUnregisteredWrapperSuite_FailsClosed()
+    {
+        var act = () => EnvelopeDescriptorCodec.Encode(GrantDescriptorWithSuite("palladin-unregistered-v1"));
+
+        act.ShouldThrow<DomainException>().Message.ShouldBe("The key-wrapper suite is not registered.");
     }
 
     [Fact]
@@ -142,14 +184,15 @@ public sealed class EnvelopeDescriptorCodecTests
     }
 
     [Fact]
-    public void WrappedKeyPackageContract_DispatchesValidationBySuite()
+    public void WrappedKeyPackage_DispatchesValidationBySuite()
     {
-        WrappedKeyPackageContract.ValidatePackage(X25519SealedBoxContract.SuiteId, new byte[120]);
+        KeyWrapperSuites.ResolveForOpen(LegacyWrapperSuite.Id).ValidatePackage(new byte[120]);
 
-        Should.Throw<DomainException>(() => WrappedKeyPackageContract.ValidatePackage(
-            X25519SealedBoxContract.SuiteId, new byte[80]));
-        Should.Throw<DomainException>(() => WrappedKeyPackageContract.ValidatePackage(
-            "unsupported-suite", new byte[120]));
+        Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen(
+            LegacyWrapperSuite.Id).ValidatePackage(new byte[80]));
+        Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen(
+            KeyWrapperSuites.Current.Id).ValidatePackage(new byte[120]));
+        Should.Throw<DomainException>(() => KeyWrapperSuites.ResolveForOpen("unsupported-suite"));
     }
 
     [Fact]
@@ -175,8 +218,9 @@ public sealed class EnvelopeDescriptorCodecTests
         using var fixture = LoadFixture("x25519-sealed-box.json");
         var root = fixture.RootElement;
         var value = root.GetProperty("context");
-        var context = new X25519WrapperContext(
-            (X25519WrapperPurpose)value.GetProperty("purpose").GetUInt16(), Scope(value),
+        var context = new KeyWrapperContext(
+            LegacyWrapperSuite.Id,
+            (KeyWrapperPurpose)value.GetProperty("purpose").GetUInt16(), Scope(value),
             value.GetProperty("resourceRevision").GetUInt64(),
             value.GetProperty("wrappedKeyVersion").GetUInt32(),
             value.GetProperty("memberKeyGeneration").GetUInt32(),
@@ -185,9 +229,9 @@ public sealed class EnvelopeDescriptorCodecTests
             Convert.FromHexString(value.GetProperty("recipientFingerprintHex").GetString()!),
             Convert.FromHexString(value.GetProperty("parentDescriptorHashHex").GetString()!));
 
-        Convert.ToHexStringLower(X25519WrapperContextCodec.Encode(context)).ShouldBe(
+        Convert.ToHexStringLower(KeyWrapperContextCodec.Encode(context)).ShouldBe(
             root.GetProperty("expectedContextHex").GetString());
-        WrappedKeyPackageContract.ValidatePackage(X25519SealedBoxContract.SuiteId,
+        LegacyWrapperSuite.Suite.ValidatePackage(
             Convert.FromHexString(root.GetProperty("sealedPackageHex").GetString()!));
     }
 
@@ -206,6 +250,17 @@ public sealed class EnvelopeDescriptorCodecTests
             Convert.FromHexString(value.GetProperty("fieldSetCommitmentHex").GetString()!),
             value.GetProperty("expiresAtUnixSeconds").GetInt64(),
             value.GetProperty("expiresAtNanoseconds").GetUInt32(), value.GetProperty("remainingUses").GetUInt32()));
+
+    private static EnvelopeDescriptor GrantDescriptorWithSuite(string wrapperSuiteId) => new(
+        2,
+        new CryptoSuiteId(CryptoSuiteId.XChaCha20Poly1305V1),
+        EnvelopePurpose.GrantPayload,
+        new EnvelopeScope(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
+        1,
+        1,
+        1,
+        new GrantEnvelopeBinding(1, wrapperSuiteId, 1, new byte[32], (ushort)GrantMethods.Get,
+            (ushort)GrantDeliveryPolicy.Standard, new byte[32], null, null, null));
 
     private static EnvelopeScope Scope(JsonElement value) => new(
         Guid.Parse(value.GetProperty("organizationId").GetString()!),

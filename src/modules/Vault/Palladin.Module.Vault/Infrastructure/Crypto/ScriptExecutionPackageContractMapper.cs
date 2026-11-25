@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using Microsoft.AspNetCore.WebUtilities;
 using Palladin.Core.Types.Exceptions;
 using Palladin.Module.Vault.Domain;
@@ -26,6 +27,8 @@ internal static class ScriptExecutionPackageContractMapper
             throw new DomainException("Script execution package encoding is invalid.");
         }
 
+        // A package without a signed wrapperSuiteId predates key-wrapper v1 and was sealed with the frozen suite.
+        var wrapperSuiteId = KeyWrapperSuites.ResolveForSeal(contract.WrapperSuiteId ?? LegacyWrapperSuite.Id).Id;
         var scopes = contract.Scopes
             .Select(scope => ScriptExecutionScope.Create(
                 contract.OrganizationId,
@@ -51,7 +54,8 @@ internal static class ScriptExecutionPackageContractMapper
             vaultSigningFingerprint,
             manifestDigest,
             ciphertext,
-            producerSignature);
+            producerSignature,
+            wrapperSuiteId);
         return (package, scopes);
     }
 
@@ -81,5 +85,6 @@ internal static class ScriptExecutionPackageContractMapper
                     scope.EntryId,
                     scope.EntryRevision.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     scope.IsScript))
-                .ToArray());
+                .ToArray(),
+            package.WrapperSuiteId == LegacyWrapperSuite.Id ? null : package.WrapperSuiteId);
 }

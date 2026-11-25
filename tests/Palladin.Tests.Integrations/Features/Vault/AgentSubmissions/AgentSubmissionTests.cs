@@ -1,12 +1,16 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types;
 using Palladin.Module.Vault.Features;
+using Palladin.Module.Vault.Infrastructure.Crypto;
 using Palladin.Module.Vault.Shared;
 using Palladin.Tests.Integrations.Shared;
+using Palladin.Tests.Integrations.Shared.Seeders;
 using Shouldly;
 
 namespace Palladin.Tests.Integrations.Features.Vault.AgentSubmissions;
@@ -432,6 +436,52 @@ public sealed class AgentSubmissionTests(ApiFactory apiFactory) : TestBase
         // Then
         anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         member.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task When_AgentKeyIsOnTheReadOnlySuite_Then_V2SubmissionIsRejectedAsKeyMigrationPending()
+    {
+        // Given
+        var (scenario, agent) = await ArrangeAsync();
+        var legacyKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        await apiFactory.Services.SeedVaultAgentAsync(scenario.OrganizationId, id: agent.Id, publicKey: legacyKey,
+            signingPublicKey: agent.Signing.PublicKeyBase64, publicKeySuiteId: LegacyWrapperSuite.Id);
+        var legacySuite = KeyWrapperSuites.Resolve(LegacyWrapperSuite.Id);
+        var submission = AgentSubmissionScenario.Sign(agent, scenario.NewSubmission(agent) with
+        {
+            AgentKeyFingerprint = AgentSubmissionScenario.Encode(AgentRecipientKey.Fingerprint(LegacyWrapperSuite.Id, legacyKey)),
+            EncodedAgentWrappedDek = AgentSubmissionScenario.Encode(RandomNumberGenerator.GetBytes(legacySuite.PackageBytes)),
+            AgentWrappedDekSuiteId = LegacyWrapperSuite.Id,
+        });
+
+        // When
+        var response = await AgentSubmissionScenario.PostSubmissionAsync(agent, submission);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("key-migration-pending");
+        (await scenario.LoadSubmissionCountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task When_ApproverDekIsSealedWithTheReadOnlySuite_Then_V2SubmissionIsRejectedAsKeyMigrationPending()
+    {
+        // Given
+        var (scenario, agent) = await ArrangeAsync();
+        var submission = AgentSubmissionScenario.Sign(agent, scenario.NewSubmission(agent) with
+        {
+            EncodedApproverWrappedDek = AgentSubmissionScenario.Encode(
+                RandomNumberGenerator.GetBytes(KeyWrapperSuites.Resolve(LegacyWrapperSuite.Id).PackageBytes)),
+            ApproverWrappedDekSuiteId = LegacyWrapperSuite.Id,
+        });
+
+        // When
+        var response = await AgentSubmissionScenario.PostSubmissionAsync(agent, submission);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await AgentSubmissionScenario.ErrorCodeAsync(response)).ShouldBe("key-migration-pending");
+        (await scenario.LoadSubmissionCountAsync()).ShouldBe(0);
     }
 
     private async Task<(AgentSubmissionScenario Scenario, ScenarioAgent Agent)> ArrangeAsync()

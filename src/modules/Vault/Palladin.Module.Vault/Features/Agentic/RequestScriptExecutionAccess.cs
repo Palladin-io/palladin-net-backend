@@ -117,6 +117,7 @@ internal sealed class RequestScriptExecutionAccessEndpoint(
                 candidate.OrganizationId,
                 AgentMessageKeyVersion = candidate.CurrentAgentMessageKeyVersion.Value,
                 candidate.AgentMessageKeyFingerprint,
+                candidate.AgentMessageKeySuiteId,
             })
             .FirstOrDefaultAsync(ct);
         if (vault is null || vault.OrganizationId != agent.OrganizationId)
@@ -198,7 +199,8 @@ internal sealed class RequestScriptExecutionAccessEndpoint(
             encryptedReason = EncryptedReasonValidator.ToDomain(
                 req.EncryptedReason,
                 agent.SigningPublicKey,
-                vault.AgentMessageKeyFingerprint!);
+                vault.AgentMessageKeyFingerprint!,
+                vault.AgentMessageKeySuiteId);
         }
         catch (Exception ex) when (ex is FormatException
                                    or Palladin.Core.Types.Exceptions.DomainException

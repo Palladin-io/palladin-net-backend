@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using Palladin.Core.Types.Exceptions;
 using NodaTime;
 
@@ -37,20 +38,21 @@ internal sealed class GrantEntryEnvelope
         byte[] ciphertext,
         byte[] nonce,
         byte[] wrappedDek,
-        ushort wrapperSuite,
+        string wrapperSuiteId,
         byte[] agentKeyFingerprint,
         Instant? expiresAt,
         int? remainingUses)
     {
         if (grantId == Guid.Empty || entryRevision.Value == 0
             || envelopeRevision == 0 || grantKeyVersion == 0 || ciphertext.Length is < 16 or > 262_144
-            || nonce.Length != VaultProtocol.NonceBytes || wrappedDek.Length is < 16 or > 512
-            || agentKeyFingerprint.Length != VaultProtocol.FingerprintBytes || wrapperSuite == 0
+            || nonce.Length != VaultProtocol.NonceBytes
+            || agentKeyFingerprint.Length != VaultProtocol.FingerprintBytes
             || remainingUses is <= 0 || (expiresAt.HasValue && remainingUses.HasValue))
         {
             throw new DomainException("Grant envelope is invalid.");
         }
 
+        KeyWrapperSuites.ResolveForOpen(wrapperSuiteId).ValidatePackage(wrappedDek);
         scope.Validate();
         return new GrantEntryEnvelope
         {
@@ -67,7 +69,7 @@ internal sealed class GrantEntryEnvelope
             RecipientAgentKeyVersion = recipientAgentKeyVersion,
             EncodedSuitePayload = SuitePayload.Encode(nonce, ciphertext),
             AgentWrappedGrantDek = wrappedDek.ToArray(),
-            WrapperSuiteId = Infrastructure.Crypto.X25519SealedBoxContract.SuiteId,
+            WrapperSuiteId = wrapperSuiteId,
             AgentKeyFingerprint = agentKeyFingerprint.ToArray(),
             ExpiresAt = expiresAt,
             RemainingUses = remainingUses,

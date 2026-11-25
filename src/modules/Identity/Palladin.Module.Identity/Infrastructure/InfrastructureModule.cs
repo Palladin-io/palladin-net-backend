@@ -74,6 +74,13 @@ internal static class InfrastructureModule
                 && options.BatchSize is > 0 and <= 5000),
                 "Shared-unlock cleanup requires a valid schedule and bounded batch size.")
             .ValidateOnStart();
+        services.AddScopedCronJob<CleanupSecretKeyTransfersJob, CleanupSecretKeyTransfersJobOptions>(
+            configuration.GetSection(CleanupSecretKeyTransfersJobOptions.Position));
+        services.AddOptions<CleanupSecretKeyTransfersJobOptions>()
+            .Validate(options => !options.Enabled || (!string.IsNullOrWhiteSpace(options.Expression)
+                && options.BatchSize is > 0 and <= 5000),
+                "Secret Key transfer cleanup requires a valid schedule and bounded batch size.")
+            .ValidateOnStart();
         return services;
     }
 }

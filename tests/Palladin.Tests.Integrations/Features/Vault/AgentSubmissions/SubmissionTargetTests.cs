@@ -140,7 +140,7 @@ public sealed class SubmissionTargetTests(ApiFactory apiFactory) : TestBase
         {
             QueryLimit = 3,
             GrantEntry = GrantEnvelopeTestData.Contract(
-                scenario.OrganizationId, scenario.VaultId, grantId, entryId, agent.X25519PublicKey,
+                scenario.OrganizationId, scenario.VaultId, grantId, entryId, agent.EncryptionPublicKey,
                 remainingUses: 3, agentId: agent.Id, methods: GrantMethods.Inject),
         };
         var (response, _) = await scenario.Owner.Client

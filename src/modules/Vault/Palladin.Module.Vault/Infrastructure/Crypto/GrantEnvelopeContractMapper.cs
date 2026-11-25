@@ -1,3 +1,4 @@
+using Palladin.Core.Cryptography;
 using System.Security.Cryptography;
 using NodaTime;
 using Palladin.Core.Types;
@@ -12,8 +13,9 @@ internal static class GrantEnvelopeContractMapper
     internal static GrantEntryScope ToDomain(
         GrantEntryEnvelopeContract contract,
         GrantMethods methods,
-        Guid expectedAgentId)
+        Agent recipient)
     {
+        var expectedAgentId = recipient.Id;
         if (contract.Descriptor?.Scope is null
             || contract.Descriptor.Binding is null
             || contract.WrappedGrantDek?.Descriptor?.Scope is null)
@@ -60,29 +62,31 @@ internal static class GrantEnvelopeContractMapper
         var payload = VaultEnvelopeContractMapper.DecodeXChaChaPayload(
             contract.EncodedSuitePayload, descriptor.Purpose, 262_144);
         var wrapperContext = VaultEnvelopeContractMapper.ToWrapperContext(contract.WrappedGrantDek.Descriptor);
-        var parentHash = X25519WrapperContextCodec.ComputeParentDescriptorHash(descriptor);
-        if (wrapperContext.Purpose != X25519WrapperPurpose.GrantDek
+        var parentHash = KeyWrapperContextCodec.ComputeParentDescriptorHash(descriptor);
+        if (wrapperContext.Purpose != KeyWrapperPurpose.GrantDek
             || wrapperContext.Scope != descriptor.Scope
             || wrapperContext.ResourceRevision != descriptor.ResourceRevision
             || wrapperContext.WrappedKeyVersion != descriptor.KeyVersion
             || wrapperContext.MemberKeyGeneration != descriptor.MemberKeyGeneration
             || wrapperContext.RecipientKeyVersion != binding.RecipientKeyVersion
-            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentX25519
-            || !string.Equals(binding.WrapperSuiteId, X25519SealedBoxContract.SuiteId, StringComparison.Ordinal)
+            || wrapperContext.RecipientKeyKind != VaultKeyKind.AgentEncryption
+            || !string.Equals(binding.WrapperSuiteId, recipient.PublicKeySuiteId, StringComparison.Ordinal)
+            || !string.Equals(wrapperContext.SuiteId, binding.WrapperSuiteId, StringComparison.Ordinal)
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.RecipientFingerprint, fingerprint)
+            || !CryptographicOperations.FixedTimeEquals(fingerprint, AgentRecipientKey.Fingerprint(recipient))
             || wrapperContext.ParentDescriptorHash is null
             || !CryptographicOperations.FixedTimeEquals(wrapperContext.ParentDescriptorHash, parentHash))
             throw new DomainException("Grant wrapper descriptor does not match its parent envelope.");
-        _ = X25519WrapperContextCodec.Encode(wrapperContext);
+        _ = KeyWrapperContextCodec.Encode(wrapperContext);
         var wrapper = VaultEnvelopeContractMapper.DecodeCanonicalBase64Url(
             contract.WrappedGrantDek.EncodedSealedKeyPackage);
-        WrappedKeyPackageContract.ValidatePackage(binding.WrapperSuiteId, wrapper);
+        KeyWrapperSuites.ResolveForSeal(binding.WrapperSuiteId).ValidatePackage(wrapper);
         var scope = new EntryScope(contract.OrganizationId, contract.VaultId, contract.EntryId);
         var envelope = GrantEntryEnvelope.Create(scope, contract.GrantId, descriptor.ResourceRevision,
             new EntryRevision(VaultEnvelopeContractMapper.ParseUInt64(binding.EntryRevision)),
             descriptor.KeyVersion, new MemberKeyGeneration(contract.MemberKeyGeneration),
             new AgentRecipientKeyVersion(binding.RecipientKeyVersion), payload.Ciphertext, payload.Nonce,
-            wrapper, 1, fingerprint, binding.ExpiresAt, binding.RemainingUses);
+            wrapper, binding.WrapperSuiteId, fingerprint, binding.ExpiresAt, binding.RemainingUses);
         return GrantEntryScope.Create(scope, contract.GrantId, methods, deliveryPolicy, contract.FieldIds, envelope);
     }
 }

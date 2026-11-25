@@ -1,6 +1,7 @@
 using System.Buffers.Text;
 using System.Globalization;
 using System.Security.Cryptography;
+using Palladin.Core.Cryptography;
 using Palladin.Module.Identity.Domain;
 using Palladin.Module.Identity.Shared;
 using static Palladin.Module.Identity.Infrastructure.SharedUnlock.SharedUnlockEncoding;
@@ -13,7 +14,9 @@ internal static class SharedUnlockKeyContextDigest
 
     internal static SharedUnlockKeyContext? FromUser(User user) =>
         user.IsOnboarded && user.KdfProfileId is not null && user.Salt is { Length: > 0 }
-        && user.PublicKey is { Length: 32 } && user.EncryptedPrivateKey is { Length: > 0 }
+        && user.PublicKey is { } publicKey && user.MemberPublicKeySuiteId is { } suiteId
+        && publicKey.Length == KeyWrapperSuites.ResolveForOpen(suiteId).PublicKeyBytes
+        && user.EncryptedPrivateKey is { Length: > 0 }
         && user.MemberKeyVersion is > 0
             ? new SharedUnlockKeyContext(user.Id, user.SecurityVersion, user.MinimumSecurityVersion,
                 user.KdfProfileId, Base64Url.EncodeToString(user.Salt), user.CredentialRevision,

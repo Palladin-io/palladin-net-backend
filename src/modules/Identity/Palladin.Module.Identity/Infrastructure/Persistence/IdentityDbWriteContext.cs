@@ -18,6 +18,7 @@ internal sealed class IdentityDbWriteContext(DbContextOptions<IdentityDbWriteCon
     public DbSet<SharedUnlockLink> SharedUnlockLinks => Set<SharedUnlockLink>();
     public DbSet<SharedUnlockAuthorization> SharedUnlockAuthorizations => Set<SharedUnlockAuthorization>();
     public DbSet<SharedUnlockOperation> SharedUnlockOperations => Set<SharedUnlockOperation>();
+    public DbSet<SecretKeyTransfer> SecretKeyTransfers => Set<SecretKeyTransfer>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<WaitlistEntry> WaitlistEntries => Set<WaitlistEntry>();
     public DbSet<PasswordCredential> PasswordCredentials => Set<PasswordCredential>();

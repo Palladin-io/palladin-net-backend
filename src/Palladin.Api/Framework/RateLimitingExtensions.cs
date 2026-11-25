@@ -64,6 +64,11 @@ internal static class RateLimitingExtensions
                     return FixedWindow($"auth-login:{path}:{ip}", permitLimit: 30);
                 }
 
+                if (path.StartsWithSegments("/api/auth/secret-key-transfers"))
+                {
+                    return FixedWindow($"secret-key-transfer:{ip}", permitLimit: 150);
+                }
+
                 if (HttpMethods.IsPost(context.Request.Method)
                     && path.StartsWithSegments("/api/auth/shared-unlock/operations"))
                 {
@@ -86,6 +91,8 @@ internal static class RateLimitingExtensions
 
                 if (path.StartsWithSegments("/api/account/password")
                     || path.StartsWithSegments("/api/account/recovery")
+                    || path.StartsWithSegments("/api/account/security-upgrade")
+                    || path.StartsWithSegments("/api/account/legacy-member-key")
                     || path.StartsWithSegments("/api/account/setup")
                     || path.StartsWithSegments("/api/auth/totp"))
                 {

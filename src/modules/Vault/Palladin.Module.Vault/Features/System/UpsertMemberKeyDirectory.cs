@@ -24,7 +24,7 @@ internal sealed class UpsertMemberKeyDirectoryConsumer(VaultDomainWriteContext d
     public async Task Consume(ConsumeContext<UpsertMemberKeyDirectoryCommand> context)
     {
         var msg = context.Message;
-        var fingerprint = MemberKeyFingerprint.Compute(msg.RawPublicKey);
+        var fingerprint = RecipientKeyFingerprint.Compute(msg.PublicKeySuiteId, VaultKeyKind.MemberEncryption, msg.RawPublicKey);
         var version = new MemberRecipientKeyVersion(msg.KeyVersion);
         var existing = await domainWriteContext.MemberKeyDirectory
             .SingleOrDefaultAsync(x => x.UserId == msg.UserId, context.CancellationToken);
@@ -39,13 +39,14 @@ internal sealed class UpsertMemberKeyDirectoryConsumer(VaultDomainWriteContext d
             domainWriteContext.Add(MemberKeyDirectoryEntry.Create(
                 msg.UserId,
                 version,
+                msg.PublicKeySuiteId,
                 fingerprint,
                 msg.RawPublicKey,
                 msg.UpdatedAt));
         }
         else
         {
-            existing.Replace(version, fingerprint, msg.RawPublicKey, msg.UpdatedAt);
+            existing.Replace(version, msg.PublicKeySuiteId, fingerprint, msg.RawPublicKey, msg.UpdatedAt);
         }
 
         await domainWriteContext.CommitAsync(context.CancellationToken);

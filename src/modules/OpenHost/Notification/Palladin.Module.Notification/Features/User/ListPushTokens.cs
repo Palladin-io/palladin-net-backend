@@ -28,6 +28,7 @@ internal sealed class ListPushTokensEndpoint(NotificationDomainReadContext domai
     {
         Get("api/push-tokens");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "List the current user's registered devices";

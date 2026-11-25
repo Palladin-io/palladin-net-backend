@@ -970,7 +970,7 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
     }
 
     [Fact]
-    public async Task When_RemovingMember_Then_ReadsRemainCurrentButSwitchCannotIssueSession()
+    public async Task When_RemovingMember_Then_OrganizationReadsStopAndSwitchCannotIssueSession()
     {
         // Given
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -978,9 +978,19 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         // Keep the staged removal open deterministically. Without an affected Vault the asynchronous
         // workflow may complete and delete the membership before the switch request, correctly
         // changing the response from inactive-membership 403 to missing-membership 401.
-        await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
         var client = apiFactory.CreateAuthenticatedClient(owner, Permission.OrganizationManagement);
-        var removedMemberClient = apiFactory.CreateAuthenticatedClient(member);
+        var removedMemberClient = apiFactory.CreateAuthenticatedClient(member, Permission.VaultManage);
+        removedMemberClient.DefaultRequestHeaders.Add("X-Palladin-Vault-Protocol", "2");
+        removedMemberClient.DefaultRequestHeaders.Add("X-Palladin-Sync-Policy", "1");
+        string[] organizationReads = ["api/org", "api/vaults", $"api/vaults/{vault.Id}", "api/notifications"];
+        foreach (var route in organizationReads)
+        {
+            (await removedMemberClient.GetAsync(route, TestContext.Current.CancellationToken))
+                .StatusCode.ShouldBe(HttpStatusCode.OK, route);
+        }
+
+        (await PostSnapshotAsync()).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         // When
         var response = await client.DELETEAsync<RemoveOrganizationMemberEndpoint, RemoveOrganizationMemberRequest>(
@@ -995,14 +1005,30 @@ public sealed class OrganizationMembershipTests(ApiFactory apiFactory) : TestBas
         membership.Status.ShouldBe(OrganizationMemberStatus.Removing);
         membership.RemovalRequestId.ShouldNotBeNull();
 
-        var stillAuthorizedResponse = await removedMemberClient.GetAsync("api/org");
-        stillAuthorizedResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        foreach (var route in organizationReads)
+        {
+            (await removedMemberClient.GetAsync(route, TestContext.Current.CancellationToken))
+                .StatusCode.ShouldBe(HttpStatusCode.Forbidden, route);
+        }
+
+        (await PostSnapshotAsync()).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        foreach (var route in new[] { "api/account", "api/organizations", "api/account/consents" })
+        {
+            (await removedMemberClient.GetAsync(route, TestContext.Current.CancellationToken))
+                .StatusCode.ShouldBe(HttpStatusCode.OK, route);
+        }
+
         var switchResponse = await removedMemberClient.POSTAsync<
             SwitchOrganizationEndpoint,
             SwitchOrganizationRequest>(new SwitchOrganizationRequest { OrganizationId = organization.Id });
         switchResponse.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await readContext.RefreshTokens.CountAsync(token =>
             token.OrganizationId == organization.Id && token.UserId == member.Id)).ShouldBe(0);
+
+        Task<HttpResponseMessage> PostSnapshotAsync() => removedMemberClient.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/sync/snapshot",
+            new { VaultId = vault.Id },
+            TestContext.Current.CancellationToken);
     }
 
     [Fact]

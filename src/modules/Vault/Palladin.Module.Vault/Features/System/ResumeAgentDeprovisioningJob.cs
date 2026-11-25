@@ -1,8 +1,9 @@
 using JetBrains.Annotations;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using NodaTime;
 using Palladin.Core.Hangfire.CronJobs;
+using Palladin.Module.Vault.Contracts.Commands;
 using Palladin.Module.Vault.Domain;
 using Palladin.Module.Vault.Infrastructure.Persistence;
 
@@ -19,10 +20,9 @@ internal sealed class ResumeAgentDeprovisioningJobOptions : ICronJobOptions
 
 [UsedImplicitly]
 internal sealed class ResumeAgentDeprovisioningJob(
-    VaultDomainWriteContext domainWriteContext,
-    VaultPrincipalDeprovisioningCoordinator coordinator,
+    VaultDomainReadContext domainReadContext,
     IOptions<ResumeAgentDeprovisioningJobOptions> options,
-    IClock clock) : ICronJob
+    IPublishEndpoint publishEndpoint) : ICronJob
 {
     public string Name => "vault.resume-agent-deprovisioning";
     public string Expression => options.Value.Expression;
@@ -30,7 +30,7 @@ internal sealed class ResumeAgentDeprovisioningJob(
 
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
     {
-        var operations = await domainWriteContext.VaultPrincipalDeprovisionings.AsNoTracking()
+        var operations = await domainReadContext.VaultPrincipalDeprovisionings
             .Where(x => x.PrincipalType == VaultPrincipalType.Agent
                         && x.Status != VaultPrincipalDeprovisioningStatus.Completed)
             .OrderBy(x => x.RequestedAt).ThenBy(x => x.Id)
@@ -39,9 +39,8 @@ internal sealed class ResumeAgentDeprovisioningJob(
             .ToListAsync(cancellationToken);
         foreach (var operation in operations)
         {
-            domainWriteContext.Clear();
-            await coordinator.CompleteAgentAsync(
-                operation.OrganizationId, operation.Id, clock.GetCurrentInstant(), cancellationToken);
+            await publishEndpoint.Publish(
+                new ResumeAgentDeprovisioningCommand(operation.OrganizationId, operation.Id), cancellationToken);
         }
     }
 }

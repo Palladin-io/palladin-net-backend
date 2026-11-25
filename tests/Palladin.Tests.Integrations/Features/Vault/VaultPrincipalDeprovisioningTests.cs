@@ -533,7 +533,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
     }
 
     [Fact]
-    public async Task When_LegacyAgentOperationWaitsForRotation_Then_JobReleasesItAndKeepsTheRequirement()
+    public async Task When_LegacyAgentOperationWaitsForRotation_Then_ResumeReleasesItAndKeepsTheRequirement()
     {
         // Given
         var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -559,8 +559,9 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         // When
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
-            await ActivatorUtilities.CreateInstance<ResumeAgentDeprovisioningJob>(scope.ServiceProvider)
-                .ExecuteAsync(TestContext.Current.CancellationToken);
+            await ActivatorUtilities.CreateInstance<ResumeAgentDeprovisioningConsumer>(scope.ServiceProvider)
+                .Consume(apiFactory.MockConsumeContext(
+                    new ResumeAgentDeprovisioningCommand(organization.Id, operation.Id)));
         }
 
         // Then
@@ -576,6 +577,75 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         pending.Reasons.ShouldHaveSingleItem().PrincipalId.ShouldBe(agentId);
         (await readContext.AgentVaultDiscoveryEnvelopes.AnyAsync(
             x => x.AgentId == agentId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_HandOffWasInterrupted_Then_ResumedAgentStartsQueuedMemberRemoval()
+    {
+        // Given
+        var (removedMember, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var remainingMember = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, removedMember.Id);
+        await AddVaultMemberAsync(organization.Id, vault.Id, remainingMember.Id);
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var agentOperation = VaultPrincipalDeprovisioning.Create(
+            Guid.NewGuid(), organization.Id, VaultPrincipalType.Agent, Guid.NewGuid(), remainingMember.Id, now);
+        var memberOperation = VaultPrincipalDeprovisioning.Create(
+            Guid.NewGuid(), organization.Id, VaultPrincipalType.OrganizationMember, removedMember.Id,
+            remainingMember.Id, now);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            writeContext.AddRange(agentOperation, memberOperation);
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        // When
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            await ActivatorUtilities.CreateInstance<ResumeAgentDeprovisioningConsumer>(scope.ServiceProvider)
+                .Consume(apiFactory.MockConsumeContext(
+                    new ResumeAgentDeprovisioningCommand(organization.Id, agentOperation.Id)));
+        }
+
+        // Then
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = verificationScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.VaultPrincipalDeprovisionings.SingleAsync(
+            x => x.Id == agentOperation.Id, TestContext.Current.CancellationToken))
+            .Status.ShouldBe(VaultPrincipalDeprovisioningStatus.Completed);
+        var started = await readContext.VaultPrincipalDeprovisionings.SingleAsync(
+            x => x.Id == memberOperation.Id, TestContext.Current.CancellationToken);
+        started.Status.ShouldBe(VaultPrincipalDeprovisioningStatus.WaitingForRotation);
+        started.CurrentVaultId.ShouldBe(vault.Id);
+    }
+
+    [Fact]
+    public async Task When_ResumeIsRedeliveredAfterCompletion_Then_CompletionIsPublishedAgain()
+    {
+        // Given
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var operation = VaultPrincipalDeprovisioning.Create(
+            Guid.NewGuid(), Guid.NewGuid(), VaultPrincipalType.Agent, Guid.NewGuid(), Guid.NewGuid(), now);
+        operation.Complete(now);
+        operation.FetchEvents();
+        var publisher = Substitute.For<IEventPublisher>();
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var writeContext = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+        writeContext.VaultPrincipalDeprovisionings.Add(operation);
+        await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var coordinator = new VaultPrincipalDeprovisioningCoordinator(
+            new VaultDomainWriteContext(writeContext, [publisher]), apiFactory.GuidProvider);
+
+        // When
+        await new ResumeAgentDeprovisioningConsumer(coordinator, apiFactory.FakeClock)
+            .Consume(apiFactory.MockConsumeContext(
+                new ResumeAgentDeprovisioningCommand(operation.OrganizationId, operation.Id)));
+
+        // Then
+        await publisher.Received(1).PublishAsync(
+            Arg.Is<AgentDeactivationCompletedEvent>(message => message.RequestId == operation.Id),
+            Arg.Any<CancellationToken>());
     }
 
     private AgentDeactivationRequestedEvent AgentRequest(Guid agentId, Guid organizationId, Guid requestedBy) =>

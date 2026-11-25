@@ -37,15 +37,15 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
             .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == requestId, cancellationToken);
         if (operation is not null)
         {
-            if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
+            if (operation.PrincipalType == VaultPrincipalType.Agent)
+            {
+                domainWriteContext.Clear();
+                await ResumeAgentAsync(organizationId, requestId, requestedAt, cancellationToken);
+            }
+            else if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
             {
                 operation.ResumeCompletion();
                 await domainWriteContext.CommitAsync(cancellationToken);
-            }
-            else if (operation.PrincipalType == VaultPrincipalType.Agent)
-            {
-                domainWriteContext.Clear();
-                await CompleteAgentAsync(organizationId, requestId, requestedAt, cancellationToken);
             }
 
             return;
@@ -74,9 +74,37 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         await domainWriteContext.CommitAsync(cancellationToken);
     }
 
+    // A redelivery after the completion was saved but not published must publish it again.
+    internal async Task ResumeAgentAsync(
+        Guid organizationId,
+        Guid operationId,
+        Instant now,
+        CancellationToken cancellationToken)
+    {
+        var operation = await domainWriteContext.VaultPrincipalDeprovisionings.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId
+                 && x.Id == operationId
+                 && x.PrincipalType == VaultPrincipalType.Agent,
+            cancellationToken);
+        if (operation is null)
+        {
+            return;
+        }
+
+        if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
+        {
+            operation.ResumeCompletion();
+            await domainWriteContext.CommitAsync(cancellationToken);
+            return;
+        }
+
+        domainWriteContext.Clear();
+        await CompleteAgentAsync(organizationId, operationId, now, cancellationToken);
+    }
+
     // Agent access is removed without waiting for a client. Each affected Vault keeps a durable rotation
     // requirement, persisted before its Agent envelopes are deleted so an interruption cannot lose it.
-    internal async Task CompleteAgentAsync(
+    private async Task CompleteAgentAsync(
         Guid organizationId,
         Guid operationId,
         Instant now,
@@ -100,6 +128,7 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
             var vaultId = await FindNextAffectedVaultIdAsync(operation, cancellationToken);
             if (vaultId is null)
             {
+                await StartQueuedMemberIfIdleAsync(organizationId, now, cancellationToken);
                 operation.Complete(now);
                 await domainWriteContext.CommitAsync(cancellationToken);
                 return;
@@ -138,9 +167,21 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         operation.ReleaseRotation(now);
         await domainWriteContext.CommitAsync(cancellationToken);
         domainWriteContext.Clear();
-        await StartNextPendingAsync(organizationId, now, cancellationToken);
-        await domainWriteContext.CommitAsync(cancellationToken);
-        domainWriteContext.Clear();
+    }
+
+    // Committed together with the Agent completion, so an interrupted hand-off is retried with it.
+    private async Task StartQueuedMemberIfIdleAsync(
+        Guid organizationId,
+        Instant now,
+        CancellationToken cancellationToken)
+    {
+        if (!await domainWriteContext.VaultPrincipalDeprovisionings.AnyAsync(
+                x => x.OrganizationId == organizationId
+                     && x.Status == VaultPrincipalDeprovisioningStatus.WaitingForRotation,
+                cancellationToken))
+        {
+            await StartNextPendingAsync(organizationId, now, cancellationToken);
+        }
     }
 
     private async Task RequireAgentRotationAsync(

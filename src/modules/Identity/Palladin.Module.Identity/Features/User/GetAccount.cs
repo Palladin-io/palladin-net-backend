@@ -46,6 +46,7 @@ internal sealed class GetAccountEndpoint(IdentityDomainReadContext domainReadCon
     {
         Get("api/account");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Get current user's account";

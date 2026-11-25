@@ -18,6 +18,7 @@ internal sealed class GetSharedUnlockPreferenceEndpoint(IdentityDomainReadContex
     {
         Get("api/account/shared-unlock");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Tags("Identity/Account");
         Summary(summary =>
         {

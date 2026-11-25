@@ -48,6 +48,7 @@ internal sealed class GetUserConsentsEndpoint(
     {
         Get("api/account/consents");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Tags("Identity/Account");
         Summary(summary => summary.Summary = "Get the current user's optional consent decisions and their displayed notice versions");
     }

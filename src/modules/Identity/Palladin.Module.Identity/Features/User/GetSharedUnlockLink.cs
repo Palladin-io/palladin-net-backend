@@ -22,6 +22,7 @@ internal sealed class GetSharedUnlockLinkEndpoint(IdentityDomainReadContext cont
     {
         Get("api/account/shared-unlock/links/{LinkId}");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Tags("Identity/Account");
         Summary(summary => summary.Summary = "Get this account's local shared-unlock link authority");
     }

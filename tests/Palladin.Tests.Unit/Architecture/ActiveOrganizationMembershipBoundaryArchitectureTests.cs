@@ -15,14 +15,19 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         "DiscardBrowserSessionEndpoint",
         "DisconnectSharedUnlockLinkEndpoint",
         "EnrollTotpEndpoint",
-        "GetMemberDeltaEndpoint",
-        "GetMemberSnapshotEndpoint",
+        "GetAccountEndpoint",
+        "GetNotificationPreferencesEndpoint",
+        "GetSharedUnlockLinkEndpoint",
+        "GetSharedUnlockPreferenceEndpoint",
         "GetSharedUnlockSessionStateEndpoint",
-        "GlobalSearchEndpoint",
+        "GetUserConsentHistoryEndpoint",
+        "GetUserConsentsEndpoint",
         "IssueRecoveryChallengeEndpoint",
+        "ListOrganizationsEndpoint",
+        "ListPushTokensEndpoint",
         "LockSharedUnlockLinkEndpoint",
-        "LogoutSharedUnlockLinkEndpoint",
         "LogoutEndpoint",
+        "LogoutSharedUnlockLinkEndpoint",
         "MarkAllNotificationsReadEndpoint",
         "MarkNotificationReadEndpoint",
         "RecoverAccountEndpoint",
@@ -37,7 +42,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
     ];
 
     [Fact]
-    public void EveryEndpoint_ShouldReceiveTheUnsafeUserJwtBoundaryByDefault()
+    public void EveryEndpoint_ShouldReceiveTheActiveMembershipBoundaryByDefault()
     {
         var root = FindRepositoryRoot();
         var program = File.ReadAllText(Path.Combine(root, "src", "Palladin.Api", "Program.cs"));
@@ -51,7 +56,7 @@ public sealed partial class ActiveOrganizationMembershipBoundaryArchitectureTest
         program.ShouldContain(
             "endpointDefinition.PreProcessor<RequireActiveOrganizationMembershipPreProcessor>(Order.Before)");
         program.ShouldNotContain("DomainWriteEndpointClassifier");
-        preProcessor.ShouldContain("HttpMethods.IsGet(method)");
+        preProcessor.ShouldNotContain("HttpMethods.");
         preProcessor.ShouldContain("GetMetadata<AllowNonActiveOrganizationMembershipMetadata>()");
         preProcessor.ShouldContain("validator.IsActiveAsync(");
     }

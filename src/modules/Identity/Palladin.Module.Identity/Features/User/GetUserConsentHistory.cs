@@ -40,6 +40,7 @@ internal sealed class GetUserConsentHistoryEndpoint(IdentityDomainReadContext co
     {
         Get("api/account/consents/{Purpose}/history");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Tags("Identity/Account");
         Summary(summary => summary.Summary = "Export the current user's consent history in pages of up to 50 decisions");
     }

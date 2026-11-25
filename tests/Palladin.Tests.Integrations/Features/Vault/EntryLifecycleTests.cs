@@ -26,7 +26,7 @@ namespace Palladin.Tests.Integrations.Features.Vault;
 public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
-    public async Task When_OrganizationMembershipIsRemoving_Then_AllEntryMutationsFailClosed()
+    public async Task When_OrganizationMembershipIsRemoving_Then_EntryReadsAndMutationsFailClosed()
     {
         var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
         var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
@@ -75,9 +75,7 @@ public sealed class EntryLifecycleTests(ApiFactory apiFactory) : TestBase
         var destroy = await removingClient.POSTAsync<DestroyEntryEndpoint, DestroyEntryRequest>(
             new DestroyEntryRequest { VaultId = vault.Id, EntryId = entryId });
 
-        new[] { snapshot, delta, search }
-            .ShouldAllBe(response => response.StatusCode == HttpStatusCode.OK);
-        new[] { archive, delete, restore, destroy }
+        new[] { snapshot, delta, search, archive, delete, restore, destroy }
             .ShouldAllBe(response => response.StatusCode == HttpStatusCode.Forbidden);
         await using var verificationScope = apiFactory.Services.CreateAsyncScope();
         var persisted = await verificationScope.ServiceProvider

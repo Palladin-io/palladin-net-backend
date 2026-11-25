@@ -28,6 +28,7 @@ internal sealed class ListOrganizationsEndpoint(IdentityDomainReadContext domain
     {
         Get("api/organizations");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Tags("Identity/Organization");
         Summary(summary =>
         {

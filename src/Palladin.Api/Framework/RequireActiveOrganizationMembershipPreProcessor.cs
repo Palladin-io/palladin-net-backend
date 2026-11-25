@@ -18,15 +18,6 @@ internal sealed class RequireActiveOrganizationMembershipPreProcessor : IGlobalP
             return;
         }
 
-        var method = context.HttpContext.Request.Method;
-        if (HttpMethods.IsGet(method)
-            || HttpMethods.IsHead(method)
-            || HttpMethods.IsOptions(method)
-            || HttpMethods.IsTrace(method))
-        {
-            return;
-        }
-
         await ActiveOrganizationMembershipGate.EnforceAsync(context, ct);
     }
 }

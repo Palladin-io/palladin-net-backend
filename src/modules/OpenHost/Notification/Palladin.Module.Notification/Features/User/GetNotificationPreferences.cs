@@ -18,6 +18,7 @@ internal sealed class GetNotificationPreferencesEndpoint(NotificationDomainReadC
     {
         Get("api/notifications/preferences");
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
+        Options(builder => builder.AllowNonActiveOrganizationMembership());
         Summary(summary =>
         {
             summary.Summary = "Get the current user's notification preferences";

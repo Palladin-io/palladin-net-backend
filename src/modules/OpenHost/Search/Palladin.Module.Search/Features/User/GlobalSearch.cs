@@ -57,7 +57,6 @@ internal sealed class GlobalSearchEndpoint(SearchDomainReadContext domainReadCon
     {
         Post(SearchConstants.Route);
         AuthSchemes(JwtBearerDefaults.AuthenticationScheme);
-        Options(builder => builder.AllowNonActiveOrganizationMembership());
         // Members are visible within their organization; Agent results additionally require AgentManage.
         Summary(summary =>
         {

@@ -56,6 +56,7 @@ internal sealed class VaultKeyRotation
     public Guid? DeprovisioningId { get; private set; }
     public Guid? ExcludedMemberId { get; private set; }
     public Guid? ExcludedAgentId { get; private set; }
+    internal ICollection<VaultKeyRotationReason> Reasons { get; private set; } = [];
     internal ICollection<VaultKeyRotationPreparedItem> PreparedItems { get; private set; } = [];
     internal VaultKeyMaterialKind[] RequiredKeyMaterialKinds => Scope.HasFlag(VaultKeyRotationScope.VaultKey)
         ? Enum.GetValues<VaultKeyMaterialKind>()
@@ -174,6 +175,63 @@ internal sealed class VaultKeyRotation
         ExcludedAgentId = deprovisioning.PrincipalType == VaultPrincipalType.Agent
             ? deprovisioning.PrincipalId
             : null;
+        RetargetKeys();
+        AddReason(
+            deprovisioning.PrincipalType,
+            deprovisioning.PrincipalId,
+            principalName: null,
+            deprovisioning.RequestedAt);
+    }
+
+    internal void RequireForDeactivatedAgent(
+        Guid agentId,
+        string? agentName,
+        VaultKeyRotationScope requiredScope,
+        Instant occurredAt)
+    {
+        if (Status == VaultKeyRotationStatus.Committed)
+        {
+            throw new DomainException("Committed Vault key rotation cannot accept another reason.");
+        }
+
+        ValidateScope(requiredScope);
+        Scope |= requiredScope;
+        RetargetKeys();
+        AddReason(VaultPrincipalType.Agent, agentId, agentName, occurredAt);
+        Status = VaultKeyRotationStatus.PendingClient;
+        LeaseOwnerId = null;
+        FencingToken = null;
+        LeaseExpiresAt = null;
+        LeaseRevision = checked(LeaseRevision + 1);
+    }
+
+    internal void DetachAgentDeprovisioning(Guid deprovisioningId)
+    {
+        if (DeprovisioningId != deprovisioningId || ExcludedAgentId is null)
+        {
+            return;
+        }
+
+        DeprovisioningId = null;
+        ExcludedAgentId = null;
+    }
+
+    private void AddReason(
+        VaultPrincipalType principalType,
+        Guid principalId,
+        string? principalName,
+        Instant occurredAt)
+    {
+        if (Reasons.Any(x => x.PrincipalType == principalType && x.PrincipalId == principalId))
+        {
+            return;
+        }
+
+        Reasons.Add(VaultKeyRotationReason.Create(this, principalType, principalId, principalName, occurredAt));
+    }
+
+    private void RetargetKeys()
+    {
         TargetMemberKeyGeneration = Scope.HasFlag(VaultKeyRotationScope.VaultKey)
             ? Next(BaseMemberKeyGeneration)
             : BaseMemberKeyGeneration;

@@ -151,7 +151,7 @@ public sealed class GetAgentMeTests(ApiFactory apiFactory) : TestBase
         await using var verificationScope = apiFactory.Services.CreateAsyncScope();
         var persisted = await verificationScope.ServiceProvider.GetRequiredService<AgentsDbReadContext>()
             .Agents.SingleAsync(x => x.Id == agent.Id, TestContext.Current.CancellationToken);
-        persisted.Status.ShouldBe(AgentStatus.Deactivating);
+        persisted.Status.ShouldNotBe(AgentStatus.Active);
         persisted.Type.ShouldBe(agent.Type);
     }
 

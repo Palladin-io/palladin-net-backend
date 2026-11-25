@@ -41,6 +41,7 @@ internal sealed class ListPendingVaultKeyRotationsEndpoint(
                 member.OrganizationId == x.OrganizationId
                 && member.VaultId == x.VaultId
                 && member.UserId == userId))
+            .Include(x => x.Reasons)
             .OrderBy(x => x.TriggeredAt)
             .ThenBy(x => x.Id)
             .ToListAsync(ct);

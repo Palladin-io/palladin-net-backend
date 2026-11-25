@@ -21,7 +21,7 @@ namespace Palladin.Tests.Integrations.Features.Agents;
 public sealed class DeactivateAgentTests(ApiFactory apiFactory) : TestBase
 {
     [Fact]
-    public async Task When_AgentIsActive_Then_StartsStagedDeactivationAndReturns204()
+    public async Task When_AgentHasVaultAccess_Then_DeactivationCompletesWithoutWaitingForRotation()
     {
         // Given
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -45,14 +45,10 @@ public sealed class DeactivateAgentTests(ApiFactory apiFactory) : TestBase
         // Then
         response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
-        await using var scope = apiFactory.Services.CreateAsyncScope();
-        var readContext = scope.ServiceProvider.GetRequiredService<AgentsDbReadContext>();
-        var persisted = await readContext.Agents.FirstOrDefaultAsync(x => x.Id == agent.Id);
-        persisted.ShouldNotBeNull();
-        persisted.Status.ShouldBe(AgentStatus.Deactivating);
+        var persisted = await WaitForStatusAsync(agent.Id, AgentStatus.Deactivated);
         persisted.DeactivatedBy.ShouldBe(user.Id);
         persisted.DeactivationRequestId.ShouldNotBeNull();
-        persisted.DeactivatedAt.ShouldBeNull();
+        persisted.DeactivatedAt.ShouldNotBeNull();
     }
 
     [Fact]

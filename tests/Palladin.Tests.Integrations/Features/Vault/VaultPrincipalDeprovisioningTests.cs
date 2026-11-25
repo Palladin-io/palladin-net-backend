@@ -274,7 +274,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
     }
 
     [Fact]
-    public async Task When_AgentDeactivationRotationCommits_Then_VdkEnvelopeIsRemoved()
+    public async Task When_AgentIsDeactivated_Then_AccessIsRemovedImmediatelyAndRotationCanStillCommit()
     {
         // Given
         var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
@@ -298,10 +298,25 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         Guid rotationId;
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
-            rotationId = await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
-                .VaultKeyRotations.Where(x => x.DeprovisioningId == requestId)
-                .Select(x => x.Id)
-                .SingleAsync();
+            var pendingContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+            (await pendingContext.AgentVaultDiscoveryEnvelopes.AnyAsync(x =>
+                x.OrganizationId == organization.Id && x.AgentId == agentId)).ShouldBeFalse();
+            (await pendingContext.VaultPrincipalDeprovisionings.SingleAsync(x => x.Id == requestId))
+                .Status.ShouldBe(VaultPrincipalDeprovisioningStatus.Completed);
+            var rotation = await pendingContext.VaultKeyRotations.Include(x => x.Reasons)
+                .SingleAsync(x => x.VaultId == vault.Id);
+            rotation.Status.ShouldBe(VaultKeyRotationStatus.PendingClient);
+            rotation.Scope.ShouldBe(VaultKeyRotationScope.Vdk);
+            rotation.Reasons.ShouldHaveSingleItem().PrincipalId.ShouldBe(agentId);
+            rotationId = rotation.Id;
+        }
+
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>().Agents
+                .Where(x => x.Id == agentId)
+                .ExecuteUpdateAsync(update => update.SetProperty(
+                    x => x.Status, Palladin.Core.Types.AgentStatus.Deactivated));
         }
         var client = apiFactory.CreateAuthenticatedClient(member, Permission.VaultManage);
         var (_, claim) = await client.POSTAsync<
@@ -399,6 +414,189 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             .VaultPrincipalDeprovisionings.SingleAsync(x => x.Id == requestId);
         completed.Status.ShouldBe(VaultPrincipalDeprovisioningStatus.Completed);
         completed.CompletedVaultCount.ShouldBe(2u);
+    }
+
+    [Fact]
+    public async Task When_AnotherAgentIsDeactivatedDuringPreparation_Then_ReasonsAccumulateAndLeaseIsFenced()
+    {
+        // Given
+        var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var firstAgentId = await SeedDiscoveryAgentAsync(organization.Id, vault.Id, member.Id);
+        var secondAgentId = await SeedDiscoveryAgentAsync(organization.Id, vault.Id, member.Id);
+        await ConsumeAsync(AgentRequest(firstAgentId, organization.Id, member.Id));
+        var client = apiFactory.CreateAuthenticatedClient(member, Permission.VaultManage);
+        Guid rotationId;
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            rotationId = (await scope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
+                .VaultKeyRotations.SingleAsync(x => x.VaultId == vault.Id)).Id;
+        }
+        var (_, claim) = await client.POSTAsync<
+            ClaimVaultKeyRotationEndpoint,
+            ClaimVaultKeyRotationRequest,
+            ClaimVaultKeyRotationResponse>(new ClaimVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = rotationId,
+            });
+
+        // When
+        await ConsumeAsync(AgentRequest(secondAgentId, organization.Id, member.Id));
+        var staleCommit = await client.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{rotationId}/commit",
+            new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = rotationId,
+                FencingToken = claim!.FencingToken,
+            },
+            TestContext.Current.CancellationToken);
+        var (_, pending) = await client.GETAsync<
+            ListPendingVaultKeyRotationsEndpoint, ListPendingVaultKeyRotationsResponse>();
+
+        // Then
+        staleCommit.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var rotation = pending!.Items.ShouldHaveSingleItem();
+        rotation.Status.ShouldBe(nameof(VaultKeyRotationStatus.PendingClient));
+        rotation.Reasons.Select(x => x.PrincipalId).ShouldBe([firstAgentId, secondAgentId], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task When_AgentsAffectDifferentVaults_Then_EveryVaultIsRotatableIndependently()
+    {
+        // Given
+        var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vaults = new List<Guid>();
+        for (var index = 0; index < 2; index++)
+        {
+            vaults.Add((await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id)).Id);
+        }
+        var agentIds = new[]
+        {
+            await SeedDiscoveryAgentAsync(organization.Id, vaults[0], member.Id),
+            await SeedDiscoveryAgentAsync(organization.Id, vaults[1], member.Id),
+        };
+
+        // When
+        foreach (var agentId in agentIds)
+        {
+            await ConsumeAsync(AgentRequest(agentId, organization.Id, member.Id));
+        }
+
+        // Then
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.VaultKeyRotations.Where(x => x.OrganizationId == organization.Id)
+            .Select(x => x.VaultId).ToListAsync(TestContext.Current.CancellationToken))
+            .ShouldBe(vaults, ignoreOrder: true);
+        (await readContext.VaultPrincipalDeprovisionings.Where(x => x.OrganizationId == organization.Id)
+            .ToListAsync(TestContext.Current.CancellationToken))
+            .ShouldAllBe(x => x.Status == VaultPrincipalDeprovisioningStatus.Completed);
+    }
+
+    [Fact]
+    public async Task When_AgentHeldFullGrant_Then_RotationCoversEveryVaultKeyFamily()
+    {
+        // Given
+        var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var agentId = await SeedDiscoveryAgentAsync(organization.Id, vault.Id, member.Id);
+        var grantId = Guid.NewGuid();
+        var publicKey = Convert.ToBase64String(new byte[32]);
+        await apiFactory.Services.SeedFullGrantAsync(FullGrant.CreateProactively(
+            grantId,
+            vault.Id,
+            organization.Id,
+            agentId,
+            publicKey,
+            GrantEnvelopeTestData.AgentVaultKey(organization.Id, vault.Id, grantId, agentId, agentPublicKey: publicKey),
+            null,
+            4,
+            "uses",
+            Palladin.Core.Types.GrantMethods.Get,
+            member.Id,
+            new GrantNames("agent", null, "vault", "actor"),
+            apiFactory.FakeClock.GetCurrentInstant(),
+            1));
+
+        // When
+        await ConsumeAsync(AgentRequest(agentId, organization.Id, member.Id));
+
+        // Then
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        var readContext = scope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.VaultKeyRotations.SingleAsync(
+            x => x.VaultId == vault.Id, TestContext.Current.CancellationToken)).Scope.ShouldBe(
+            VaultKeyRotationScope.VaultKey
+            | VaultKeyRotationScope.Vdk
+            | VaultKeyRotationScope.AgentMessage
+            | VaultKeyRotationScope.ManifestSigning);
+        (await readContext.Grants.Include(x => x.AgentWrappedVaultKey).SingleAsync(
+            x => x.AgentId == agentId, TestContext.Current.CancellationToken))
+            .AgentWrappedVaultKey.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_LegacyAgentOperationWaitsForRotation_Then_JobReleasesItAndKeepsTheRequirement()
+    {
+        // Given
+        var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var agentId = await SeedDiscoveryAgentAsync(organization.Id, vault.Id, member.Id);
+        var now = apiFactory.FakeClock.GetCurrentInstant();
+        var operation = VaultPrincipalDeprovisioning.Create(
+            Guid.NewGuid(), organization.Id, VaultPrincipalType.Agent, agentId, member.Id, now);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = scope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            var tracked = await writeContext.Vaults.SingleAsync(
+                x => x.Id == vault.Id, TestContext.Current.CancellationToken);
+            var rotation = VaultKeyRotation.Create(
+                Guid.NewGuid(), tracked, VaultKeyRotationCause.AgentDeactivationRequested,
+                VaultKeyRotationScope.Vdk, member.Id, now);
+            rotation.AttachDeprovisioning(operation);
+            operation.WaitForRotation(vault.Id, rotation.Id, now);
+            writeContext.AddRange(operation, rotation);
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        // When
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            await ActivatorUtilities.CreateInstance<ResumeAgentDeprovisioningJob>(scope.ServiceProvider)
+                .ExecuteAsync(TestContext.Current.CancellationToken);
+        }
+
+        // Then
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        var readContext = verificationScope.ServiceProvider.GetRequiredService<VaultDbReadContext>();
+        (await readContext.VaultPrincipalDeprovisionings.SingleAsync(
+            x => x.Id == operation.Id, TestContext.Current.CancellationToken))
+            .Status.ShouldBe(VaultPrincipalDeprovisioningStatus.Completed);
+        var pending = await readContext.VaultKeyRotations.Include(x => x.Reasons).SingleAsync(
+            x => x.VaultId == vault.Id, TestContext.Current.CancellationToken);
+        pending.DeprovisioningId.ShouldBeNull();
+        pending.ExcludedAgentId.ShouldBeNull();
+        pending.Reasons.ShouldHaveSingleItem().PrincipalId.ShouldBe(agentId);
+        (await readContext.AgentVaultDiscoveryEnvelopes.AnyAsync(
+            x => x.AgentId == agentId, TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    private AgentDeactivationRequestedEvent AgentRequest(Guid agentId, Guid organizationId, Guid requestedBy) =>
+        new(Guid.NewGuid(), agentId, organizationId, requestedBy, apiFactory.FakeClock.GetCurrentInstant());
+
+    private async Task<Guid> SeedDiscoveryAgentAsync(Guid organizationId, Guid vaultId, Guid memberId)
+    {
+        var agentId = Guid.NewGuid();
+        var fixture = AgentDiscoveryProvisioningContractFaker.Create(organizationId, vaultId, agentId);
+        await apiFactory.Services.SeedVaultAgentAsync(
+            organizationId,
+            id: agentId,
+            publicKey: fixture.X25519PublicKey,
+            signingPublicKey: fixture.RequestSigning.PublicKeyBase64);
+        await apiFactory.Services.SeedAgentDiscoveryProvisioningAsync(fixture.Request, memberId);
+        return agentId;
     }
 
     private async Task ConsumeAsync(OrganizationMemberRemovalRequestedEvent message)

@@ -1974,6 +1974,34 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.ToTable("VaultKeyRotationPreparedItems");
                 });
 
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.VaultKeyRotationReason", b =>
+                {
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VaultId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RotationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("PrincipalType")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("PrincipalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PrincipalName")
+                        .HasColumnType("text");
+
+                    b.HasKey("OrganizationId", "VaultId", "RotationId", "PrincipalType", "PrincipalId");
+
+                    b.ToTable("VaultKeyRotationReasons", (string)null);
+                });
+
             modelBuilder.Entity("Palladin.Module.Vault.Domain.VaultMember", b =>
                 {
                     b.Property<Guid>("OrganizationId")
@@ -2490,6 +2518,15 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Palladin.Module.Vault.Domain.VaultKeyRotationReason", b =>
+                {
+                    b.HasOne("Palladin.Module.Vault.Domain.VaultKeyRotation", null)
+                        .WithMany("Reasons")
+                        .HasForeignKey("OrganizationId", "VaultId", "RotationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Palladin.Module.Vault.Domain.VaultMember", b =>
                 {
                     b.HasOne("Palladin.Module.Vault.Domain.Vault", "Vault")
@@ -2558,6 +2595,8 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Palladin.Module.Vault.Domain.VaultKeyRotation", b =>
                 {
                     b.Navigation("PreparedItems");
+
+                    b.Navigation("Reasons");
                 });
 #pragma warning restore 612, 618
         }

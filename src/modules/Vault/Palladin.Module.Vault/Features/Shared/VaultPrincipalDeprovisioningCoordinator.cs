@@ -10,6 +10,8 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
     VaultDomainWriteContext domainWriteContext,
     IGuidProvider guidProvider)
 {
+    private const int GrantPageSize = 100;
+
     internal async Task StartAsync(
         Guid requestId,
         Guid organizationId,
@@ -40,6 +42,11 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
                 operation.ResumeCompletion();
                 await domainWriteContext.CommitAsync(cancellationToken);
             }
+            else if (operation.PrincipalType == VaultPrincipalType.Agent)
+            {
+                domainWriteContext.Clear();
+                await CompleteAgentAsync(organizationId, requestId, requestedAt, cancellationToken);
+            }
 
             return;
         }
@@ -47,6 +54,14 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         operation = VaultPrincipalDeprovisioning.Create(
             requestId, organizationId, principalType, principalId, requestedBy, requestedAt);
         domainWriteContext.Add(operation);
+        if (principalType == VaultPrincipalType.Agent)
+        {
+            await domainWriteContext.CommitAsync(cancellationToken);
+            domainWriteContext.Clear();
+            await CompleteAgentAsync(organizationId, requestId, requestedAt, cancellationToken);
+            return;
+        }
+
         var anotherOperationIsRunning = await domainWriteContext.VaultPrincipalDeprovisionings
             .AnyAsync(x => x.OrganizationId == organizationId
                            && x.Status == VaultPrincipalDeprovisioningStatus.WaitingForRotation,
@@ -57,6 +72,158 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         }
 
         await domainWriteContext.CommitAsync(cancellationToken);
+    }
+
+    // Agent access is removed without waiting for a client. Each affected Vault keeps a durable rotation
+    // requirement, persisted before its Agent envelopes are deleted so an interruption cannot lose it.
+    internal async Task CompleteAgentAsync(
+        Guid organizationId,
+        Guid operationId,
+        Instant now,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var operation = await domainWriteContext.VaultPrincipalDeprovisionings.SingleAsync(
+                x => x.OrganizationId == organizationId && x.Id == operationId, cancellationToken);
+            if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
+            {
+                return;
+            }
+
+            if (operation.Status == VaultPrincipalDeprovisioningStatus.WaitingForRotation)
+            {
+                await ReleaseWaitingAgentAsync(operation, now, cancellationToken);
+                continue;
+            }
+
+            var vaultId = await FindNextAffectedVaultIdAsync(operation, cancellationToken);
+            if (vaultId is null)
+            {
+                operation.Complete(now);
+                await domainWriteContext.CommitAsync(cancellationToken);
+                return;
+            }
+
+            await RequireAgentRotationAsync(operation, vaultId.Value, now, cancellationToken);
+            await DeleteAgentGrantEnvelopesAsync(
+                organizationId, vaultId.Value, operation.PrincipalId, cancellationToken);
+
+            operation = await domainWriteContext.VaultPrincipalDeprovisionings.SingleAsync(
+                x => x.OrganizationId == organizationId && x.Id == operationId, cancellationToken);
+            var vault = await domainWriteContext.Vaults
+                .Include(x => x.AgentVaultDiscoveryEnvelopes
+                    .Where(envelope => envelope.AgentId == operation.PrincipalId))
+                .SingleAsync(x => x.OrganizationId == organizationId && x.Id == vaultId.Value, cancellationToken);
+            vault.RemoveAgentDiscoveryPage(new HashSet<Guid> { operation.PrincipalId });
+            vault.FenceAccessMutation(operation.RequestedBy, now);
+            operation.RecordAgentVault(now);
+            await domainWriteContext.CommitAsync(cancellationToken);
+            domainWriteContext.Clear();
+        }
+    }
+
+    private async Task ReleaseWaitingAgentAsync(
+        VaultPrincipalDeprovisioning operation,
+        Instant now,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = operation.OrganizationId;
+        var rotation = await domainWriteContext.VaultKeyRotations.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId
+                 && x.Id == operation.CurrentRotationId
+                 && x.Status != VaultKeyRotationStatus.Committed,
+            cancellationToken);
+        rotation?.DetachAgentDeprovisioning(operation.Id);
+        operation.ReleaseRotation(now);
+        await domainWriteContext.CommitAsync(cancellationToken);
+        domainWriteContext.Clear();
+        await StartNextPendingAsync(organizationId, now, cancellationToken);
+        await domainWriteContext.CommitAsync(cancellationToken);
+        domainWriteContext.Clear();
+    }
+
+    private async Task RequireAgentRotationAsync(
+        VaultPrincipalDeprovisioning operation,
+        Guid vaultId,
+        Instant now,
+        CancellationToken cancellationToken)
+    {
+        var heldVaultKey = await domainWriteContext.Grants.OfType<FullGrant>().AnyAsync(
+            x => x.OrganizationId == operation.OrganizationId
+                 && x.VaultId == vaultId
+                 && x.AgentId == operation.PrincipalId
+                 && x.AgentWrappedVaultKey != null,
+            cancellationToken);
+        var scope = heldVaultKey
+            ? VaultKeyRotationScope.VaultKey
+              | VaultKeyRotationScope.Vdk
+              | VaultKeyRotationScope.AgentMessage
+              | VaultKeyRotationScope.ManifestSigning
+            : VaultKeyRotationScope.Vdk;
+        var agentName = await domainWriteContext.Agents
+            .Where(x => x.OrganizationId == operation.OrganizationId && x.Id == operation.PrincipalId)
+            .Select(x => x.Name)
+            .SingleOrDefaultAsync(cancellationToken);
+        var vault = await domainWriteContext.Vaults.SingleAsync(
+            x => x.OrganizationId == operation.OrganizationId && x.Id == vaultId, cancellationToken);
+        var rotation = await domainWriteContext.VaultKeyRotations
+            .Include(x => x.Reasons)
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == operation.OrganizationId
+                     && x.VaultId == vaultId
+                     && x.Status != VaultKeyRotationStatus.Committed,
+                cancellationToken);
+        if (rotation is null)
+        {
+            rotation = VaultKeyRotation.Create(
+                guidProvider.Generate(),
+                vault,
+                VaultKeyRotationCause.AgentDeactivationRequested,
+                scope,
+                operation.RequestedBy,
+                now);
+            domainWriteContext.Add(rotation);
+        }
+
+        rotation.RequireForDeactivatedAgent(operation.PrincipalId, agentName, scope, operation.RequestedAt);
+        vault.FenceAccessMutation(operation.RequestedBy, now);
+        await domainWriteContext.CommitAsync(cancellationToken);
+        domainWriteContext.Clear();
+    }
+
+    private async Task DeleteAgentGrantEnvelopesAsync(
+        Guid organizationId,
+        Guid vaultId,
+        Guid agentId,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var grants = await domainWriteContext.Grants
+                .Include(x => x.AgentWrappedVaultKey)
+                .Include(x => x.ScriptExecutionPackage)
+                .Include(x => x.GrantEntryScopes).ThenInclude(x => x.Envelope)
+                .Where(x => x.OrganizationId == organizationId && x.VaultId == vaultId && x.AgentId == agentId)
+                .Where(x => x.AgentWrappedVaultKey != null
+                            || x.ScriptExecutionPackage != null
+                            || x.GrantEntryScopes.Any(scope => scope.Envelope != null))
+                .OrderBy(x => x.Id)
+                .Take(GrantPageSize)
+                .ToListAsync(cancellationToken);
+            if (grants.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var grant in grants)
+            {
+                grant.DeleteAgentEnvelopes();
+            }
+
+            await domainWriteContext.CommitAsync(cancellationToken);
+            domainWriteContext.Clear();
+        }
     }
 
     internal async Task AdvanceAsync(
@@ -86,11 +253,13 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         var vault = await domainWriteContext.Vaults.SingleAsync(
             x => x.OrganizationId == operation.OrganizationId && x.Id == vaultId.Value,
             cancellationToken);
-        var rotation = await domainWriteContext.VaultKeyRotations.SingleOrDefaultAsync(
-            x => x.OrganizationId == operation.OrganizationId
-                 && x.VaultId == vaultId.Value
-                 && x.Status != VaultKeyRotationStatus.Committed,
-            cancellationToken);
+        var rotation = await domainWriteContext.VaultKeyRotations
+            .Include(x => x.Reasons)
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == operation.OrganizationId
+                     && x.VaultId == vaultId.Value
+                     && x.Status != VaultKeyRotationStatus.Committed,
+                cancellationToken);
         if (rotation is null)
         {
             rotation = VaultKeyRotation.Create(
@@ -127,6 +296,7 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
     {
         var next = await domainWriteContext.VaultPrincipalDeprovisionings
             .Where(x => x.OrganizationId == organizationId
+                        && x.PrincipalType == VaultPrincipalType.OrganizationMember
                         && x.Status == VaultPrincipalDeprovisioningStatus.Pending
                         && (excludedOperationId == null || x.Id != excludedOperationId))
             .OrderBy(x => x.RequestedAt)

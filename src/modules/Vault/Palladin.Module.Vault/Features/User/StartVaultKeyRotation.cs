@@ -37,7 +37,15 @@ public sealed record VaultKeyRotationResponse(
     Instant? LeaseExpiresAt,
     Instant TriggeredAt,
     Instant? CommittedAt,
-    string? LastFailureCode);
+    string? LastFailureCode,
+    IReadOnlyList<VaultKeyRotationReasonResponse> Reasons);
+
+[PublicAPI]
+public sealed record VaultKeyRotationReasonResponse(
+    string PrincipalType,
+    Guid PrincipalId,
+    string? PrincipalName,
+    Instant OccurredAt);
 
 [PublicAPI]
 internal sealed class StartVaultKeyRotationEndpoint(
@@ -79,6 +87,7 @@ internal sealed class StartVaultKeyRotationEndpoint(
         }
 
         var active = await domainWriteContext.VaultKeyRotations
+            .Include(x => x.Reasons)
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == organizationId
                      && x.VaultId == req.VaultId
@@ -109,7 +118,7 @@ internal sealed class StartVaultKeyRotationEndpoint(
             {
                 // The filtered unique index is the authoritative active-rotation invariant.
                 domainWriteContext.Clear();
-                active = await domainWriteContext.VaultKeyRotations.SingleAsync(
+                active = await domainWriteContext.VaultKeyRotations.Include(x => x.Reasons).SingleAsync(
                     x => x.OrganizationId == organizationId
                          && x.VaultId == req.VaultId
                          && x.Status != VaultKeyRotationStatus.Committed,
@@ -142,7 +151,13 @@ internal static class VaultKeyRotationResponses
         rotation.LeaseExpiresAt,
         rotation.TriggeredAt,
         rotation.CommittedAt,
-        rotation.LastFailureCode);
+        rotation.LastFailureCode,
+        rotation.Reasons
+            .OrderBy(x => x.OccurredAt)
+            .ThenBy(x => x.PrincipalId)
+            .Select(x => new VaultKeyRotationReasonResponse(
+                x.PrincipalType.ToString(), x.PrincipalId, x.PrincipalName, x.OccurredAt))
+            .ToArray());
 
     private static VaultKeyEpochContract Map(VaultKeyEpoch epoch) => new(
         epoch.VaultKeyVersion.Value,

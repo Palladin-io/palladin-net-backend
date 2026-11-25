@@ -37,15 +37,15 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
             .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == requestId, cancellationToken);
         if (operation is not null)
         {
-            if (operation.PrincipalType == VaultPrincipalType.Agent)
-            {
-                domainWriteContext.Clear();
-                await ResumeAgentAsync(organizationId, requestId, requestedAt, cancellationToken);
-            }
-            else if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
+            if (operation.Status == VaultPrincipalDeprovisioningStatus.Completed)
             {
                 operation.ResumeCompletion();
                 await domainWriteContext.CommitAsync(cancellationToken);
+            }
+            else if (operation.PrincipalType == VaultPrincipalType.Agent)
+            {
+                domainWriteContext.Clear();
+                await CompleteAgentAsync(organizationId, requestId, requestedAt, cancellationToken);
             }
 
             return;
@@ -190,6 +190,14 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
         Instant now,
         CancellationToken cancellationToken)
     {
+        // Rotation recipients are the Active replicas, so the Agent must stop being one in the same commit
+        // that exposes the requirement; otherwise a fast rotation could seal the new keys to it.
+        var agent = await domainWriteContext.Agents.SingleOrDefaultAsync(
+            x => x.OrganizationId == operation.OrganizationId && x.Id == operation.PrincipalId,
+            cancellationToken);
+        agent?.BeginDeactivation(operation.RequestedAt);
+        // The tracked Agent version must be read before its wrappers: a FULL grant committed in between
+        // advances it, so this commit conflicts and retries instead of persisting too narrow a scope.
         var heldVaultKey = await domainWriteContext.Grants.OfType<FullGrant>().AnyAsync(
             x => x.OrganizationId == operation.OrganizationId
                  && x.VaultId == vaultId
@@ -202,12 +210,6 @@ internal sealed class VaultPrincipalDeprovisioningCoordinator(
               | VaultKeyRotationScope.AgentMessage
               | VaultKeyRotationScope.ManifestSigning
             : VaultKeyRotationScope.Vdk;
-        // Rotation recipients are the Active replicas, so the Agent must stop being one in the same commit
-        // that exposes the requirement; otherwise a fast rotation could seal the new keys to it.
-        var agent = await domainWriteContext.Agents.SingleOrDefaultAsync(
-            x => x.OrganizationId == operation.OrganizationId && x.Id == operation.PrincipalId,
-            cancellationToken);
-        agent?.BeginDeactivation(operation.RequestedAt);
         var vault = await domainWriteContext.Vaults.SingleAsync(
             x => x.OrganizationId == operation.OrganizationId && x.Id == vaultId, cancellationToken);
         var rotation = await domainWriteContext.VaultKeyRotations

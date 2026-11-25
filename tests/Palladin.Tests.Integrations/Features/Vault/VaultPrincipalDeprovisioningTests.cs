@@ -1,7 +1,9 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Palladin.Core.Events;
@@ -497,23 +499,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
         var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
         var agentId = await SeedDiscoveryAgentAsync(organization.Id, vault.Id, member.Id);
-        var grantId = Guid.NewGuid();
-        var publicKey = Convert.ToBase64String(new byte[32]);
-        await apiFactory.Services.SeedFullGrantAsync(FullGrant.CreateProactively(
-            grantId,
-            vault.Id,
-            organization.Id,
-            agentId,
-            publicKey,
-            GrantEnvelopeTestData.AgentVaultKey(organization.Id, vault.Id, grantId, agentId, agentPublicKey: publicKey),
-            null,
-            4,
-            "uses",
-            Palladin.Core.Types.GrantMethods.Get,
-            member.Id,
-            new GrantNames("agent", null, "vault", "actor"),
-            apiFactory.FakeClock.GetCurrentInstant(),
-            1));
+        await SeedFullGrantAsync(organization.Id, vault.Id, agentId, member.Id);
 
         // When
         await ConsumeAsync(AgentRequest(agentId, organization.Id, member.Id));
@@ -646,6 +632,88 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
         await publisher.Received(1).PublishAsync(
             Arg.Is<AgentDeactivationCompletedEvent>(message => message.RequestId == operation.Id),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task When_FullGrantCommitsWhileScopeIsInspected_Then_DeactivationRetriesWithEveryKeyFamily()
+    {
+        // Given
+        var (member, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, member.Id);
+        var agentId = await SeedDiscoveryAgentAsync(organization.Id, vault.Id, member.Id);
+        var request = AgentRequest(agentId, organization.Id, member.Id);
+        var interceptor = new AfterFullGrantInspection(async () =>
+        {
+            await SeedFullGrantAsync(organization.Id, vault.Id, agentId, member.Id);
+            await using var grantScope = apiFactory.Services.CreateAsyncScope();
+            var grantContext = grantScope.ServiceProvider.GetRequiredService<VaultDbWriteContext>();
+            (await grantContext.Agents.SingleAsync(x => x.Id == agentId)).FenceAccessMutation();
+            await grantContext.SaveChangesAsync();
+        });
+        await using var scope = apiFactory.Services.CreateAsyncScope();
+        await using var writeContext = new VaultDbWriteContext(
+            new DbContextOptionsBuilder<VaultDbWriteContext>(
+                    scope.ServiceProvider.GetRequiredService<DbContextOptions<VaultDbWriteContext>>())
+                .AddInterceptors(interceptor)
+                .Options);
+        var coordinator = new VaultPrincipalDeprovisioningCoordinator(
+            new VaultDomainWriteContext(writeContext, []), apiFactory.GuidProvider);
+
+        // When
+        await Should.ThrowAsync<DbUpdateConcurrencyException>(() => coordinator.StartAsync(
+            request.RequestId, organization.Id, VaultPrincipalType.Agent, agentId, member.Id,
+            request.RequestedAt, TestContext.Current.CancellationToken));
+        await ConsumeAsync(request);
+
+        // Then
+        interceptor.Triggered.ShouldBeTrue();
+        await using var verificationScope = apiFactory.Services.CreateAsyncScope();
+        (await verificationScope.ServiceProvider.GetRequiredService<VaultDbReadContext>()
+            .VaultKeyRotations.SingleAsync(x => x.VaultId == vault.Id, TestContext.Current.CancellationToken))
+            .Scope.HasFlag(VaultKeyRotationScope.VaultKey).ShouldBeTrue();
+    }
+
+    private async Task SeedFullGrantAsync(Guid organizationId, Guid vaultId, Guid agentId, Guid memberId)
+    {
+        var grantId = Guid.NewGuid();
+        var publicKey = Convert.ToBase64String(new byte[32]);
+        await apiFactory.Services.SeedFullGrantAsync(FullGrant.CreateProactively(
+            grantId,
+            vaultId,
+            organizationId,
+            agentId,
+            publicKey,
+            GrantEnvelopeTestData.AgentVaultKey(organizationId, vaultId, grantId, agentId, agentPublicKey: publicKey),
+            null,
+            4,
+            "uses",
+            Palladin.Core.Types.GrantMethods.Get,
+            memberId,
+            new GrantNames("agent", null, "vault", "actor"),
+            apiFactory.FakeClock.GetCurrentInstant(),
+            1));
+    }
+
+    private sealed class AfterFullGrantInspection(Func<Task> action) : DbCommandInterceptor
+    {
+        public bool Triggered { get; private set; }
+
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Triggered
+                && command.CommandText.Contains("'Full'", StringComparison.Ordinal)
+                && command.CommandText.Contains("AgentWrappedVaultKeys", StringComparison.Ordinal))
+            {
+                Triggered = true;
+                await action();
+            }
+
+            return result;
+        }
     }
 
     private AgentDeactivationRequestedEvent AgentRequest(Guid agentId, Guid organizationId, Guid requestedBy) =>

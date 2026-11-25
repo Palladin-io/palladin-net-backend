@@ -112,8 +112,13 @@ internal sealed class AgentAuthenticationHandler(
                 Context.RequestAborted);
         }
 
-        if (agent.Status != AgentStatus.Active
-            && (agent.Status != AgentStatus.Deactivating || agent.AccessEpoch == 0))
+        if (agent.Status == AgentStatus.Deactivating)
+        {
+            Response.Headers[AgentAuthenticationOptions.AgentIdHeader] = agent.Id.ToString();
+            return AuthenticateResult.Fail("Agent not active");
+        }
+
+        if (agent.Status != AgentStatus.Active)
         {
             var pendingName = agent.Name is null && agent.Status == AgentStatus.Pending ? name : null;
             if (pendingName is not null)

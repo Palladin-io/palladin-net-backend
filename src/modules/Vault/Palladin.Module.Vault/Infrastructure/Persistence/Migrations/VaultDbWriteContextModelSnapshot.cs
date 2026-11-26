@@ -1877,6 +1877,9 @@ namespace Palladin.Module.Vault.Infrastructure.Persistence.Migrations
                     b.Property<Instant?>("CommittedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CommittedBy")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("DeprovisioningId")
                         .HasColumnType("uuid");
 

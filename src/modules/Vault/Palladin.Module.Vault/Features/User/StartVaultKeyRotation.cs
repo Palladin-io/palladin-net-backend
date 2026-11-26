@@ -35,7 +35,9 @@ public sealed record VaultKeyRotationResponse(
     ulong LeaseRevision,
     Guid? LeaseOwnerId,
     Instant? LeaseExpiresAt,
+    Guid TriggeredBy,
     Instant TriggeredAt,
+    Guid? CommittedBy,
     Instant? CommittedAt,
     string? LastFailureCode,
     IReadOnlyList<VaultKeyRotationReasonResponse> Reasons);
@@ -149,7 +151,9 @@ internal static class VaultKeyRotationResponses
         rotation.LeaseRevision,
         rotation.LeaseOwnerId,
         rotation.LeaseExpiresAt,
+        rotation.TriggeredBy,
         rotation.TriggeredAt,
+        rotation.CommittedBy,
         rotation.CommittedAt,
         rotation.LastFailureCode,
         rotation.Reasons

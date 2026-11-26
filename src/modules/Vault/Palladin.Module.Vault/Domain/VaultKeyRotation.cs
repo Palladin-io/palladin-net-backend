@@ -52,6 +52,7 @@ internal sealed class VaultKeyRotation
     internal Instant? LeaseExpiresAt { get; private set; }
     internal ulong LeaseRevision { get; private set; }
     internal Instant? CommittedAt { get; private set; }
+    internal Guid? CommittedBy { get; private set; }
     internal string? LastFailureCode { get; private set; }
     public Guid? DeprovisioningId { get; private set; }
     public Guid? ExcludedMemberId { get; private set; }
@@ -324,6 +325,7 @@ internal sealed class VaultKeyRotation
         }
 
         Status = VaultKeyRotationStatus.Committed;
+        CommittedBy = LeaseOwnerId;
         LeaseOwnerId = null;
         FencingToken = null;
         LeaseExpiresAt = null;

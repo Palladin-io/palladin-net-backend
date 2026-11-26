@@ -335,6 +335,87 @@ public sealed class VaultKeyRotationTests(ApiFactory apiFactory) : TestBase
     }
 
     [Fact]
+    public async Task When_HistoryIsListed_Then_CommittedRotationRecordsCommitterAndNewestComesFirst()
+    {
+        // Given
+        var (user, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, user.Id);
+        var entry = (await SeedEntriesAsync(vault.Id, user.Id, 1)).Single();
+        await SeedMemberDirectoryAsync(user.Id);
+        var client = apiFactory.CreateAuthenticatedClient(user, Permission.VaultManage);
+        var claim = await StartAndClaimAsync(client, vault.Id);
+        await PrepareRotationAsync(client, organization.Id, vault, user.Id, [entry], claim);
+        (await client.PostAsJsonAsync(
+            $"api/vaults/{vault.Id}/key-rotations/{claim.Rotation.Id}/commit",
+            new CommitVaultKeyRotationRequest
+            {
+                VaultId = vault.Id,
+                RotationId = claim.Rotation.Id,
+                FencingToken = claim.FencingToken,
+            },
+            TestContext.Current.CancellationToken)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var originalNow = apiFactory.FakeClock.GetCurrentInstant();
+        VaultKeyRotationResponse? pending;
+        try
+        {
+            apiFactory.FakeClock.Reset(originalNow + Duration.FromMinutes(1));
+            (_, pending) = await client.POSTAsync<
+                StartVaultKeyRotationEndpoint, StartVaultKeyRotationRequest, VaultKeyRotationResponse>(
+                new StartVaultKeyRotationRequest { VaultId = vault.Id });
+        }
+        finally
+        {
+            apiFactory.FakeClock.Reset(originalNow);
+        }
+
+        // When
+        var (firstResponse, first) = await client.GETAsync<
+            ListVaultKeyRotationsEndpoint, ListVaultKeyRotationsRequest, ListVaultKeyRotationsResponse>(
+            new ListVaultKeyRotationsRequest { VaultId = vault.Id, PageSize = 1 });
+        var (secondResponse, second) = await client.GETAsync<
+            ListVaultKeyRotationsEndpoint, ListVaultKeyRotationsRequest, ListVaultKeyRotationsResponse>(
+            new ListVaultKeyRotationsRequest
+            {
+                VaultId = vault.Id,
+                PageSize = 1,
+                BeforeTriggeredAt = first!.Items.Single().TriggeredAt,
+                BeforeId = first.Items.Single().Id,
+            });
+
+        // Then
+        firstResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        first.VaultCreatedBy.ShouldBe(vault.CreatedBy);
+        first.HasMore.ShouldBeTrue();
+        first.Items.Single().Id.ShouldBe(pending!.Id);
+        first.Items.Single().CommittedBy.ShouldBeNull();
+        secondResponse.StatusCode.ShouldBe(HttpStatusCode.OK);
+        second!.HasMore.ShouldBeFalse();
+        var committed = second.Items.Single();
+        committed.Id.ShouldBe(claim.Rotation.Id);
+        committed.Status.ShouldBe("Committed");
+        committed.TriggeredBy.ShouldBe(user.Id);
+        committed.CommittedBy.ShouldBe(user.Id);
+        committed.CommittedAt.ShouldNotBeNull();
+        committed.LeaseOwnerId.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task When_NonMemberListsHistory_Then_ReturnsForbidden()
+    {
+        // Given
+        var (owner, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var vault = await apiFactory.Services.SeedVaultAsync(organization.Id, owner.Id);
+        var outsider = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        var client = apiFactory.CreateAuthenticatedClient(outsider, Permission.VaultManage);
+
+        // When
+        var response = await client.GetAsync($"api/vaults/{vault.Id}/key-rotations", TestContext.Current.CancellationToken);
+
+        // Then
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task When_CurrentMemberHeadIsMissing_Then_CommitReportsEntryAndKeepsCurrentGeneration()
     {
         var (user, organization, _) = await apiFactory.Services.SeedUserAsync();

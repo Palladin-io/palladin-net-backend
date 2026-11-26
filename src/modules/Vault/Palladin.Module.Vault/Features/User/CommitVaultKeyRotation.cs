@@ -100,8 +100,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
             return;
         }
 
-        var rotation = await domainWriteContext.VaultKeyRotations
-            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId
+        var rotation = await domainWriteContext.VaultKeyRotations.Include(x => x.Reasons).SingleOrDefaultAsync(x => x.OrganizationId == organizationId
                                        && x.VaultId == req.VaultId
                                        && x.Id == req.RotationId, ct);
         if (rotation is null)
@@ -287,7 +286,7 @@ internal sealed class CommitVaultKeyRotationEndpoint(
         vault = await domainWriteContext.LockVault(organizationId, req.VaultId)
             .Include(x => x.KeyMaterialEnvelopes)
             .SingleAsync(ct);
-        rotation = await domainWriteContext.VaultKeyRotations.SingleAsync(
+        rotation = await domainWriteContext.VaultKeyRotations.Include(x => x.Reasons).SingleAsync(
             x => x.OrganizationId == organizationId
                  && x.VaultId == req.VaultId
                  && x.Id == req.RotationId,

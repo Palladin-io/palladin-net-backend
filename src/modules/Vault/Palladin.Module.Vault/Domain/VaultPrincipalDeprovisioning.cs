@@ -105,6 +105,30 @@ internal sealed class VaultPrincipalDeprovisioning : EventEntityBase
         UpdatedAt = now;
     }
 
+    internal void RecordAgentVault(Instant now)
+    {
+        if (PrincipalType != VaultPrincipalType.Agent || Status == VaultPrincipalDeprovisioningStatus.Completed)
+        {
+            throw new DomainException("Only an active Agent deprovisioning can record a Vault.");
+        }
+
+        CompletedVaultCount = checked(CompletedVaultCount + 1);
+        UpdatedAt = now;
+    }
+
+    internal void ReleaseRotation(Instant now)
+    {
+        if (PrincipalType != VaultPrincipalType.Agent || Status != VaultPrincipalDeprovisioningStatus.WaitingForRotation)
+        {
+            throw new DomainException("Only an Agent deprovisioning can stop waiting for its rotation.");
+        }
+
+        CurrentVaultId = null;
+        CurrentRotationId = null;
+        Status = VaultPrincipalDeprovisioningStatus.Pending;
+        UpdatedAt = now;
+    }
+
     internal void Complete(Instant now)
     {
         if (Status != VaultPrincipalDeprovisioningStatus.Pending)

@@ -84,7 +84,7 @@ internal sealed class ClaimVaultKeyRotationEndpoint(
             return;
         }
 
-        var rotation = await domainWriteContext.VaultKeyRotations.SingleOrDefaultAsync(
+        var rotation = await domainWriteContext.VaultKeyRotations.Include(x => x.Reasons).SingleOrDefaultAsync(
             x => x.OrganizationId == organizationId
                  && x.VaultId == req.VaultId
                  && x.Id == req.RotationId,

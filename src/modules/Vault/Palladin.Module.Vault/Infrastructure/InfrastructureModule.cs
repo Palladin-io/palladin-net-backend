@@ -86,6 +86,8 @@ internal static class InfrastructureModule
         services.Configure<GrantApprovalWaitOptions>(
             configuration.GetSection(GrantApprovalWaitOptions.Position));
 
+        services.AddScopedCronJob<ResumeAgentDeprovisioningJob, ResumeAgentDeprovisioningJobOptions>(
+            configuration.GetSection(ResumeAgentDeprovisioningJobOptions.Position));
         services.AddScopedCronJob<ExpireGrantsJob, ExpireGrantsJobOptions>(
             configuration.GetSection(ExpireGrantsJobOptions.Position));
         services.AddScopedCronJob<ExpireEntrySharesJob, ExpireEntrySharesJobOptions>(

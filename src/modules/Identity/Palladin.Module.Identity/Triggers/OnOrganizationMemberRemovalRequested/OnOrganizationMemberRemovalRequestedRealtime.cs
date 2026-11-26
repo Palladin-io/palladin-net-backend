@@ -21,5 +21,6 @@ internal sealed class OnOrganizationMemberRemovalRequestedRealtime
         context.Publish(new DisconnectOrganizationMemberCommand(
             context.Message.OrganizationId,
             context.Message.UserId,
+            context.Message.AuthorizationVersion,
             context.Message.RequestedAt));
 }

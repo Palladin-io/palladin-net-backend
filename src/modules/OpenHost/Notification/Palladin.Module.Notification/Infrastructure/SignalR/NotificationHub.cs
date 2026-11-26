@@ -17,9 +17,10 @@ public sealed class NotificationHub : Hub
     {
         var organizationId = Context.User?.GetOrganizationId();
         var userId = Context.User?.GetUserId();
-        if (organizationId is not null && userId is not null)
+        var authorizationVersion = Context.User?.GetAuthorizationVersion();
+        if (organizationId is not null && userId is not null && authorizationVersion is not null)
         {
-            Registry.Add(organizationId.Value, userId.Value, Context);
+            Registry.Add(organizationId.Value, userId.Value, authorizationVersion.Value, Context);
         }
 
         if (organizationId is not null)

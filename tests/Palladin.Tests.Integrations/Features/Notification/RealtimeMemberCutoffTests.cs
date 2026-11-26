@@ -4,7 +4,9 @@ using Shouldly;
 using MassTransit;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Palladin.Module.Identity.Infrastructure.Persistence;
 using NSubstitute;
 using Palladin.Core.Security;
 using Palladin.Module.Identity.Contracts.Events;
@@ -37,7 +39,7 @@ public sealed class RealtimeMemberCutoffTests(ApiFactory apiFactory)
         await using var ownerConnection = await ConnectAsync(owner);
         var memberClosed = ClosedSignal(memberConnection);
         var removal = new OrganizationMemberRemovalRequestedEvent(
-            Guid.NewGuid(), organization.Id, member.Id, owner.Id, apiFactory.FakeClock.GetCurrentInstant());
+            Guid.NewGuid(), organization.Id, member.Id, owner.Id, apiFactory.FakeClock.GetCurrentInstant(), 1);
         var triggerContext = apiFactory.MockConsumeContext(removal);
         DisconnectOrganizationMemberCommand? command = null;
         triggerContext
@@ -51,9 +53,43 @@ public sealed class RealtimeMemberCutoffTests(ApiFactory apiFactory)
             .Consume(apiFactory.MockConsumeContext(command!));
 
         // Then
-        command.ShouldBe(new DisconnectOrganizationMemberCommand(organization.Id, member.Id, removal.RequestedAt));
+        command.ShouldBe(new DisconnectOrganizationMemberCommand(organization.Id, member.Id, 1, removal.RequestedAt));
         (await memberClosed.WaitAsync(CloseTimeout, TestContext.Current.CancellationToken)).ShouldBeTrue();
         ownerConnection.State.ShouldBe(HubConnectionState.Connected);
+    }
+
+    [Fact]
+    public async Task When_DelayedRemovalArrivesAfterRejoin_Then_NewerConnectionStaysOpen()
+    {
+        // Given
+        var (_, organization, _) = await apiFactory.Services.SeedUserAsync();
+        var member = await apiFactory.Services.SeedAdditionalOrganizationMemberAsync(organization.Id);
+        await using (var scope = apiFactory.Services.CreateAsyncScope())
+        {
+            var writeContext = scope.ServiceProvider.GetRequiredService<IdentityDbWriteContext>();
+            var membership = await writeContext.OrganizationMembers.SingleAsync(
+                x => x.OrganizationId == organization.Id && x.UserId == member.Id,
+                TestContext.Current.CancellationToken);
+            membership.InvalidateAuthorization(apiFactory.FakeClock.GetCurrentInstant());
+            await writeContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await using var connection = await ConnectAsync(member);
+        var closed = ClosedSignal(connection);
+        var consumer = new DisconnectOrganizationMemberConsumer(
+            apiFactory.Services.GetRequiredService<RealtimeConnectionRegistry>());
+
+        // When
+        await consumer.Consume(apiFactory.MockConsumeContext(new DisconnectOrganizationMemberCommand(
+            organization.Id, member.Id, 1, apiFactory.FakeClock.GetCurrentInstant())));
+
+        // Then
+        (await Task.WhenAny(closed, Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken)))
+            .ShouldNotBe(closed);
+        connection.State.ShouldBe(HubConnectionState.Connected);
+        await consumer.Consume(apiFactory.MockConsumeContext(new DisconnectOrganizationMemberCommand(
+            organization.Id, member.Id, 2, apiFactory.FakeClock.GetCurrentInstant())));
+        (await closed.WaitAsync(CloseTimeout, TestContext.Current.CancellationToken)).ShouldBeTrue();
     }
 
     [Fact]

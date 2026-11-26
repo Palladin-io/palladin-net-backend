@@ -5,10 +5,10 @@ namespace Palladin.Module.Notification.Infrastructure.SignalR;
 
 internal sealed class RealtimeConnectionRegistry
 {
-    private readonly ConcurrentDictionary<(Guid OrganizationId, Guid UserId), ConcurrentDictionary<string, HubCallerContext>> connections = new();
+    private readonly ConcurrentDictionary<(Guid OrganizationId, Guid UserId), ConcurrentDictionary<string, (HubCallerContext Context, uint AuthorizationVersion)>> connections = new();
 
-    internal void Add(Guid organizationId, Guid userId, HubCallerContext context) =>
-        connections.GetOrAdd((organizationId, userId), _ => new())[context.ConnectionId] = context;
+    internal void Add(Guid organizationId, Guid userId, uint authorizationVersion, HubCallerContext context) =>
+        connections.GetOrAdd((organizationId, userId), _ => new())[context.ConnectionId] = (context, authorizationVersion);
 
     internal void Remove(Guid organizationId, Guid userId, string connectionId)
     {
@@ -18,16 +18,21 @@ internal sealed class RealtimeConnectionRegistry
         }
     }
 
-    internal void Abort(Guid organizationId, Guid userId)
+    // A rejoined Member always receives a higher authorization version, so a delayed removal never
+    // closes connections authorized after it.
+    internal void Abort(Guid organizationId, Guid userId, uint removedAuthorizationVersion)
     {
         if (!connections.TryGetValue((organizationId, userId), out var userConnections))
         {
             return;
         }
 
-        foreach (var context in userConnections.Values)
+        foreach (var (context, authorizationVersion) in userConnections.Values)
         {
-            context.Abort();
+            if (authorizationVersion <= removedAuthorizationVersion)
+            {
+                context.Abort();
+            }
         }
     }
 }

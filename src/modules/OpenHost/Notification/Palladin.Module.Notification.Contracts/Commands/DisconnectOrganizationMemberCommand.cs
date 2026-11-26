@@ -8,4 +8,5 @@ namespace Palladin.Module.Notification.Contracts.Commands;
 public sealed record DisconnectOrganizationMemberCommand(
     Guid OrganizationId,
     Guid UserId,
+    uint AuthorizationVersion,
     Instant OccurredAt) : IIntegrationCommand;

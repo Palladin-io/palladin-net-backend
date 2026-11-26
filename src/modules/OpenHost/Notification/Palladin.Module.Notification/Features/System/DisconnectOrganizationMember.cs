@@ -19,7 +19,7 @@ internal sealed class DisconnectOrganizationMemberConsumer(RealtimeConnectionReg
 {
     public Task Consume(ConsumeContext<DisconnectOrganizationMemberCommand> context)
     {
-        registry.Abort(context.Message.OrganizationId, context.Message.UserId);
+        registry.Abort(context.Message.OrganizationId, context.Message.UserId, context.Message.AuthorizationVersion);
         return Task.CompletedTask;
     }
 }

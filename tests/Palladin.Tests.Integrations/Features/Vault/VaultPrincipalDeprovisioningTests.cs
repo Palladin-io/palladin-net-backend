@@ -108,7 +108,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             organization.Id,
             removedMember.Id,
             remainingMember.Id,
-            apiFactory.FakeClock.GetCurrentInstant());
+            apiFactory.FakeClock.GetCurrentInstant(), 1);
 
         // When
         await ConsumeAsync(requested);
@@ -144,7 +144,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             organization.Id,
             member.Id,
             Guid.NewGuid(),
-            apiFactory.FakeClock.GetCurrentInstant()));
+            apiFactory.FakeClock.GetCurrentInstant(), 1));
 
         // Then
         await using var scope = apiFactory.Services.CreateAsyncScope();
@@ -169,7 +169,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             organization.Id,
             removedMember.Id,
             remainingMember.Id,
-            apiFactory.FakeClock.GetCurrentInstant()));
+            apiFactory.FakeClock.GetCurrentInstant(), 1));
         Guid rotationId;
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
@@ -208,7 +208,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             organization.Id,
             removedMember.Id,
             remainingMember.Id,
-            apiFactory.FakeClock.GetCurrentInstant()));
+            apiFactory.FakeClock.GetCurrentInstant(), 1));
         Guid rotationId;
         await using (var scope = apiFactory.Services.CreateAsyncScope())
         {
@@ -374,7 +374,7 @@ public sealed class VaultPrincipalDeprovisioningTests(ApiFactory apiFactory) : T
             organization.Id,
             removedMember.Id,
             remainingMember.Id,
-            apiFactory.FakeClock.GetCurrentInstant()));
+            apiFactory.FakeClock.GetCurrentInstant(), 1));
         var vaults = new[] { firstVault, secondVault }.ToDictionary(x => x.Id);
         Guid currentVaultId;
         await using (var scope = apiFactory.Services.CreateAsyncScope())

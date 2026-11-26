@@ -166,7 +166,8 @@ internal sealed class OrganizationMember : EventEntityBase
                 OrganizationId,
                 UserId,
                 RemovalRequestedBy!.Value,
-                RemovalRequestedAt!.Value));
+                RemovalRequestedAt!.Value,
+                AuthorizationVersion));
             AnnounceApproverEligibility();
             return;
         }
@@ -177,7 +178,7 @@ internal sealed class OrganizationMember : EventEntityBase
         RemovalRequestedAt = now;
         UpdatedAt = now;
         AddEvent(new OrganizationMemberRemovalRequestedEvent(
-            requestId, OrganizationId, UserId, requestedBy, now));
+            requestId, OrganizationId, UserId, requestedBy, now, AuthorizationVersion));
         AnnounceApproverEligibility();
     }
 

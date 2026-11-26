@@ -39,6 +39,7 @@ internal sealed class VaultKeyRotationConfiguration : IEntityTypeConfiguration<V
         builder.Property(x => x.FencingToken);
         builder.Property(x => x.LeaseExpiresAt);
         builder.Property(x => x.CommittedAt);
+        builder.Property(x => x.CommittedBy);
         builder.Property(x => x.LastFailureCode).HasMaxLength(64);
         builder.Property(x => x.DeprovisioningId);
         builder.Property(x => x.ExcludedMemberId);

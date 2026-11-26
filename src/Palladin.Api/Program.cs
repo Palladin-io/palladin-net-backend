@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.SignalR;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -187,6 +188,7 @@ builder.Services
     .AddAgentAuthentication();
 
 builder.Services.AddAuthorization();
+builder.Services.Configure<HubOptions>(options => options.AddFilter<ActiveOrganizationMembershipHubFilter>());
 
 builder.Services.AddPalladinRateLimiter();
 

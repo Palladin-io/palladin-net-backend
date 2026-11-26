@@ -38,6 +38,7 @@ internal static class InfrastructureModule
             });
         services.AddScoped<IWebNotifier, WebNotifier>();
         services.AddScoped<IRealtimeEventNotifier, RealtimeEventNotifier>();
+        services.AddSingleton<RealtimeConnectionRegistry>();
 
         services.Configure<FirebaseOptions>(configuration.GetSection(FirebaseOptions.Position));
         services.Configure<PushTextOptions>(configuration.GetSection(PushTextOptions.Position));

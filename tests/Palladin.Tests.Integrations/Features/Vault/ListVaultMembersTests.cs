@@ -172,7 +172,7 @@ public sealed class ListVaultMembersTests(ApiFactory apiFactory) : TestBase
             organizationId,
             memberId,
             requestedBy,
-            apiFactory.FakeClock.GetCurrentInstant());
+            apiFactory.FakeClock.GetCurrentInstant(), 1);
         await consumer.Consume(apiFactory.MockConsumeContext(message));
     }
 

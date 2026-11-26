@@ -10,4 +10,5 @@ public sealed record OrganizationMemberRemovalRequestedEvent(
     Guid OrganizationId,
     Guid UserId,
     Guid RequestedBy,
-    Instant RequestedAt) : IIntegrationEvent;
+    Instant RequestedAt,
+    uint AuthorizationVersion) : IIntegrationEvent;
